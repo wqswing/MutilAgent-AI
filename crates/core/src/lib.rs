@@ -6,6 +6,8 @@
 pub mod error;
 pub mod traits;
 pub mod types;
+pub mod template;
+pub mod evidence;
 
 pub use error::{Error, Result};
 pub use traits::*;

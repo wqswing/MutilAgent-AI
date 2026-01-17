@@ -102,6 +102,9 @@ pub struct SopStep {
     pub args: Value,
     /// Dependencies on other steps.
     pub depends_on: Vec<String>,
+    /// Tools allowed for this step (privilege de-escalation).
+    /// If empty, all tools are allowed.
+    pub allow_tools: Vec<String>,
 }
 
 // =============================================================================

@@ -39,6 +39,9 @@ pub struct YamlSopStep {
     /// Dependencies on other steps.
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// Tools allowed for this step (privilege de-escalation).
+    #[serde(default)]
+    pub allow_tools: Vec<String>,
 }
 
 /// Default SOP engine implementation.
@@ -83,6 +86,14 @@ impl crate::dag::DagTask for SopTask {
     }
 
     async fn execute(&self, context: &HashMap<String, String>) -> Result<String> {
+        // Privilege De-escalation: Check if tool is in allowlist
+        if !self.step.allow_tools.is_empty() && !self.step.allow_tools.contains(&self.step.tool) {
+            return Err(Error::SopExecution(format!(
+                "Tool '{}' is not allowed in step '{}'. Allowed tools: {:?}",
+                self.step.tool, self.step.name, self.step.allow_tools
+            )));
+        }
+        
         let mut args = self.step.args.clone();
         
         // Inject context and previous results
@@ -118,6 +129,7 @@ impl SopEngine for DefaultSopEngine {
                     tool: s.tool,
                     args: s.args,
                     depends_on: s.depends_on,
+                    allow_tools: s.allow_tools,
                 })
                 .collect(),
         })

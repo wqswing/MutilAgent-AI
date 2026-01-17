@@ -13,6 +13,7 @@ serde_json.workspace = true
 dashmap.workspace = true
 uuid.workspace = true
 tracing-subscriber.workspace = true
+regex = "1.10"
 
 # Observability
 metrics.workspace = true
