@@ -5,9 +5,8 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use uuid::Uuid;
-use mutilAgent_core::{Result, Error, traits::{LlmClient, ChatMessage, LlmResponse}};
+use mutilAgent_core::{Result, traits::{LlmClient, ChatMessage}};
 
 /// A delegation request from parent to child agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
