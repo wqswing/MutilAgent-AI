@@ -51,6 +51,8 @@ pub struct AppState {
     pub cache: Arc<dyn SemanticCache>,
     /// Controller (optional for Phase 1).
     pub controller: Option<Arc<dyn Controller>>,
+    /// Optional distributed rate limiter.
+    pub rate_limiter: Option<Arc<dyn DistributedRateLimiter>>,
 }
 
 use metrics_exporter_prometheus::PrometheusHandle;
@@ -62,9 +64,6 @@ pub struct GatewayServer {
     state: Arc<AppState>,
     metrics_handle: Option<PrometheusHandle>,
     admin_state: Option<Arc<multi_agent_admin::AdminState>>,
-    /// Optional distributed rate limiter (Redis-backed).
-    /// Falls back to in-memory tower-governor if not set.
-    rate_limiter: Option<Arc<dyn DistributedRateLimiter>>,
 }
 
 impl GatewayServer {
@@ -80,16 +79,18 @@ impl GatewayServer {
                 router,
                 cache,
                 controller: None,
+                rate_limiter: None,
             }),
             metrics_handle: None,
             admin_state: None,
-            rate_limiter: None,
         }
     }
 
     /// Set the controller.
     pub fn with_controller(mut self, controller: Arc<dyn Controller>) -> Self {
-        Arc::get_mut(&mut self.state).unwrap().controller = Some(controller);
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.controller = Some(controller);
+        }
         self
     }
 
@@ -106,30 +107,20 @@ impl GatewayServer {
     }
 
     /// Set distributed rate limiter (e.g., Redis-backed).
-    /// When set, this replaces the in-memory tower-governor rate limiter.
     pub fn with_rate_limiter(mut self, limiter: Arc<dyn DistributedRateLimiter>) -> Self {
-        self.rate_limiter = Some(limiter);
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.rate_limiter = Some(limiter);
+        }
         self
     }
 
+
     /// Build the Axum router.
 
+    /// Build the Axum router.
     pub fn build_router(&self) -> Router {
-        use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
-        
-        // Rate limit: ~120 requests per minute per IP
-        let governor_conf = GovernorConfigBuilder::default()
-            .per_second(2) // ~120/min
-            .burst_size(30) // Allow bursts
-            .finish()
-            .expect("Failed to build rate limiter config");
-        let governor_limiter = GovernorLayer {
-            config: std::sync::Arc::new(governor_conf),
-        };
-        
         let mut router = Router::new()
             .route("/health", get(health_handler))
-
             .route("/v1/chat", post(chat_handler))
             .route("/v1/intent", post(intent_handler))
             .route("/v1/webhook/{event_type}", post(webhook_handler))
@@ -144,8 +135,29 @@ impl GatewayServer {
             router = router.nest("/admin", multi_agent_admin::admin_router(admin_state.clone()));
         }
 
-        // Rate limiting layer
-        router = router.layer(governor_limiter);
+        // Apply rate limiting: Distributed (Redis) or Local (Governor)
+        if self.state.rate_limiter.is_some() {
+            tracing::info!("Using Distributed Rate Limiter (Redis)");
+            router = router.layer(axum::middleware::from_fn_with_state(
+                self.state.clone(),
+                distributed_rate_limit,
+            ));
+        } else {
+            tracing::info!("Using Local Rate Limiter (Tower Governor)");
+            use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+            
+            // Rate limit: ~120 requests per minute per IP
+            let governor_conf = GovernorConfigBuilder::default()
+                .per_second(2) // ~120/min
+                .burst_size(30) // Allow bursts
+                .finish()
+                .expect("Failed to build rate limiter config");
+                
+            let governor_limiter = GovernorLayer {
+                config: std::sync::Arc::new(governor_conf),
+            };
+            router = router.layer(governor_limiter);
+        }
 
         if self.config.enable_cors {
             // CORS: Check for allowed origins
@@ -185,7 +197,7 @@ impl GatewayServer {
 
         tracing::info!(addr = %addr, "Gateway server starting");
 
-        axum::serve(listener, self.build_router())
+        axum::serve(listener, self.build_router().into_make_service_with_connect_info::<std::net::SocketAddr>())
             .await
             .map_err(|e| multi_agent_core::Error::gateway(format!("Server error: {}", e)))?;
 
@@ -506,4 +518,39 @@ mod tests {
         let response = health_handler().await.into_response();
         assert_eq!(response.status(), StatusCode::OK);
     }
+}
+
+// =============================================================================
+// Middleware
+// =============================================================================
+
+/// Middleware for distributed rate limiting.
+async fn distributed_rate_limit(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // Extract ConnectInfo manually
+    let addr = req.extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        .unwrap_or_else(|| std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)));
+
+    if let Some(limiter) = &state.rate_limiter {
+        let key = format!("rate_limit:{}", addr);
+        
+        // 120 requests per minute
+        match limiter.check_and_increment(&key, 120, std::time::Duration::from_secs(60)).await {
+            Ok(allowed) => {
+                if !allowed {
+                    return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();
+                }
+            }
+            Err(e) => {
+                tracing::error!("Rate limiter error: {}", e);
+            }
+        }
+    }
+    
+    next.run(req).await
 }

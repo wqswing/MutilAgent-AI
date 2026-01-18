@@ -189,13 +189,41 @@ async fn main() -> anyhow::Result<()> {
     let mcp_registry = Arc::new(multi_agent_skills::McpRegistry::new());
     mcp_registry.register_defaults(); // Register built-in defaults
 
+    // Initialize Redis components if configured
+    let redis_url = std::env::var("REDIS_URL").ok();
+    
+    let (provider_store, rate_limiter) = if let Some(url) = &redis_url {
+        tracing::info!("Initializing Redis backends at {}", url);
+        
+        let provider_store = match multi_agent_store::RedisProviderStore::new(url, "providers") {
+            Ok(store) => Some(Arc::new(store) as Arc<dyn multi_agent_core::traits::ProviderStore>),
+            Err(e) => {
+                tracing::error!("Failed to initialize RedisProviderStore: {}", e);
+                None
+            }
+        };
+
+        let rate_limiter = match multi_agent_store::RedisRateLimiter::new(url) {
+            Ok(limiter) => Some(Arc::new(limiter) as Arc<dyn multi_agent_core::traits::DistributedRateLimiter>),
+            Err(e) => {
+                tracing::error!("Failed to initialize RedisRateLimiter: {}", e);
+                None
+            }
+        };
+        
+        (provider_store, rate_limiter)
+    } else {
+        tracing::info!("REDIS_URL not set - using in-memory stores");
+        (None, None)
+    };
+
     let admin_state = Arc::new(multi_agent_admin::AdminState {
         audit_store,
         rbac,
         metrics: Some(metrics_handle.clone()),
         mcp_registry: mcp_registry.clone(),
         providers: Arc::new(tokio::sync::RwLock::new(Vec::new())),
-        provider_store: None, // TODO: Use Redis backend when REDIS_URL is set
+        provider_store, 
         secrets: secrets_manager,
     });
 
@@ -203,9 +231,15 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // Start the server
     // =========================================================================
-    server
+    let mut server = server
         .with_metrics(metrics_handle)
-        .with_admin(admin_state)
+        .with_admin(admin_state);
+        
+    if let Some(limiter) = rate_limiter {
+        server = server.with_rate_limiter(limiter);
+    }
+
+    server
         .run()
         .await?;
 
