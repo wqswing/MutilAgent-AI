@@ -207,7 +207,7 @@ async fn test_system_semantic_cache() -> anyhow::Result<()> {
     let server = GatewayServer::new(GatewayConfig { host: "127.0.0.1".into(), port: 0, ..Default::default() }, router, cache).with_controller(controller);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
-    tokio::spawn(async move { axum::serve(listener, server.build_router()).await.unwrap(); });
+    tokio::spawn(async move { axum::serve(listener, server.build_router().into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap(); });
 
     let client = reqwest::Client::new();
     let url = format!("http://{}/v1/chat", addr);
@@ -238,7 +238,7 @@ async fn test_system_health_check() -> anyhow::Result<()> {
     let addr = listener.local_addr()?;
     
     tokio::spawn(async move {
-        axum::serve(listener, axum_router).await.unwrap();
+        axum::serve(listener, axum_router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap();
     });
 
     let client = reqwest::Client::new();
@@ -277,7 +277,7 @@ async fn start_test_server(
     let addr = listener.local_addr()?;
     
     let handle = tokio::spawn(async move {
-        axum::serve(listener, axum_router).await.unwrap();
+        axum::serve(listener, axum_router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap();
     });
 
     Ok((addr, handle))

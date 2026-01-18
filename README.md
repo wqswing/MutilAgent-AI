@@ -5,19 +5,22 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/wqswing/MultiAgent-AI/actions)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-0.8.0-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v0.8.0)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v1.0.0)
 
 Multiagent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching, vector memory, and circuit breakers.
 
-## ✨ What's New in v0.8
+## ✨ What's New in v1.0 (Stateless Architecture)
 
-- **Enterprise Governance**: Comprehensive RBAC, Audit Logging, and Secret Management
-- **Admin Dashboard**: Web UI for configuration management, observability, and audit logs
-- **Security Hardening**: 
-    - AES-256-GCM encryption for secrets
-    - OIDC/JWT Integration (Keycloak/Auth0)
-    - Admin API Authentication Middleware
-- **Observability**: Real-time Prometheus metrics integration
+- **Stateless & Scalable**: fully decoupled state management using Redis.
+    - **Session Persistence**: Long-running agent tasks (`ReActLoop`) persist state after every step, enabling seamless resumption across pods.
+    - **Distributed Rate Limiting**: Global sliding window rate limiter backed by Redis Lua scripts.
+- **Enhanced Admin Dashboard**:
+    - **Provider Management**: Configure LLM providers (OpenAI, Anthropic, Local) dynamically via UI.
+    - **MCP Registry**: Inspect and manage Model Context Protocol servers directly from the dashboard.
+    - **Persistence Config**: Hot-swap storage backends (S3/MinIO) without restarts.
+- **Security Hardening**:
+    - **Encryption at Rest**: Provider API keys are encrypted using AES-256-GCM before storage.
+    - **RBAC Enforcement**: Strict role-based access control for all admin endpoints.
 
 ## 🚀 Key Capabilities
 
@@ -151,6 +154,7 @@ crates/
 ├── skills/         # Tool Registry, MCP Adapter
 ├── store/          # Redis, S3, Qdrant implementations
 ├── governance/     # Guardrails, Budget, Metrics
+├── admin/          # Management API & Dashboard
 └── model_gateway/  # LLM Provider integration
 ```
 

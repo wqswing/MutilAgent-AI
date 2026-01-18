@@ -396,10 +396,56 @@ Always think before acting. Be concise and focused on the goal."#
 
         Ok(None)
     }
+
+    /// Run the ReAct loop for a session.
+    async fn run_loop(&self, session: &mut Session) -> Result<AgentResult> {
+        let start_iteration = session.task_state.as_ref().map(|t| t.iteration).unwrap_or(0);
+        
+        tracing::info!(
+            session_id = %session.id, 
+            start_iteration = start_iteration,
+            "Starting/Resuming ReAct loop"
+        );
+
+        for iteration in start_iteration..self.config.max_iterations {
+            if let Some(ref mut task_state) = session.task_state {
+                task_state.iteration = iteration;
+            }
+
+            match self.execute_iteration(session, iteration).await? {
+                Some(result) => {
+                    session.updated_at = chrono_timestamp();
+                    session.status = SessionStatus::Completed;
+                    self.persist_session(session).await;
+                    return Ok(result);
+                }
+                None => {
+                    session.updated_at = chrono_timestamp();
+                    self.persist_session(session).await;
+
+                    if session.token_usage.is_exceeded() {
+                        session.status = SessionStatus::Failed;
+                        // Persist failure state
+                        self.persist_session(session).await;
+                        return Err(Error::BudgetExceeded {
+                            used: session.token_usage.total_tokens,
+                            limit: session.token_usage.budget_limit,
+                        });
+                    }
+                    continue;
+                }
+            }
+        }
+
+        session.status = SessionStatus::Failed;
+        self.persist_session(session).await;
+        Err(Error::MaxIterationsExceeded(self.config.max_iterations))
+    }
 }
 
 #[async_trait]
 impl Controller for ReActController {
+
     async fn execute(&self, intent: UserIntent) -> Result<AgentResult> {
         match intent {
             UserIntent::FastAction { tool_name, args } => {
@@ -468,36 +514,7 @@ impl Controller for ReActController {
                     "Starting ReAct loop"
                 );
 
-                for iteration in 0..self.config.max_iterations {
-                    if let Some(ref mut task_state) = session.task_state {
-                        task_state.iteration = iteration;
-                    }
-
-                    match self.execute_iteration(&mut session, iteration).await? {
-                        Some(result) => {
-                            session.updated_at = chrono_timestamp();
-                            session.status = SessionStatus::Completed;
-                            self.persist_session(&session).await;
-                            return Ok(result);
-                        }
-                        None => {
-                            session.updated_at = chrono_timestamp();
-                            self.persist_session(&session).await;
-
-                            if session.token_usage.is_exceeded() {
-                                session.status = SessionStatus::Failed;
-                                return Err(Error::BudgetExceeded {
-                                    used: session.token_usage.total_tokens,
-                                    limit: session.token_usage.budget_limit,
-                                });
-                            }
-                            continue;
-                        }
-                    }
-                }
-
-                session.status = SessionStatus::Failed;
-                Err(Error::MaxIterationsExceeded(self.config.max_iterations))
+                self.run_loop(&mut session).await
             }
         }
     }
@@ -505,8 +522,37 @@ impl Controller for ReActController {
 
 
     async fn resume(&self, session_id: &str) -> Result<AgentResult> {
-        tracing::warn!(session_id = session_id, "Resume not yet implemented");
-        Err(Error::controller("Resume not yet implemented - coming in Phase 2 persistence"))
+        let session_store = self.session_store.as_ref().ok_or_else(|| {
+             Error::controller("State persistence not configured (session_store is None)")
+        })?;
+
+        // Load session
+        let mut session = session_store.load(session_id).await?
+            .ok_or_else(|| Error::controller(format!("Session {} not found", session_id)))?;
+
+        tracing::info!(session_id = %session_id, status = ?session.status, "Resuming session");
+
+        match session.status {
+            SessionStatus::Completed => {
+                // If completed, find the final answer in history
+                // We search backwards for the first assistant message that looks like a final answer
+                // OR we can just return the last message content if it was a final answer
+                // Since our `run_loop` returns AgentResult::Text(answer), we try to reconstruct it.
+                // For now, let's just return a generic success message or the last content.
+                let last_content = session.history.last()
+                    .map(|h| h.content.to_string())
+                    .unwrap_or_else(|| "Task completed (no content)".to_string());
+                
+                Ok(AgentResult::Text(last_content))
+            }
+            SessionStatus::Failed => {
+                Err(Error::controller("Cannot resume failed session"))
+            }
+            SessionStatus::Running | SessionStatus::Paused => {
+                // Resume execution
+                self.run_loop(&mut session).await
+            }
+        }
     }
 
     async fn cancel(&self, session_id: &str) -> Result<()> {

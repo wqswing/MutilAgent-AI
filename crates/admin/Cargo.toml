@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 multi_agent_core.workspace = true
 multi_agent_governance.workspace = true
+multi_agent_skills.workspace = true
 tokio.workspace = true
 axum.workspace = true
 async-trait.workspace = true
@@ -18,3 +19,17 @@ rust-embed = "8"
 mime_guess = "2"
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
+chrono = "0.4"
+reqwest.workspace = true
+aws-sdk-s3 = "1"
+aws-config = "1"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+tracing.workspace = true
+
+
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tower = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+

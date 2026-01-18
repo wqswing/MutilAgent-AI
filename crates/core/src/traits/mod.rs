@@ -7,6 +7,7 @@
 //! - `store`: L3 Store traits (ArtifactStore, MemoryStore)
 //! - `governance`: L4 Governance traits (BudgetController, SecurityProxy)
 //! - `llm`: L-M Model Gateway traits (LlmClient, ModelSelector)
+//! - `state_store`: Stateless architecture traits (StateStore, DistributedRateLimiter)
 
 pub mod gateway;
 pub mod controller;
@@ -14,6 +15,7 @@ pub mod skills;
 pub mod store;
 pub mod governance;
 pub mod llm;
+pub mod state_store;
 
 // Re-export all traits for backward compatibility
 pub use gateway::*;
@@ -22,3 +24,5 @@ pub use skills::*;
 pub use store::*;
 pub use governance::*;
 pub use llm::*;
+pub use state_store::*;
+

@@ -19,10 +19,18 @@ pub struct S3ArtifactStore {
 
 impl S3ArtifactStore {
     /// Create a new S3 artifact store.
-    pub async fn new(bucket: &str, prefix: &str) -> Self {
-        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .load()
-            .await;
+    pub async fn new(bucket: &str, prefix: &str, endpoint: Option<&str>) -> Self {
+        let mut config_loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
+        
+        if let Some(url) = endpoint {
+            config_loader = config_loader.endpoint_url(url);
+        }
+
+        let config = config_loader.load().await;
+        
+        // For MinIO/compatible backends, we often need force_path_style(true)
+        // But aws-sdk-s3 v1+ usually handles this via config. 
+        // We'll trust the default behavior or standard env vars for now.
         let client = Client::new(&config);
         
         Self {

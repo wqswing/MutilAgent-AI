@@ -1,0 +1,57 @@
+{
+    "providers": [
+        {
+            "name": "openai",
+            "models": [
+                {
+                    "id": "gpt-4-turbo",
+                    "cost_in": 0.01,
+                    "cost_out": 0.03,
+                    "capabilities": [
+                        "text",
+                        "vision",
+                        "func_call"
+                    ]
+                },
+                {
+                    "id": "gpt-3.5-turbo",
+                    "cost_in": 0.0005,
+                    "cost_out": 0.0015,
+                    "capabilities": [
+                        "text",
+                        "func_call"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "anthropic",
+            "models": [
+                {
+                    "id": "claude-3-opus-20240229",
+                    "cost_in": 0.015,
+                    "cost_out": 0.075,
+                    "capabilities": [
+                        "text",
+                        "vision"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "local-vllm",
+            "base_url": "http://localhost:8000/v1",
+            "api_key": "empty",
+            "models": [
+                {
+                    "id": "meta-llama/Meta-Llama-3-70B-Instruct",
+                    "cost_in": 0.0,
+                    "cost_out": 0.0,
+                    "capabilities": [
+                        "text"
+                    ]
+                }
+            ]
+        }
+    ]
+}

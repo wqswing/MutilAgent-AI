@@ -1,108 +1,538 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiagent Admin Dashboard</title>
+    <title>Multiagent Admin</title>
+
+    <!-- Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons: FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-    <nav class="sidebar">
-        <div class="logo">
-            <h2>🤖 Multiagent</h2>
-            <span class="version">v0.8</span>
-        </div>
-        <ul class="nav-links">
-            <li><a href="#" class="active" data-tab="overview">📊 Overview</a></li>
-            <li><a href="#" data-tab="config">⚙️ Configuration</a></li>
-            <li><a href="#" data-tab="metrics">📈 Metrics</a></li>
-            <li><a href="#" data-tab="audit">📋 Audit Log</a></li>
-        </ul>
-        <div class="user-info">
-            <span class="avatar">👤</span>
-            <span class="username">admin</span>
-        </div>
-    </nav>
-
-    <main class="content">
-        <header class="header">
-            <h1 id="page-title">Dashboard Overview</h1>
-            <div class="status-indicator">
-                <span class="dot online"></span>
-                <span>System Healthy</span>
-            </div>
-        </header>
-
-        <section id="overview" class="tab-content active">
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>Total Requests</h3>
-                    <div class="stat-value" id="stat-requests">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Tokens Used</h3>
-                    <div class="stat-value" id="stat-tokens">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Active Sessions</h3>
-                    <div class="stat-value" id="stat-sessions">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Avg Latency</h3>
-                    <div class="stat-value" id="stat-latency">0ms</div>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fa-solid fa-robot logo-icon"></i>
+                    <div class="logo-text">
+                        <h2>Multiagent</h2>
+                        <span class="badge-version">v0.9</span>
+                    </div>
                 </div>
             </div>
-        </section>
 
-        <section id="config" class="tab-content">
-            <div class="config-panel">
-                <h2>System Configuration</h2>
-                <div class="config-item">
-                    <label>Version</label>
-                    <input type="text" id="cfg-version" readonly>
-                </div>
-                <div class="config-item">
-                    <label>Features</label>
-                    <div id="cfg-features" class="feature-list"></div>
+            <ul class="nav-menu">
+                <li class="nav-label">Main</li>
+                <li>
+                    <a href="#" class="nav-item active" data-tab="overview">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span>Overview</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="metrics">
+                        <i class="fa-solid fa-gauge-high"></i>
+                        <span>Metrics</span>
+                    </a>
+                </li>
+
+                <li class="nav-label">Configuration</li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="providers">
+                        <i class="fa-solid fa-microchip"></i>
+                        <span>LLM Providers</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="persistence">
+                        <i class="fa-solid fa-database"></i>
+                        <span>Persistence</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="mcp">
+                        <i class="fas fa-network-wired"></i>
+                        <span>MCP Registry</span>
+                    </a>
+                </li>
+
+                <li class="nav-label">Governance</li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="audit">
+                        <i class="fa-solid fa-list-check"></i>
+                        <span>Audit Logs</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="user-card">
+                    <div class="avatar">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <div class="user-info">
+                        <span class="user-name">Admin User</span>
+                        <span class="user-role">Super Admin</span>
+                    </div>
                 </div>
             </div>
-        </section>
+        </nav>
 
-        <section id="metrics" class="tab-content">
-            <div class="metrics-panel">
-                <h2>Real-time Metrics</h2>
-                <div class="chart-placeholder">
-                    <p>📊 Metrics visualization coming soon</p>
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="page-header">
+                    <h1 id="page-title">Overview</h1>
+                    <p class="breadcrumbs">Dashboard / Overview</p>
                 </div>
-            </div>
-        </section>
+                <div class="status-pill online">
+                    <span class="dot"></span>
+                    System Operational
+                </div>
+            </header>
 
-        <section id="audit" class="tab-content">
-            <div class="audit-panel">
-                <h2>Audit Log</h2>
-                <div class="audit-filters">
-                    <input type="text" id="filter-user" placeholder="Filter by user...">
-                    <input type="text" id="filter-action" placeholder="Filter by action...">
-                    <button id="btn-refresh">Refresh</button>
+            <!-- Dashboard Overview Tab -->
+            <section id="overview" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon color-blue">
+                            <i class="fa-solid fa-globe"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h3>Total Requests</h3>
+                            <div class="stat-value" id="stat-requests">--</div>
+                            <span class="stat-trend positive">
+                                <i class="fa-solid fa-arrow-trend-up"></i> Live
+                            </span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon color-purple">
+                            <i class="fa-solid fa-coins"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h3>Tokens Consumed</h3>
+                            <div class="stat-value" id="stat-tokens">--</div>
+                            <span class="stat-subtext">Cumulative Usage</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon color-green">
+                            <i class="fa-solid fa-server"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h3>Active Sessions</h3>
+                            <div class="stat-value" id="stat-sessions">0</div>
+                            <span class="stat-subtext">Current Load</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon color-orange">
+                            <i class="fa-solid fa-stopwatch"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h3>Avg Latency</h3>
+                            <div class="stat-value" id="stat-latency">--</div>
+                            <span class="stat-subtext">Response Time</span>
+                        </div>
+                    </div>
                 </div>
-                <table class="audit-table">
-                    <thead>
-                        <tr>
-                            <th>Timestamp</th>
-                            <th>User</th>
-                            <th>Action</th>
-                            <th>Resource</th>
-                            <th>Outcome</th>
-                        </tr>
-                    </thead>
-                    <tbody id="audit-body">
-                        <tr><td colspan="5">No audit entries</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-    </main>
+
+                <!-- Placeholder for future charts -->
+                <div class="content-row">
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Traffic Volume</h3>
+                            <div class="card-actions">
+                                <button class="btn-icon"><i class="fa-solid fa-ellipsis"></i></button>
+                            </div>
+                        </div>
+                        <div class="card-body chart-placeholder">
+                            <i class="fa-solid fa-chart-area"></i>
+                            <p>Real-time traffic visualization coming soon</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LLM Providers Tab -->
+            <section id="providers" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>LLM Providers</h3>
+                        <button id="btn-add-provider" class="btn-primary">
+                            <i class="fa-solid fa-plus"></i> Add Provider
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <!-- Preset Vendors Grid -->
+                        <h4 class="section-title">Quick Setup - Common Providers</h4>
+                        <div class="vendor-grid">
+                            <div class="vendor-card" data-vendor="openai">
+                                <div class="vendor-logo"><i class="fa-brands fa-openai"></i></div>
+                                <span class="vendor-name">OpenAI</span>
+                                <span class="vendor-models">GPT-4o, GPT-4, GPT-3.5</span>
+                            </div>
+                            <div class="vendor-card" data-vendor="anthropic">
+                                <div class="vendor-logo"><i class="fa-solid fa-a"></i></div>
+                                <span class="vendor-name">Anthropic</span>
+                                <span class="vendor-models">Claude 3.5, Claude 3</span>
+                            </div>
+                            <div class="vendor-card" data-vendor="google">
+                                <div class="vendor-logo"><i class="fa-brands fa-google"></i></div>
+                                <span class="vendor-name">Google AI</span>
+                                <span class="vendor-models">Gemini Pro, Gemini Ultra</span>
+                            </div>
+                            <div class="vendor-card" data-vendor="mistral">
+                                <div class="vendor-logo"><i class="fa-solid fa-wind"></i></div>
+                                <span class="vendor-name">Mistral</span>
+                                <span class="vendor-models">Mistral Large, Medium</span>
+                            </div>
+                            <div class="vendor-card" data-vendor="deepseek">
+                                <div class="vendor-logo"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+                                <span class="vendor-name">DeepSeek</span>
+                                <span class="vendor-models">DeepSeek V3, Coder</span>
+                            </div>
+                            <div class="vendor-card" data-vendor="local">
+                                <div class="vendor-logo"><i class="fa-solid fa-server"></i></div>
+                                <span class="vendor-name">Local / Self-Hosted</span>
+                                <span class="vendor-models">vLLM, Ollama, LM Studio</span>
+                            </div>
+                        </div>
+
+                        <!-- Configured Providers Table -->
+                        <h4 class="section-title" style="margin-top: 2rem;">Configured Providers</h4>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Status</th>
+                                        <th>Vendor</th>
+                                        <th>Model</th>
+                                        <th>Capabilities</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="providers-body">
+                                    <tr>
+                                        <td colspan="5" class="empty-state">No providers configured. Click "Add
+                                            Provider" or select a preset above.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add Provider Modal -->
+                <div id="modal-provider" class="modal hidden">
+                    <div class="modal-overlay"></div>
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Add LLM Provider</h3>
+                            <button class="btn-icon modal-close"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <form id="form-provider" class="modal-body">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="prov-vendor">Vendor Name *</label>
+                                    <input type="text" id="prov-vendor" required placeholder="e.g., OpenAI, MyCloud">
+                                </div>
+                                <div class="form-group">
+                                    <label for="prov-model">Model ID *</label>
+                                    <input type="text" id="prov-model" required placeholder="e.g., gpt-4o">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="prov-desc">Description</label>
+                                <input type="text" id="prov-desc" placeholder="Optional description">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="prov-url">Base URL *</label>
+                                    <input type="url" id="prov-url" required placeholder="https://api.openai.com/v1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="prov-version">API Version</label>
+                                    <input type="text" id="prov-version" placeholder="e.g., 2024-01">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="prov-key">API Key *</label>
+                                <div class="input-wrapper">
+                                    <i class="fa-solid fa-key"></i>
+                                    <input type="password" id="prov-key" required placeholder="sk-...">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Capabilities</label>
+                                <div class="checkbox-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="cap" value="text" checked> Text
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="cap" value="vision"> Vision
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="cap" value="audio"> Audio
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="cap" value="video"> Video
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="cap" value="function_calling"> Function Calling
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" id="btn-test-provider" class="btn-secondary">
+                                    <i class="fa-solid fa-plug"></i> Test Connection
+                                </button>
+                                <button type="submit" class="btn-primary">
+                                    <i class="fa-solid fa-save"></i> Save Provider
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Persistence Tab -->
+            <section id="persistence" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Persistence Configuration</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="toggle-section">
+                            <div class="toggle-header">
+                                <h4>Object Storage (S3-Compatible)</h4>
+                                <label class="switch">
+                                    <input type="checkbox" id="s3-enabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <p class="text-muted">Enable tiered storage with S3-compatible backends (AWS S3, MinIO,
+                                Cloudflare R2, etc.)</p>
+                        </div>
+
+                        <form id="form-s3" class="s3-config-form hidden">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="s3-bucket">Bucket Name *</label>
+                                    <input type="text" id="s3-bucket" required placeholder="my-multiagent-bucket">
+                                </div>
+                                <div class="form-group">
+                                    <label for="s3-region">Region</label>
+                                    <input type="text" id="s3-region" placeholder="us-east-1">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="s3-endpoint">Endpoint URL (for MinIO/R2)</label>
+                                <input type="url" id="s3-endpoint" placeholder="https://s3.us-east-1.amazonaws.com">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="s3-access-key">Access Key ID *</label>
+                                    <input type="password" id="s3-access-key" required placeholder="AKIA...">
+                                </div>
+                                <div class="form-group">
+                                    <label for="s3-secret-key">Secret Access Key *</label>
+                                    <input type="password" id="s3-secret-key" required placeholder="...">
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" id="btn-test-s3" class="btn-secondary">
+                                    <i class="fa-solid fa-plug"></i> Test Connection
+                                </button>
+                                <button type="submit" class="btn-primary">
+                                    <i class="fa-solid fa-save"></i> Save Configuration
+                                </button>
+                            </div>
+                            <div id="s3-status" class="status-message hidden"></div>
+                        </form>
+
+                        <div class="current-config">
+                            <h4 class="section-title">Current Configuration</h4>
+                            <div class="config-display">
+                                <div class="config-item">
+                                    <span class="label">Storage Mode</span>
+                                    <span class="value" id="cfg-storage-mode">In-Memory</span>
+                                </div>
+                                <div class="config-item">
+                                    <span class="label">S3 Bucket</span>
+                                    <span class="value" id="cfg-s3-bucket">N/A</span>
+                                </div>
+                                <div class="config-item">
+                                    <span class="label">S3 Endpoint</span>
+                                    <span class="value" id="cfg-s3-endpoint">Default (AWS)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MCP Registry Tab -->
+            <section id="mcp" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Model Context Protocol (MCP) Registry</h3>
+                        <button id="btn-register-mcp" class="btn-primary">
+                            <i class="fa-solid fa-plus"></i> Register Server
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted">Manage MCP servers that extend agent capabilities with tools, resources,
+                            and prompts.</p>
+
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Status</th>
+                                        <th>Server</th>
+                                        <th>Transport</th>
+                                        <th>Capabilities</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mcp-body">
+                                    <tr>
+                                        <td colspan="5" class="empty-state">No MCP servers registered</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Register MCP Modal -->
+                <div id="modal-mcp" class="modal hidden">
+                    <div class="modal-overlay"></div>
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Register MCP Server</h3>
+                            <button class="btn-icon modal-close"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <form id="form-mcp" class="modal-body">
+                            <div class="form-group">
+                                <label for="mcp-name">Server Name *</label>
+                                <input type="text" id="mcp-name" required placeholder="e.g., filesystem">
+                            </div>
+                            <div class="form-group">
+                                <label for="mcp-transport">Transport Type *</label>
+                                <select id="mcp-transport" required>
+                                    <option value="stdio">stdio (local process)</option>
+                                    <option value="http">HTTP</option>
+                                    <option value="ws">WebSocket</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="mcp-command">Command / URL *</label>
+                                <input type="text" id="mcp-command" required
+                                    placeholder="npx -y @modelcontextprotocol/server-filesystem">
+                            </div>
+                            <div class="form-group">
+                                <label>Capabilities</label>
+                                <div class="checkbox-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="mcp-cap" value="tools" checked> Tools
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="mcp-cap" value="resources"> Resources
+                                    </label>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" name="mcp-cap" value="prompts"> Prompts
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="submit" class="btn-primary">
+                                    <i class="fa-solid fa-plus"></i> Register
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Metrics Tab -->
+            <section id="metrics" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Performance Metrics</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="metrics-list">
+                            <div class="metric-item">
+                                <span class="label">Requests Total</span>
+                                <span class="value" id="metric-req-total">--</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="label">Tokens Used</span>
+                                <span class="value" id="metric-tok-total">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Audit Log Tab -->
+            <section id="audit" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Audit Trails</h3>
+                        <button id="btn-refresh" class="btn-primary">
+                            <i class="fa-solid fa-rotate-right"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="toolbar">
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="filter-user" placeholder="Search user ID...">
+                        </div>
+                        <div class="search-box">
+                            <i class="fa-solid fa-filter"></i>
+                            <input type="text" id="filter-action" placeholder="Filter action...">
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Resource</th>
+                                    <th>Outcome</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-body">
+                                <tr>
+                                    <td colspan="5" class="empty-state">Loading records...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
 
     <script src="app.js"></script>
 </body>
+
 </html>

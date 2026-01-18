@@ -15,21 +15,19 @@ use multi_agent_store::{InMemoryStore, InMemorySessionStore, RedisSessionStore, 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
-    // Initialize tracing
     multi_agent_governance::configure_tracing()?;
-
 
     tracing::info!("Starting Multiagent v{}", env!("CARGO_PKG_VERSION"));
 
     // =========================================================================
     // Initialize L3: Artifact Store
     // =========================================================================
-    // =========================================================================
-    // Initialize L3: Artifact Store
-    // =========================================================================
     let store: Arc<dyn ArtifactStore> = if let Ok(bucket) = std::env::var("AWS_S3_BUCKET") {
-        tracing::info!(bucket = %bucket, "Initializing S3 Artifact Store (Tiered)");
-        let s3 = Arc::new(S3ArtifactStore::new(&bucket, "").await);
+        let endpoint = std::env::var("AWS_ENDPOINT_URL").ok();
+        tracing::info!(bucket = %bucket, endpoint = ?endpoint, "Initializing S3 Artifact Store (Tiered)");
+        
+        // Note: as_deref() converts Option<String> to Option<&str>
+        let s3 = Arc::new(S3ArtifactStore::new(&bucket, "", endpoint.as_deref()).await);
         let hot = Arc::new(InMemoryStore::new());
         Arc::new(TieredStore::new(hot).with_cold(s3))
     } else {
@@ -78,11 +76,41 @@ async fn main() -> anyhow::Result<()> {
     
     // Initialize LLM Client for embeddings
     use multi_agent_core::traits::LlmClient;
-    let llm_client: Arc<dyn LlmClient> = match multi_agent_model_gateway::create_default_client() {
-        Ok(client) => Arc::new(client),
-        Err(e) => {
-            tracing::warn!("Failed to create default LLM client: {}. Semantic cache will fallback to exact match.", e);
-            Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy"))
+    
+    let llm_client: Arc<dyn LlmClient> = {
+        let providers_path = std::path::Path::new("providers.json");
+        if providers_path.exists() {
+            tracing::info!("Loading LLM config from providers.json");
+            match multi_agent_model_gateway::config::ProviderConfig::load(providers_path).await {
+                Ok(cfg) => {
+                    match multi_agent_model_gateway::create_client_from_config(&cfg) {
+                        Ok(client) => Arc::new(client),
+                        Err(e) => {
+                             tracing::warn!("Failed to create client from config: {}. Fallback to env vars.", e);
+                             match multi_agent_model_gateway::create_default_client() {
+                                Ok(client) => Arc::new(client),
+                                Err(_) => Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy")),
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("Failed to parse providers.json: {}. Fallback to env vars.", e);
+                     match multi_agent_model_gateway::create_default_client() {
+                        Ok(client) => Arc::new(client),
+                        Err(_) => Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy")),
+                    }
+                }
+            }
+        } else {
+             tracing::info!("No providers.json found. Using environment variables.");
+             match multi_agent_model_gateway::create_default_client() {
+                Ok(client) => Arc::new(client),
+                Err(e) => {
+                    tracing::warn!("Failed to create default LLM client: {}. Semantic cache will fallback to exact match.", e);
+                    Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy"))
+                }
+            }
         }
     };
     
@@ -135,22 +163,83 @@ async fn main() -> anyhow::Result<()> {
     
     // Initialize Governance Components
     let audit_store = Arc::new(multi_agent_governance::FileAuditStore::new("audit.log"));
-    // In prod, key should come from Kms/Env. For now, random.
-    let _secrets_manager = Arc::new(multi_agent_governance::AesGcmSecretsManager::new(None)); 
-    let rbac = Arc::new(multi_agent_governance::NoOpRbacConnector);
     
+    // Secrets manager for encrypting API keys
+    // In prod, key should come from Kms/Env. For now, random.
+    let secrets_manager: Arc<dyn multi_agent_governance::SecretsManager> = 
+        Arc::new(multi_agent_governance::AesGcmSecretsManager::new(None));
+    
+    // RBAC: Check environment for production mode
+    let is_production = std::env::var("MULTIAGENT_ENV")
+        .map(|v| v.to_lowercase() == "production")
+        .unwrap_or(false);
+    
+    let rbac: Arc<dyn multi_agent_governance::RbacConnector> = if is_production {
+        // Production: Require OIDC configuration
+        let oidc_issuer = std::env::var("OIDC_ISSUER")
+            .expect("OIDC_ISSUER is required in production mode. Set MULTIAGENT_ENV=development to disable.");
+        tracing::info!(issuer = %oidc_issuer, "Initializing OIDC RBAC connector for production");
+        Arc::new(multi_agent_governance::rbac::OidcRbacConnector::new(&oidc_issuer))
+    } else {
+        tracing::warn!("Using NoOpRbacConnector - NOT SUITABLE FOR PRODUCTION");
+        Arc::new(multi_agent_governance::NoOpRbacConnector)
+    };
+
+    // Initialize MCP Registry
+    let mcp_registry = Arc::new(multi_agent_skills::McpRegistry::new());
+    mcp_registry.register_defaults(); // Register built-in defaults
+
+    // Initialize Redis components if configured
+    let redis_url = std::env::var("REDIS_URL").ok();
+    
+    let (provider_store, rate_limiter) = if let Some(url) = &redis_url {
+        tracing::info!("Initializing Redis backends at {}", url);
+        
+        let provider_store = match multi_agent_store::RedisProviderStore::new(url, "providers") {
+            Ok(store) => Some(Arc::new(store) as Arc<dyn multi_agent_core::traits::ProviderStore>),
+            Err(e) => {
+                tracing::error!("Failed to initialize RedisProviderStore: {}", e);
+                None
+            }
+        };
+
+        let rate_limiter = match multi_agent_store::RedisRateLimiter::new(url) {
+            Ok(limiter) => Some(Arc::new(limiter) as Arc<dyn multi_agent_core::traits::DistributedRateLimiter>),
+            Err(e) => {
+                tracing::error!("Failed to initialize RedisRateLimiter: {}", e);
+                None
+            }
+        };
+        
+        (provider_store, rate_limiter)
+    } else {
+        tracing::info!("REDIS_URL not set - using in-memory stores");
+        (None, None)
+    };
+
     let admin_state = Arc::new(multi_agent_admin::AdminState {
         audit_store,
         rbac,
         metrics: Some(metrics_handle.clone()),
+        mcp_registry: mcp_registry.clone(),
+        providers: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+        provider_store, 
+        secrets: secrets_manager,
     });
+
     
     // =========================================================================
     // Start the server
     // =========================================================================
-    server
+    let mut server = server
         .with_metrics(metrics_handle)
-        .with_admin(admin_state)
+        .with_admin(admin_state);
+        
+    if let Some(limiter) = rate_limiter {
+        server = server.with_rate_limiter(limiter);
+    }
+
+    server
         .run()
         .await?;
 

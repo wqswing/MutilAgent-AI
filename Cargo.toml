@@ -23,6 +23,8 @@ repository = "https://github.com/wqswing/Multiagent-AI"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 futures = "0.3"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
 
 # Web framework
 axum = "0.7"
@@ -130,3 +132,5 @@ multi_agent_admin.workspace = true
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
+redis = { version = "0.27", features = ["tokio-comp"] }
+uuid = { version = "1", features = ["v4"] }
