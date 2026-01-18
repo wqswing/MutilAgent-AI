@@ -54,6 +54,7 @@ pub struct AppState {
 }
 
 use metrics_exporter_prometheus::PrometheusHandle;
+use multi_agent_core::traits::DistributedRateLimiter;
 
 /// Gateway server.
 pub struct GatewayServer {
@@ -61,6 +62,9 @@ pub struct GatewayServer {
     state: Arc<AppState>,
     metrics_handle: Option<PrometheusHandle>,
     admin_state: Option<Arc<multi_agent_admin::AdminState>>,
+    /// Optional distributed rate limiter (Redis-backed).
+    /// Falls back to in-memory tower-governor if not set.
+    rate_limiter: Option<Arc<dyn DistributedRateLimiter>>,
 }
 
 impl GatewayServer {
@@ -79,6 +83,7 @@ impl GatewayServer {
             }),
             metrics_handle: None,
             admin_state: None,
+            rate_limiter: None,
         }
     }
 
@@ -100,7 +105,15 @@ impl GatewayServer {
         self
     }
 
+    /// Set distributed rate limiter (e.g., Redis-backed).
+    /// When set, this replaces the in-memory tower-governor rate limiter.
+    pub fn with_rate_limiter(mut self, limiter: Arc<dyn DistributedRateLimiter>) -> Self {
+        self.rate_limiter = Some(limiter);
+        self
+    }
+
     /// Build the Axum router.
+
     pub fn build_router(&self) -> Router {
         use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
         
