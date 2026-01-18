@@ -39,6 +39,7 @@ MutilAgent is a production-grade, layered AI agent framework built in Rust. It i
 
 MutilAgent follows a strict 6-layer architecture for separation of concerns and scalability.
 
+### Layer Architecture
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     User / Client                            │
@@ -86,6 +87,54 @@ MutilAgent follows a strict 6-layer architecture for separation of concerns and 
 │  └─────────────┘ └─────────────┘ └────────────────┘         │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Request Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Gateway as L0: Gateway
+    participant Cache as Semantic Cache
+    participant Router as Intent Router
+    participant Controller as L1: Controller
+    participant LLM as L-M: Model Gateway
+    participant Tools as L2: Skills
+    participant Store as L3: Store
+
+    User->>Gateway: POST /v1/chat
+    Gateway->>Cache: Check cache
+    
+    alt Cache Hit
+        Cache-->>Gateway: Cached response
+        Gateway-->>User: Return cached
+    else Cache Miss
+        Gateway->>Router: Classify intent
+        
+        alt FastAction
+            Router-->>Gateway: FastAction{tool, args}
+            Gateway->>Tools: Execute tool directly
+            Tools-->>Gateway: ToolOutput
+        else ComplexMission
+            Router-->>Gateway: ComplexMission{goal}
+            Gateway->>Controller: Execute ReAct loop
+            
+            loop ReAct Cycle (max N iterations)
+                Controller->>Store: Load memory/context
+                Controller->>LLM: Generate thought
+                LLM-->>Controller: THOUGHT + ACTION
+                Controller->>Tools: Execute action
+                Tools-->>Controller: Observation
+                Controller->>Controller: Update state
+            end
+            
+            Controller-->>Gateway: FINAL ANSWER
+        end
+        
+        Gateway->>Cache: Store result
+        Gateway-->>User: Return response
+    end
+```
+
 
 ## 📂 Project Structure
 
