@@ -25,6 +25,9 @@ async fn test_v0_8_features_integration() {
         audit_store: audit_store.clone(),
         rbac: rbac.clone(),
         metrics: metrics_handle.clone(),
+        mcp_registry: Arc::new(multi_agent_skills::McpRegistry::new()),
+        providers: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+        secrets: Arc::new(multi_agent_governance::AesGcmSecretsManager::new(None)),
     });
 
     // Initialize Gateway
@@ -50,14 +53,20 @@ async fn test_v0_8_features_integration() {
 
     // Case A: Public Health Check
     let response = app.clone()
-        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .oneshot(Request::builder()
+            .uri("/health")
+            .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
+            .body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
     // Case B: Admin Config (Unauthorized - No Token)
     let response = app.clone()
-        .oneshot(Request::builder().uri("/admin/config").body(Body::empty()).unwrap())
+        .oneshot(Request::builder()
+            .uri("/admin/config")
+            .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
+            .body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -68,6 +77,7 @@ async fn test_v0_8_features_integration() {
         .oneshot(Request::builder()
             .uri("/admin/config")
             .header("Authorization", "Bearer somerandomtoken")
+            .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
             .body(Body::empty())
             .unwrap())
         .await
@@ -80,6 +90,7 @@ async fn test_v0_8_features_integration() {
         .oneshot(Request::builder()
             .uri("/admin/config")
             .header("Authorization", "Bearer admin")
+            .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
             .body(Body::empty())
             .unwrap())
         .await
@@ -91,6 +102,7 @@ async fn test_v0_8_features_integration() {
         .oneshot(Request::builder()
             .uri("/admin/metrics")
             .header("Authorization", "Bearer admin")
+            .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
             .body(Body::empty())
             .unwrap())
         .await
@@ -122,6 +134,7 @@ async fn test_v0_8_features_integration() {
         .oneshot(Request::builder()
             .uri("/admin/audit?action=TEST_ACTION")
             .header("Authorization", "Bearer admin")
+            .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
             .body(Body::empty())
             .unwrap())
         .await

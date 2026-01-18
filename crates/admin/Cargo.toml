@@ -20,6 +20,12 @@ mime_guess = "2"
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 chrono = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest.workspace = true
 aws-sdk-s3 = "1"
 aws-config = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tower = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+
