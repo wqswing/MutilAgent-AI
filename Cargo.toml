@@ -8,6 +8,7 @@ members = [
     "crates/store",
     "crates/governance",
     "crates/model_gateway",
+    "crates/admin",
 ]
 
 [workspace.package]
