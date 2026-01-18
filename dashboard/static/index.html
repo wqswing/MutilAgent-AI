@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiagent Admin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">
+            <h2>🤖 Multiagent</h2>
+            <span class="version">v0.8</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#" class="active" data-tab="overview">📊 Overview</a></li>
+            <li><a href="#" data-tab="config">⚙️ Configuration</a></li>
+            <li><a href="#" data-tab="metrics">📈 Metrics</a></li>
+            <li><a href="#" data-tab="audit">📋 Audit Log</a></li>
+        </ul>
+        <div class="user-info">
+            <span class="avatar">👤</span>
+            <span class="username">admin</span>
+        </div>
+    </nav>
+
+    <main class="content">
+        <header class="header">
+            <h1 id="page-title">Dashboard Overview</h1>
+            <div class="status-indicator">
+                <span class="dot online"></span>
+                <span>System Healthy</span>
+            </div>
+        </header>
+
+        <section id="overview" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total Requests</h3>
+                    <div class="stat-value" id="stat-requests">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Tokens Used</h3>
+                    <div class="stat-value" id="stat-tokens">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Active Sessions</h3>
+                    <div class="stat-value" id="stat-sessions">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Avg Latency</h3>
+                    <div class="stat-value" id="stat-latency">0ms</div>
+                </div>
+            </div>
+        </section>
+
+        <section id="config" class="tab-content">
+            <div class="config-panel">
+                <h2>System Configuration</h2>
+                <div class="config-item">
+                    <label>Version</label>
+                    <input type="text" id="cfg-version" readonly>
+                </div>
+                <div class="config-item">
+                    <label>Features</label>
+                    <div id="cfg-features" class="feature-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="metrics" class="tab-content">
+            <div class="metrics-panel">
+                <h2>Real-time Metrics</h2>
+                <div class="chart-placeholder">
+                    <p>📊 Metrics visualization coming soon</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="audit" class="tab-content">
+            <div class="audit-panel">
+                <h2>Audit Log</h2>
+                <div class="audit-filters">
+                    <input type="text" id="filter-user" placeholder="Filter by user...">
+                    <input type="text" id="filter-action" placeholder="Filter by action...">
+                    <button id="btn-refresh">Refresh</button>
+                </div>
+                <table class="audit-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>User</th>
+                            <th>Action</th>
+                            <th>Resource</th>
+                            <th>Outcome</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-body">
+                        <tr><td colspan="5">No audit entries</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

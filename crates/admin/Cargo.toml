@@ -14,3 +14,5 @@ serde_json.workspace = true
 tower-http.workspace = true
 utoipa = { version = "4", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
+rust-embed = "8"
+mime_guess = "2"

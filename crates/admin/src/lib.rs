@@ -4,17 +4,25 @@
 //! - Configuration management
 //! - Metrics and observability
 //! - Audit log queries
+//! - Static dashboard UI
 
 use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    response::IntoResponse,
+    body::Body,
+    extract::{Path, Query, State},
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
+use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use multi_agent_governance::{AuditStore, AuditFilter, AuditEntry};
+
+/// Embedded static assets for the dashboard.
+#[derive(RustEmbed)]
+#[folder = "../../dashboard/static"]
+struct Asset;
 
 /// Admin API state.
 pub struct AdminState {
@@ -80,12 +88,47 @@ async fn get_audit(
     }
 }
 
+/// Serve static files from embedded assets.
+async fn static_handler(Path(path): Path<String>) -> impl IntoResponse {
+    let path = if path.is_empty() { "index.html".to_string() } else { path };
+    
+    match Asset::get(&path) {
+        Some(content) => {
+            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            Response::builder()
+                .header(header::CONTENT_TYPE, mime.as_ref())
+                .body(Body::from(content.data.to_vec()))
+                .unwrap()
+        }
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found"))
+            .unwrap(),
+    }
+}
+
+/// Serve index.html for root path.
+async fn index_handler() -> impl IntoResponse {
+    match Asset::get("index.html") {
+        Some(content) => Response::builder()
+            .header(header::CONTENT_TYPE, "text/html")
+            .body(Body::from(content.data.to_vec()))
+            .unwrap(),
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Dashboard not found"))
+            .unwrap(),
+    }
+}
+
 /// Build the admin API router.
 pub fn admin_router(state: Arc<AdminState>) -> Router {
     Router::new()
+        .route("/", get(index_handler))
         .route("/health", get(health))
         .route("/config", get(get_config))
         .route("/metrics", get(get_metrics))
         .route("/audit", get(get_audit))
+        .route("/*path", get(static_handler))
         .with_state(state)
 }
