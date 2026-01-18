@@ -8,8 +8,9 @@
 
 use axum::{
     body::Body,
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, Request},
     http::{header, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -17,7 +18,7 @@ use axum::{
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use multi_agent_governance::{AuditStore, AuditFilter, AuditEntry};
+use multi_agent_governance::{AuditStore, AuditFilter, AuditEntry, RbacConnector};
 
 /// Embedded static assets for the dashboard.
 #[derive(RustEmbed)]
@@ -27,6 +28,7 @@ struct Asset;
 /// Admin API state.
 pub struct AdminState {
     pub audit_store: Arc<dyn AuditStore>,
+    pub rbac: Arc<dyn RbacConnector>,
 }
 
 /// Response for config endpoint.
@@ -44,7 +46,40 @@ pub struct AuditQuery {
     pub limit: Option<usize>,
 }
 
-/// Health check endpoint.
+/// Authentication middleware.
+async fn auth_middleware(
+    State(state): State<Arc<AdminState>>,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // Skip auth for static files and health check if needed, 
+    // but here we apply it to specific routes via router composition.
+    // However, if applied globally or to a sub-router:
+    
+    let auth_header = req.headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "));
+
+    match auth_header {
+        Some(token) => {
+            match state.rbac.validate(token).await {
+                Ok(roles) => {
+                     // Check if admin
+                     if roles.is_admin {
+                         Ok(next.run(req).await)
+                     } else {
+                         Err(StatusCode::FORBIDDEN)
+                     }
+                }
+                Err(_) => Err(StatusCode::UNAUTHORIZED),
+            }
+        }
+        None => Err(StatusCode::UNAUTHORIZED),
+    }
+}
+
+/// Health check endpoint (public).
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({"status": "ok"}))
 }
@@ -123,12 +158,17 @@ async fn index_handler() -> impl IntoResponse {
 
 /// Build the admin API router.
 pub fn admin_router(state: Arc<AdminState>) -> Router {
-    Router::new()
-        .route("/", get(index_handler))
-        .route("/health", get(health))
+    let api_routes = Router::new()
         .route("/config", get(get_config))
         .route("/metrics", get(get_metrics))
         .route("/audit", get(get_audit))
-        .route("/*path", get(static_handler))
+        .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+
+    Router::new()
+        .merge(api_routes)
+        .route("/", get(index_handler))
+        .route("/health", get(health)) // Public health check
+        .route("/*path", get(static_handler)) // Static files
         .with_state(state)
 }
+

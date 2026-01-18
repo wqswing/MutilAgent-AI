@@ -24,5 +24,5 @@ pub use tracing_layer::configure_tracing;
 pub use metrics::{setup_metrics_recorder, track_request, track_tokens};
 pub use guardrails::{Guardrail, GuardrailResult, ViolationType, PiiScanner, PromptInjectionDetector, CompositeGuardrail};
 pub use rbac::{RbacConnector, UserRoles, NoOpRbacConnector};
-pub use audit::{AuditStore, AuditEntry, AuditOutcome, AuditFilter, InMemoryAuditStore};
-pub use secrets::{SecretsManager, EncryptedSecret, InMemorySecretsManager};
+pub use audit::{AuditStore, AuditEntry, AuditOutcome, AuditFilter, InMemoryAuditStore, FileAuditStore};
+pub use secrets::{SecretsManager, EncryptedSecret, AesGcmSecretsManager};

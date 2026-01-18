@@ -52,6 +52,10 @@ pub trait AuditStore: Send + Sync {
     async fn query(&self, filter: AuditFilter) -> Result<Vec<AuditEntry>>;
 }
 
+
+use std::fs::OpenOptions;
+use std::io::Write;
+
 /// In-memory audit store for testing.
 pub struct InMemoryAuditStore {
     entries: std::sync::Mutex<Vec<AuditEntry>>,
@@ -95,5 +99,61 @@ impl AuditStore for InMemoryAuditStore {
         }
         
         Ok(result)
+    }
+}
+
+/// Persistent audit store using JSON lines.
+pub struct FileAuditStore {
+    file_path: std::path::PathBuf,
+}
+
+impl FileAuditStore {
+    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
+        Self { file_path: path.into() }
+    }
+}
+
+#[async_trait]
+impl AuditStore for FileAuditStore {
+    async fn log(&self, entry: AuditEntry) -> Result<()> {
+        let path = self.file_path.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|e| multi_agent_core::error::Error::Governance(format!("Audit file error: {}", e)))?;
+            
+            let json = serde_json::to_string(&entry).map_err(|e| multi_agent_core::error::Error::Serialization(e))?;
+            writeln!(file, "{}", json).map_err(|e| multi_agent_core::error::Error::Governance(format!("Audit write error: {}", e)))?;
+            Ok(())
+        }).await.map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+    
+    async fn query(&self, filter: AuditFilter) -> Result<Vec<AuditEntry>> {
+        let path = self.file_path.clone();
+        tokio::task::spawn_blocking(move || {
+            if !path.exists() {
+                return Ok(Vec::new());
+            }
+            
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| multi_agent_core::error::Error::Governance(format!("Audit read error: {}", e)))?;
+                
+            let mut result: Vec<AuditEntry> = content.lines()
+                .filter(|line| !line.trim().is_empty())
+                .filter_map(|line| serde_json::from_str::<AuditEntry>(line).ok())
+                .filter(|e| {
+                    filter.user_id.as_ref().map_or(true, |u| &e.user_id == u)
+                        && filter.action.as_ref().map_or(true, |a| &e.action == a)
+                        && filter.resource.as_ref().map_or(true, |r| &e.resource == r)
+                })
+                .collect();
+                
+            if let Some(limit) = filter.limit {
+                result.truncate(limit);
+            }
+            Ok(result)
+        }).await.map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
     }
 }
