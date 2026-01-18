@@ -77,10 +77,13 @@ pub trait ProviderStore: Send + Sync {
     async fn delete(&self, id: &str) -> Result<bool>;
 }
 
+use serde::{Serialize, Deserialize};
+
 /// Provider entry for external storage.
 /// Mirrors the admin crate's ProviderEntry but without serde skip attributes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderEntry {
+
     pub id: String,
     pub vendor: String,
     pub model_id: String,

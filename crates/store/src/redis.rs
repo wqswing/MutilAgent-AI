@@ -5,10 +5,104 @@ use redis::{Client, AsyncCommands, Script};
 use std::time::Duration;
 
 use multi_agent_core::{
-    traits::{SessionStore, StateStore, DistributedRateLimiter},
+    traits::{SessionStore, StateStore, DistributedRateLimiter, ProviderStore, ProviderEntry},
     types::Session,
     Error, Result,
 };
+
+// =============================================================================
+// Redis Provider Store (for Admin)
+// =============================================================================
+
+/// Redis persistence for providers.
+pub struct RedisProviderStore {
+    client: Client,
+    prefix: String,
+}
+
+impl RedisProviderStore {
+    /// Create a new Redis provider store.
+    pub fn new(url: &str, prefix: &str) -> Result<Self> {
+        let client = Client::open(url)
+            .map_err(|e| Error::storage(format!("Failed to connect to Redis: {}", e)))?;
+        Ok(Self {
+            client,
+            prefix: prefix.to_string(),
+        })
+    }
+}
+
+#[async_trait]
+impl ProviderStore for RedisProviderStore {
+    async fn list(&self) -> Result<Vec<ProviderEntry>> {
+        let mut conn = self.client.get_multiplexed_async_connection().await
+            .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+            
+        // Scan for all provider keys
+        let pattern = format!("{}:*", self.prefix);
+        let keys: Vec<String> = conn.keys(&pattern).await
+            .map_err(|e| Error::storage(format!("Redis keys error: {}", e)))?;
+            
+        let mut providers = Vec::new();
+        for key in keys {
+            let data: Option<String> = conn.get(&key).await
+                .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
+                
+            if let Some(json) = data {
+                if let Ok(provider) = serde_json::from_str::<ProviderEntry>(&json) {
+                    providers.push(provider);
+                }
+            }
+        }
+        
+        Ok(providers)
+    }
+
+    async fn get(&self, id: &str) -> Result<Option<ProviderEntry>> {
+        let mut conn = self.client.get_multiplexed_async_connection().await
+            .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+            
+        let key = format!("{}:{}", self.prefix, id);
+        let data: Option<String> = conn.get(&key).await
+             .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
+
+        match data {
+            Some(json) => {
+                let provider = serde_json::from_str(&json)
+                    .map_err(|e| Error::storage(format!("Failed to deserialize provider: {}", e)))?;
+                Ok(Some(provider))
+            },
+            None => Ok(None),
+        }
+    }
+
+    async fn upsert(&self, provider: &ProviderEntry) -> Result<()> {
+        let mut conn = self.client.get_multiplexed_async_connection().await
+            .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+
+        let key = format!("{}:{}", self.prefix, provider.id);
+        let json = serde_json::to_string(provider)
+            .map_err(|e| Error::storage(format!("Failed to serialize provider: {}", e)))?;
+
+        let _: () = conn.set(&key, json).await
+            .map_err(|e| Error::storage(format!("Redis set error: {}", e)))?;
+
+        Ok(())
+    }
+
+    async fn delete(&self, id: &str) -> Result<bool> {
+        let mut conn = self.client.get_multiplexed_async_connection().await
+            .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+            
+        let key = format!("{}:{}", self.prefix, id);
+        let count: i32 = conn.del(&key).await
+             .map_err(|e| Error::storage(format!("Redis delete error: {}", e)))?;
+             
+        Ok(count > 0)
+    }
+}
+
+
 
 // =============================================================================
 // Redis Session Store (existing implementation)

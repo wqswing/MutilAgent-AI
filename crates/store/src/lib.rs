@@ -21,7 +21,8 @@ use multi_agent_core::{
 };
 
 pub use memory::{InMemoryStore, InMemorySessionStore};
-pub use redis::{RedisSessionStore, RedisStateStore, RedisRateLimiter};
+pub use redis::{RedisSessionStore, RedisStateStore, RedisRateLimiter, RedisProviderStore};
+
 pub use s3::S3ArtifactStore;
 pub use vector::SimpleVectorStore;
 pub use qdrant::{QdrantMemoryStore, QdrantConfig};
