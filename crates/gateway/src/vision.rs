@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{ArtifactStore, LlmClient},
     types::RefId,
     Error, Result,
@@ -141,7 +141,7 @@ pub struct ImageInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mutil_agent_store::InMemoryStore;
+    use multi_agent_store::InMemoryStore;
 
     #[tokio::test]
     async fn test_store_image() {

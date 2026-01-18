@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{ChatMessage, LlmClient, LlmResponse, LlmUsage},
     Error, Result,
 };

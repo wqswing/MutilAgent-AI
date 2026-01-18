@@ -1,4 +1,4 @@
-//! Core type definitions for MutilAgent.
+//! Core type definitions for Multiagent.
 //!
 //! This module contains all the fundamental data structures used across
 //! the multi-agent system.

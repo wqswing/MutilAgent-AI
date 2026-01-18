@@ -3,7 +3,7 @@
 //! Handles the execution of tools and management of observations.
 
 use std::sync::Arc;
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::ToolRegistry,
     types::{Session, HistoryEntry, ToolCallInfo},
     Error, Result,
@@ -85,7 +85,7 @@ impl ToolExecutor {
             if cap.name() == "security_guardrails" {
                 let mut temp_session = Session {
                     id: "security_check".to_string(),
-                    status: mutil_agent_core::types::SessionStatus::Running,
+                    status: multi_agent_core::types::SessionStatus::Running,
                     history: vec![HistoryEntry {
                         role: "user".to_string(),
                         content: Arc::new(serde_json::to_string(args).unwrap_or_default()),

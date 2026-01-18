@@ -13,7 +13,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{Controller, IntentRouter, SemanticCache},
     types::{AgentResult, NormalizedRequest, RequestContent, RequestMetadata, UserIntent},
     Result,
@@ -122,13 +122,13 @@ impl GatewayServer {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
-            .map_err(|e| mutil_agent_core::Error::gateway(format!("Failed to bind: {}", e)))?;
+            .map_err(|e| multi_agent_core::Error::gateway(format!("Failed to bind: {}", e)))?;
 
         tracing::info!(addr = %addr, "Gateway server starting");
 
         axum::serve(listener, self.build_router())
             .await
-            .map_err(|e| mutil_agent_core::Error::gateway(format!("Server error: {}", e)))?;
+            .map_err(|e| multi_agent_core::Error::gateway(format!("Server error: {}", e)))?;
 
         Ok(())
     }
@@ -252,7 +252,7 @@ async fn chat_handler(
     let request = NormalizedRequest {
         trace_id: trace_id.clone(),
         content: payload.message.clone(),
-        original_content: mutil_agent_core::types::RequestContent::Text(payload.message.clone()),
+        original_content: multi_agent_core::types::RequestContent::Text(payload.message.clone()),
         refs: Vec::new(),
         metadata: RequestMetadata {
             user_id: payload.user_id,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use mutil_agent_controller::react::{ReActConfig, ReActController};
-use mutil_agent_core::types::{Session, SessionStatus};
+use multi_agent_controller::react::{ReActConfig, ReActController};
+use multi_agent_core::types::{Session, SessionStatus};
 
 #[tokio::test]
 async fn test_reflection_loop_detection() -> anyhow::Result<()> {
@@ -11,10 +11,10 @@ async fn test_reflection_loop_detection() -> anyhow::Result<()> {
         .with_reflection(3)
         .build();
 
-    use mutil_agent_controller::capability::{AgentCapability, ReflectionCapability};
+    use multi_agent_controller::capability::{AgentCapability, ReflectionCapability};
     use chrono::Utc;
     use uuid::Uuid;
-    use mutil_agent_core::types::{HistoryEntry, ToolCallInfo};
+    use multi_agent_core::types::{HistoryEntry, ToolCallInfo};
 
     let reflection = ReflectionCapability::new(3);
     let mut session = Session {
@@ -24,7 +24,7 @@ async fn test_reflection_loop_detection() -> anyhow::Result<()> {
         updated_at: Utc::now().timestamp(),
         status: SessionStatus::Running,
         token_usage: Default::default(),
-        task_state: Some(mutil_agent_core::types::TaskState {
+        task_state: Some(multi_agent_core::types::TaskState {
             goal: "test goal".to_string(),
             iteration: 0,
             observations: Vec::new(),

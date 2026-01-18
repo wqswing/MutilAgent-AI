@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use mutil_agent_core::{Result, traits::{LlmClient, ChatMessage}};
+use multi_agent_core::{Result, traits::{LlmClient, ChatMessage}};
 
 /// A delegation request from parent to child agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]

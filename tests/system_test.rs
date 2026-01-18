@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use axum::http::StatusCode;
 use async_trait::async_trait;
-use mutil_agent_core::{LlmClient, ToolRegistry, LlmResponse, ChatMessage, LlmUsage};
-use mutil_agent_controller::ReActController;
-use mutil_agent_gateway::{GatewayConfig, GatewayServer, DefaultRouter, InMemorySemanticCache};
-use mutil_agent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
-use mutil_agent_store::InMemorySessionStore;
+use multi_agent_core::{LlmClient, ToolRegistry, LlmResponse, ChatMessage, LlmUsage};
+use multi_agent_controller::ReActController;
+use multi_agent_gateway::{GatewayConfig, GatewayServer, DefaultRouter, InMemorySemanticCache};
+use multi_agent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
+use multi_agent_store::InMemorySessionStore;
 use serde_json::json;
 
 // =============================================================================
@@ -26,7 +26,7 @@ impl ScriptedMockLlm {
 
 #[async_trait]
 impl LlmClient for ScriptedMockLlm {
-    async fn complete(&self, _prompt: &str) -> mutil_agent_core::Result<LlmResponse> {
+    async fn complete(&self, _prompt: &str) -> multi_agent_core::Result<LlmResponse> {
         let mut resps = self.responses.lock().await;
         let content = if !resps.is_empty() {
             resps.remove(0)
@@ -42,11 +42,11 @@ impl LlmClient for ScriptedMockLlm {
         })
     }
 
-    async fn chat(&self, _messages: &[ChatMessage]) -> mutil_agent_core::Result<LlmResponse> {
+    async fn chat(&self, _messages: &[ChatMessage]) -> multi_agent_core::Result<LlmResponse> {
         self.complete("").await
     }
 
-    async fn embed(&self, _text: &str) -> mutil_agent_core::Result<Vec<f32>> {
+    async fn embed(&self, _text: &str) -> multi_agent_core::Result<Vec<f32>> {
         Ok(vec![0.0; 1536])
     }
 }
@@ -57,21 +57,21 @@ impl LlmClient for ScriptedMockLlm {
 
 #[derive(Default)]
 struct MockMemoryStore {
-    entries: Arc<tokio::sync::RwLock<Vec<mutil_agent_core::traits::MemoryEntry>>>,
+    entries: Arc<tokio::sync::RwLock<Vec<multi_agent_core::traits::MemoryEntry>>>,
 }
 
 #[async_trait]
-impl mutil_agent_core::traits::MemoryStore for MockMemoryStore {
-    async fn add(&self, entry: mutil_agent_core::traits::MemoryEntry) -> mutil_agent_core::Result<()> {
+impl multi_agent_core::traits::MemoryStore for MockMemoryStore {
+    async fn add(&self, entry: multi_agent_core::traits::MemoryEntry) -> multi_agent_core::Result<()> {
         self.entries.write().await.push(entry);
         Ok(())
     }
 
-    async fn search(&self, _embedding: &[f32], _limit: usize) -> mutil_agent_core::Result<Vec<mutil_agent_core::traits::MemoryEntry>> {
+    async fn search(&self, _embedding: &[f32], _limit: usize) -> multi_agent_core::Result<Vec<multi_agent_core::traits::MemoryEntry>> {
         Ok(self.entries.read().await.clone())
     }
 
-    async fn delete(&self, _id: &str) -> mutil_agent_core::Result<()> {
+    async fn delete(&self, _id: &str) -> multi_agent_core::Result<()> {
         Ok(())
     }
 }
@@ -117,7 +117,7 @@ async fn test_system_e2e_happy_path() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_system_security_block() -> anyhow::Result<()> {
-    use mutil_agent_governance::{PiiScanner, CompositeGuardrail};
+    use multi_agent_governance::{PiiScanner, CompositeGuardrail};
 
     let llm = Arc::new(ScriptedMockLlm::new(vec![]));
     let guardrail = Arc::new(
@@ -151,10 +151,10 @@ async fn test_system_security_block() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_system_memory_retrieval() -> anyhow::Result<()> {
-    use mutil_agent_core::traits::MemoryStore;
+    use multi_agent_core::traits::MemoryStore;
     let memory_store = Arc::new(MockMemoryStore::default());
     // Seed memory
-    memory_store.add(mutil_agent_core::traits::MemoryEntry {
+    memory_store.add(multi_agent_core::traits::MemoryEntry {
         id: "1".to_string(),
         content: "Important info: The secret key is GOLDEN-EYE.".to_string(),
         embedding: vec![0.0; 1536],

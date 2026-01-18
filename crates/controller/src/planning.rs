@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::LlmClient,
     types::{Session, HistoryEntry},
     Result, Error,

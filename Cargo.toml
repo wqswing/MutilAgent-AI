@@ -13,9 +13,9 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["MutilAgent Team"]
+authors = ["Multiagent Team"]
 license = "MIT"
-repository = "https://github.com/wqswing/MutilAgent-AI"
+repository = "https://github.com/wqswing/Multiagent-AI"
 
 [workspace.dependencies]
 # Async runtime
@@ -84,21 +84,21 @@ async-trait = "0.1"
 
 # Internal crates
 # Internal crates
-mutil_agent_core = { path = "crates/core" }
-mutil_agent_gateway = { path = "crates/gateway" }
-mutil_agent_controller = { path = "crates/controller" }
-mutil_agent_skills = { path = "crates/skills" }
-mutil_agent_store = { path = "crates/store" }
-mutil_agent_governance = { path = "crates/governance" }
-mutil_agent_model_gateway = { path = "crates/model_gateway" }
+multi_agent_core = { path = "crates/core" }
+multi_agent_gateway = { path = "crates/gateway" }
+multi_agent_controller = { path = "crates/controller" }
+multi_agent_skills = { path = "crates/skills" }
+multi_agent_store = { path = "crates/store" }
+multi_agent_governance = { path = "crates/governance" }
+multi_agent_model_gateway = { path = "crates/model_gateway" }
 
 [package]
-name = "mutil_agent"
+name = "multi_agent"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "mutilAgent"
+name = "multiagent"
 path = "src/main.rs"
 
 [dependencies]
@@ -111,13 +111,13 @@ serde_json.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 
-mutil_agent_core.workspace = true
-mutil_agent_gateway.workspace = true
-mutil_agent_controller.workspace = true
-mutil_agent_skills.workspace = true
-mutil_agent_store.workspace = true
-mutil_agent_governance.workspace = true
-mutil_agent_model_gateway.workspace = true
+multi_agent_core.workspace = true
+multi_agent_gateway.workspace = true
+multi_agent_controller.workspace = true
+multi_agent_skills.workspace = true
+multi_agent_store.workspace = true
+multi_agent_governance.workspace = true
+multi_agent_model_gateway.workspace = true
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

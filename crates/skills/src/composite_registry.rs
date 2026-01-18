@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
-use mutil_agent_core::{Result, Error};
-use mutil_agent_core::traits::{Tool, ToolRegistry};
-use mutil_agent_core::types::{ToolDefinition, ToolOutput};
+use multi_agent_core::{Result, Error};
+use multi_agent_core::traits::{Tool, ToolRegistry};
+use multi_agent_core::types::{ToolDefinition, ToolOutput};
 
 /// A registry that aggregates multiple other registries.
 pub struct CompositeToolRegistry {

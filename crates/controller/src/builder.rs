@@ -1,8 +1,8 @@
 //! Builder for ReActController.
 
 use std::sync::Arc;
-use mutil_agent_core::traits::{LlmClient, ToolRegistry, ArtifactStore, SessionStore};
-use mutil_agent_governance::Guardrail;
+use multi_agent_core::traits::{LlmClient, ToolRegistry, ArtifactStore, SessionStore};
+use multi_agent_governance::Guardrail;
 
 use crate::react::{ReActController, ReActConfig};
 use crate::context::{ContextCompressor, CompressionConfig};
@@ -88,7 +88,7 @@ impl ReActBuilder {
     }
 
     /// Set the MCP registry for autonomous server selection (compatibility mode).
-    pub fn with_mcp_registry(mut self, registry: Arc<mutil_agent_skills::McpRegistry>) -> Self {
+    pub fn with_mcp_registry(mut self, registry: Arc<multi_agent_skills::McpRegistry>) -> Self {
         self.capabilities.push(Arc::new(McpCapability::new(registry)));
         self
     }
@@ -108,15 +108,15 @@ impl ReActBuilder {
     /// Set long-term memory for RAG (compatibility mode).
     pub fn with_memory(
         mut self, 
-        store: Arc<dyn mutil_agent_core::traits::MemoryStore>, 
-        llm: Arc<dyn mutil_agent_core::traits::LlmClient>
+        store: Arc<dyn multi_agent_core::traits::MemoryStore>, 
+        llm: Arc<dyn multi_agent_core::traits::LlmClient>
     ) -> Self {
         self.capabilities.push(Arc::new(MemoryCapability::new(store, llm, 5, 0.7)));
         self
     }
 
     /// Set plan-and-solve capability (compatibility mode).
-    pub fn with_planning(mut self, llm: Arc<dyn mutil_agent_core::traits::LlmClient>) -> Self {
+    pub fn with_planning(mut self, llm: Arc<dyn multi_agent_core::traits::LlmClient>) -> Self {
         self.capabilities.push(Arc::new(PlanningCapability::new(llm)));
         self
     }

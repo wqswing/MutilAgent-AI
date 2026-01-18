@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use mutil_agent_core::{Result, traits::{LlmClient, ChatMessage}};
+use multi_agent_core::{Result, traits::{LlmClient, ChatMessage}};
 
 /// Configuration for context compression.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{ChatMessage, LlmClient, LlmResponse, LlmUsage},
     types::ProviderHealth,
     Result, Error,
@@ -288,7 +288,7 @@ impl MockLlmClient {
 impl LlmClient for MockLlmClient {
     async fn complete(&self, prompt: &str) -> Result<LlmResponse> {
         if self.should_fail {
-            return Err(mutil_agent_core::Error::ModelProvider("Mock failure".to_string()));
+            return Err(multi_agent_core::Error::ModelProvider("Mock failure".to_string()));
         }
 
         Ok(LlmResponse {
@@ -305,7 +305,7 @@ impl LlmClient for MockLlmClient {
 
     async fn chat(&self, messages: &[ChatMessage]) -> Result<LlmResponse> {
         if self.should_fail {
-            return Err(mutil_agent_core::Error::ModelProvider("Mock failure".to_string()));
+            return Err(multi_agent_core::Error::ModelProvider("Mock failure".to_string()));
         }
 
         let last_message = messages.last().map(|m| m.content.as_str()).unwrap_or("");
@@ -324,7 +324,7 @@ impl LlmClient for MockLlmClient {
 
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
          if self.should_fail {
-             return Err(mutil_agent_core::Error::ModelProvider("Mock failure".to_string()));
+             return Err(multi_agent_core::Error::ModelProvider("Mock failure".to_string()));
          }
         // Return a simple mock embedding
         let len = 128;

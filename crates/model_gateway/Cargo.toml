@@ -1,10 +1,10 @@
 [package]
-name = "mutil_agent_model_gateway"
+name = "multi_agent_model_gateway"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-mutil_agent_core.workspace = true
+multi_agent_core.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 tracing.workspace = true

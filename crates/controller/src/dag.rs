@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use mutil_agent_core::{Error, Result};
+use multi_agent_core::{Error, Result};
 
 /// A unit of work in the DAG.
 #[async_trait::async_trait]

@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L3 Artifact Store for MutilAgent.
+//! L3 Artifact Store for Multiagent.
 //!
 //! This crate provides tiered storage (Hot/Warm/Cold) for artifacts,
 //! implementing the pass-by-reference pattern to prevent context explosion.
@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use std::sync::Arc;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{ArtifactMetadata, ArtifactStore, StorageTier},
     types::RefId,
     Result,

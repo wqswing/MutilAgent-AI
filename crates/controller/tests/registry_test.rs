@@ -1,8 +1,8 @@
 use std::sync::Arc;
-use mutil_agent_core::traits::{Tool, ToolRegistry};
-use mutil_agent_core::types::ToolOutput;
-use mutil_agent_controller::react::ReActController;
-use mutil_agent_skills::{CompositeToolRegistry, DefaultToolRegistry, McpRegistry};
+use multi_agent_core::traits::{Tool, ToolRegistry};
+use multi_agent_core::types::ToolOutput;
+use multi_agent_controller::react::ReActController;
+use multi_agent_skills::{CompositeToolRegistry, DefaultToolRegistry, McpRegistry};
 use serde_json::json;
 
 // Mock Tool
@@ -12,7 +12,7 @@ impl Tool for MockLocalTool {
     fn name(&self) -> &str { "local_tool" }
     fn description(&self) -> &str { "A local tool" }
     fn parameters(&self) -> serde_json::Value { json!({}) }
-    async fn execute(&self, _args: serde_json::Value) -> mutil_agent_core::Result<ToolOutput> {
+    async fn execute(&self, _args: serde_json::Value) -> multi_agent_core::Result<ToolOutput> {
         Ok(ToolOutput::text("Local tool executed".to_string()))
     }
 }

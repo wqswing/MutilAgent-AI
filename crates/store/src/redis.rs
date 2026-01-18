@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use redis::{Client, AsyncCommands};
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::SessionStore,
     types::Session,
     Error, Result,
@@ -96,7 +96,7 @@ impl SessionStore for RedisSessionStore {
                 
             if let Some(json) = data {
                 if let Ok(session) = serde_json::from_str::<Session>(&json) {
-                    if session.status == mutil_agent_core::types::SessionStatus::Running {
+                    if session.status == multi_agent_core::types::SessionStatus::Running {
                         running_ids.push(session.id);
                     }
                 }

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use std::time::{Duration, Instant};
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::BudgetController,
     types::TokenUsage,
     Error, Result,

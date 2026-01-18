@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mutilagent
+  name: multiagent
   namespace: default
   labels:
-    app: mutilagent
+    app: multiagent
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: mutilagent
+      app: multiagent
   template:
     metadata:
       labels:
-        app: mutilagent
+        app: multiagent
     spec:
       containers:
-        - name: mutilagent
-          image: mutilagent:latest
+        - name: multiagent
+          image: multiagent:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -28,24 +28,24 @@ spec:
             - name: PORT
               value: "3000"
             - name: RUST_LOG
-              value: "info,mutilAgent=debug"
+              value: "info,multiagent=debug"
             # Secrets should be injected via Secret resource in production
             - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
-                  name: mutilagent-secrets
+                  name: multiagent-secrets
                   key: redis-url
                   optional: true
             - name: AWS_S3_BUCKET
               valueFrom:
                 configMapKeyRef:
-                  name: mutilagent-config
+                  name: multiagent-config
                   key: s3-bucket
                   optional: true
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               valueFrom:
                 configMapKeyRef:
-                  name: mutilagent-config
+                  name: multiagent-config
                   key: otel-endpoint
                   optional: true
           resources:
@@ -71,11 +71,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: mutilagent
+  name: multiagent
   namespace: default
 spec:
   selector:
-    app: mutilagent
+    app: multiagent
   ports:
     - protocol: TCP
       port: 80
@@ -85,8 +85,8 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mutilagent-config
+  name: multiagent-config
   namespace: default
 data:
-  s3-bucket: "mutilagent-artifacts"
+  s3-bucket: "multiagent-artifacts"
   otel-endpoint: "http://jaeger-collector:4317"

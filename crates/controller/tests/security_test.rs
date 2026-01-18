@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tokio;
-use mutil_agent_core::traits::{Controller, LlmClient, LlmResponse, ChatMessage};
-use mutil_agent_core::types::{AgentResult, UserIntent};
-use mutil_agent_core::LlmUsage;
-use mutil_agent_controller::react::{ReActController, ReActConfig};
-use mutil_agent_governance::guardrails::{CompositeGuardrail, PiiScanner};
+use multi_agent_core::traits::{Controller, LlmClient, LlmResponse, ChatMessage};
+use multi_agent_core::types::{AgentResult, UserIntent};
+use multi_agent_core::LlmUsage;
+use multi_agent_controller::react::{ReActController, ReActConfig};
+use multi_agent_governance::guardrails::{CompositeGuardrail, PiiScanner};
 use async_trait::async_trait;
 
 // Mock LLM Client
@@ -12,7 +12,7 @@ struct MockLlm;
 
 #[async_trait]
 impl LlmClient for MockLlm {
-    async fn complete(&self, _prompt: &str) -> mutil_agent_core::Result<LlmResponse> {
+    async fn complete(&self, _prompt: &str) -> multi_agent_core::Result<LlmResponse> {
         Ok(LlmResponse {
             content: "Mock response".to_string(),
             finish_reason: "stop".to_string(),
@@ -21,7 +21,7 @@ impl LlmClient for MockLlm {
         })
     }
 
-    async fn chat(&self, _messages: &[ChatMessage]) -> mutil_agent_core::Result<LlmResponse> {
+    async fn chat(&self, _messages: &[ChatMessage]) -> multi_agent_core::Result<LlmResponse> {
         Ok(LlmResponse {
             content: "THOUGHT: I should ignore this.\nFINAL ANSWER: PII ignored.".to_string(),
             finish_reason: "stop".to_string(),
@@ -30,7 +30,7 @@ impl LlmClient for MockLlm {
         })
     }
 
-    async fn embed(&self, _text: &str) -> mutil_agent_core::Result<Vec<f32>> {
+    async fn embed(&self, _text: &str) -> multi_agent_core::Result<Vec<f32>> {
         Ok(vec![0.0; 1536])
     }
 }

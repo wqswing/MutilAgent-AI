@@ -13,7 +13,7 @@ use qdrant_client::qdrant::{
 use qdrant_client::Qdrant;
 use std::collections::HashMap;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{MemoryEntry, MemoryStore},
     Error, Result,
 };
@@ -227,7 +227,7 @@ impl Default for QdrantConfig {
     fn default() -> Self {
         Self {
             url: "http://localhost:6334".to_string(),
-            collection_name: "mutil_agent_memory".to_string(),
+            collection_name: "multi_agent_memory".to_string(),
             vector_size: 1536,
         }
     }

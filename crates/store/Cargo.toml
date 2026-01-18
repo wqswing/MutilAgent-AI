@@ -1,10 +1,10 @@
 [package]
-name = "mutil_agent_store"
+name = "multi_agent_store"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-mutil_agent_core.workspace = true
+multi_agent_core.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 bytes.workspace = true

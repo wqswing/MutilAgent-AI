@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use chrono::Utc;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{MemoryStore, MemoryEntry, LlmClient},
     types::{Session, AgentResult, HistoryEntry},
     Result, Error,

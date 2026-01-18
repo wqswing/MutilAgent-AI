@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 
 use std::sync::Arc;
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{Tool, ToolRegistry},
     types::{ToolDefinition, ToolOutput},
     Error, Result,

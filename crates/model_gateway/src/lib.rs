@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L-M Model Gateway for MutilAgent.
+//! L-M Model Gateway for Multiagent.
 //!
 //! This crate provides:
 //! - Model selection and load balancing

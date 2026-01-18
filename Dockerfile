@@ -13,7 +13,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application
 COPY . .
-RUN cargo build --release --bin mutilAgent
+RUN cargo build --release --bin multiagent
 
 # Runtime stage
 FROM debian:bookworm-slim AS runtime
@@ -24,7 +24,7 @@ RUN apt-get update -y \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/mutilAgent /usr/local/bin/mutilAgent
+COPY --from=builder /app/target/release/multiagent /usr/local/bin/multiagent
 COPY config /app/config
 
 # Configuration via Env Vars
@@ -34,4 +34,4 @@ ENV RUST_LOG=info
 
 EXPOSE 3000
 
-ENTRYPOINT ["/usr/local/bin/mutilAgent"]
+ENTRYPOINT ["/usr/local/bin/multiagent"]

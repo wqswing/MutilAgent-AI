@@ -1,11 +1,11 @@
-//! Error types for MutilAgent.
+//! Error types for Multiagent.
 
 use thiserror::Error;
 
-/// Result type alias using MutilAgent's Error type.
+/// Result type alias using Multiagent's Error type.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Core error type for MutilAgent.
+/// Core error type for Multiagent.
 #[derive(Error, Debug)]
 pub enum Error {
     // =========================================================================

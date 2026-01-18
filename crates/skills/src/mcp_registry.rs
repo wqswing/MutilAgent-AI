@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use mutil_agent_core::{Result, Error};
+use multi_agent_core::{Result, Error};
 use crate::mcp_adapter::{McpToolAdapter, McpTransport};
 
 /// Capability category for MCP servers.
@@ -142,8 +142,8 @@ impl McpServerInfo {
 // v0.3: Registry Unification
 use async_trait::async_trait;
 use serde_json::Value;
-use mutil_agent_core::traits::{Tool, ToolRegistry};
-use mutil_agent_core::types::{ToolDefinition, ToolOutput};
+use multi_agent_core::traits::{Tool, ToolRegistry};
+use multi_agent_core::types::{ToolDefinition, ToolOutput};
 
 #[async_trait]
 impl ToolRegistry for McpRegistry {

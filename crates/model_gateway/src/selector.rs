@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{LlmClient, ModelSelector},
     types::ModelTier,
     Error, Result,

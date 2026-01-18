@@ -1,20 +1,20 @@
-# MutilAgent v0.7 Architecture Overview
+# Multiagent v0.7 Architecture Overview
 
 ## 1. System Overview
 
-MutilAgent follows a strict layered architecture (`L0` to `L4`) to separate concerns between connectivity, orchestration, execution, storage, and governance.
+Multiagent follows a strict layered architecture (`L0` to `L4`) to separate concerns between connectivity, orchestration, execution, storage, and governance.
 
 ### High-Level Layers
 
 | Layer | Name | Responsibility | Key Crates |
 | :--- | :--- | :--- | :--- |
-| **L0** | **Gateway** | Connectivity, Protocol Handling, Initial Routing | `mutil_agent_gateway` |
-| **L1** | **Controller** | Orchestration, Reasoning, Task Management | `mutil_agent_controller` |
-| **L2** | **Skills** | Tools, MCP Integration, Atomic Actions | `mutil_agent_skills` |
-| **L3** | **Store** | Persistence (Sessions, Artifacts, Knowledge) | `mutil_agent_store` |
-| **L4** | **Governance** | Observability, Security, Budgets | `mutil_agent_governance` |
-| **L-M** | **Model Gateway** | LLM Abstraction, Load Balancing | `mutil_agent_model_gateway` |
-| **Core** | **Core** | Shared Types, Traits, Error Handling | `mutil_agent_core` |
+| **L0** | **Gateway** | Connectivity, Protocol Handling, Initial Routing | `multi_agent_gateway` |
+| **L1** | **Controller** | Orchestration, Reasoning, Task Management | `multi_agent_controller` |
+| **L2** | **Skills** | Tools, MCP Integration, Atomic Actions | `multi_agent_skills` |
+| **L3** | **Store** | Persistence (Sessions, Artifacts, Knowledge) | `multi_agent_store` |
+| **L4** | **Governance** | Observability, Security, Budgets | `multi_agent_governance` |
+| **L-M** | **Model Gateway** | LLM Abstraction, Load Balancing | `multi_agent_model_gateway` |
+| **Core** | **Core** | Shared Types, Traits, Error Handling | `multi_agent_core` |
 
 ---
 
@@ -89,7 +89,7 @@ MutilAgent follows a strict layered architecture (`L0` to `L4`) to separate conc
 
 ## 5. Directory Structure
 ```
-MutilAgent/
+Multiagent/
 ├── crates/
 │   ├── core/         # Shared traits/types
 │   ├── controller/   # ReAct loop, Capabilities

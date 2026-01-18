@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::IntentRouter,
     types::{NormalizedRequest, UserIntent}, Result,
 };
@@ -250,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_refs_force_complex() {
-        use mutil_agent_core::types::RefId;
+        use multi_agent_core::types::RefId;
 
         let router = DefaultRouter::new();
 

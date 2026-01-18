@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L2 Skills & Workers for MutilAgent.
+//! L2 Skills & Workers for Multiagent.
 //!
 //! This crate provides:
 //! - Tool registry for managing available tools

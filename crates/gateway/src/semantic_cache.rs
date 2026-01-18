@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{LlmClient, SemanticCache},
     Result,
 };
@@ -220,7 +220,7 @@ impl SemanticCache for InMemorySemanticCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mutil_agent_core::traits::{ChatMessage, LlmResponse};
+    use multi_agent_core::traits::{ChatMessage, LlmResponse};
     
     struct MockLlm;
     #[async_trait]

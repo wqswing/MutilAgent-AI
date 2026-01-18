@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::ArtifactStore,
     types::RefId,
     Error, Result,

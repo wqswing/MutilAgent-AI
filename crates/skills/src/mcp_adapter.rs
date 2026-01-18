@@ -1,6 +1,6 @@
 //! MCP (Model Context Protocol) adapter for connecting to external tool servers.
 //!
-//! This module provides an adapter for the MCP protocol, allowing MutilAgent to
+//! This module provides an adapter for the MCP protocol, allowing Multiagent to
 //! connect to external MCP servers and use their tools as if they were local.
 
 use async_trait::async_trait;
@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     types::{ToolDefinition, ToolOutput},
     Error, Result,
 };
@@ -50,7 +50,7 @@ pub struct McpServerConnection {
 
 /// MCP tool adapter for managing connections to MCP servers.
 ///
-/// This adapter allows MutilAgent to:
+/// This adapter allows Multiagent to:
 /// - Connect to multiple MCP servers
 /// - Discover tools from each server
 /// - Execute tools on remote servers
@@ -334,7 +334,7 @@ pub struct McpToolWrapper {
 }
 
 #[async_trait]
-impl mutil_agent_core::traits::Tool for McpToolWrapper {
+impl multi_agent_core::traits::Tool for McpToolWrapper {
     fn name(&self) -> &str {
         &self.name
     }
@@ -353,7 +353,7 @@ impl mutil_agent_core::traits::Tool for McpToolWrapper {
 }
 
 #[async_trait]
-impl mutil_agent_core::traits::Tool for McpTool {
+impl multi_agent_core::traits::Tool for McpTool {
     fn name(&self) -> &str {
         "mcp"
     }

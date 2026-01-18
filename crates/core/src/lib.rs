@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! Core types, traits, and error definitions for MutilAgent.
+//! Core types, traits, and error definitions for Multiagent.
 //!
 //! This crate provides the foundational building blocks shared across all layers
 //! of the multi-agent system.

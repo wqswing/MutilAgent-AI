@@ -8,7 +8,7 @@
 use async_trait::async_trait;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use mutil_agent_core::Result;
+use multi_agent_core::Result;
 
 /// Result of a guardrail check.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L4 Governance for MutilAgent.
+//! L4 Governance for Multiagent.
 //!
 //! This crate provides:
 //! - Budget control (token limits)

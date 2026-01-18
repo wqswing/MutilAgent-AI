@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use async_trait::async_trait;
-use mutil_agent_core::traits::{LlmClient, LlmResponse, ChatMessage, MemoryStore, MemoryEntry};
-use mutil_agent_core::Result;
-use mutil_agent_controller::memory::MemoryCapability;
-use mutil_agent_controller::capability::AgentCapability;
-use mutil_agent_core::types::{Session, SessionStatus, TaskState, AgentResult};
-use mutil_agent_store::SimpleVectorStore;
+use multi_agent_core::traits::{LlmClient, LlmResponse, ChatMessage, MemoryStore, MemoryEntry};
+use multi_agent_core::Result;
+use multi_agent_controller::memory::MemoryCapability;
+use multi_agent_controller::capability::AgentCapability;
+use multi_agent_core::types::{Session, SessionStatus, TaskState, AgentResult};
+use multi_agent_store::SimpleVectorStore;
 use chrono::Utc;
 use uuid::Uuid;
 

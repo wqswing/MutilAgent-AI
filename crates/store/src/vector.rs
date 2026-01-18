@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{MemoryStore, MemoryEntry},
     Result,
 };

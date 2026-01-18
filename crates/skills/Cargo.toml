@@ -1,11 +1,11 @@
 [package]
-name = "mutil_agent_skills"
+name = "multi_agent_skills"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-mutil_agent_core.workspace = true
-mutil_agent_store.workspace = true
+multi_agent_core.workspace = true
+multi_agent_store.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 futures.workspace = true

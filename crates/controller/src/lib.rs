@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L1 Controller for MutilAgent.
+//! L1 Controller for Multiagent.
 //!
 //! This crate provides the ReAct loop, DAG orchestration, and SOP engine
 //! for executing complex tasks.
@@ -18,7 +18,7 @@ pub mod parser;
 pub mod executor;
 
 pub use persistence::InMemorySessionStore;
-pub use mutil_agent_core::traits::SessionStore;
+pub use multi_agent_core::traits::SessionStore;
 pub use react::{ReActConfig, ReActController, chrono_timestamp};
 pub use parser::{ActionParser, ReActAction};
 pub use builder::ReActBuilder;

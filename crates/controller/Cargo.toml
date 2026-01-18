@@ -1,14 +1,14 @@
 [package]
-name = "mutil_agent_controller"
+name = "multi_agent_controller"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-mutil_agent_core.workspace = true
-mutil_agent_store.workspace = true
-mutil_agent_skills.workspace = true
-mutil_agent_model_gateway.workspace = true
-mutil_agent_governance.workspace = true
+multi_agent_core.workspace = true
+multi_agent_store.workspace = true
+multi_agent_skills.workspace = true
+multi_agent_model_gateway.workspace = true
+multi_agent_governance.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 tracing.workspace = true

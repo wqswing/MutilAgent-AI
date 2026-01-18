@@ -1,25 +1,25 @@
 #![deny(unused)]
-//! MutilAgent - Multi-Agent AI System
+//! Multiagent - Multi-Agent AI System
 //!
 //! A layered, Rust-based multi-agent architecture supporting multi-modal ingestion,
 //! intelligent routing, ReAct-based orchestration, and production-grade resilience.
 
 use std::sync::Arc;
 
-use mutil_agent_core::traits::{ToolRegistry, ArtifactStore, SessionStore};
-use mutil_agent_controller::ReActController;
-use mutil_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
-use mutil_agent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
-use mutil_agent_store::{InMemoryStore, InMemorySessionStore, RedisSessionStore, S3ArtifactStore, TieredStore};
+use multi_agent_core::traits::{ToolRegistry, ArtifactStore, SessionStore};
+use multi_agent_controller::ReActController;
+use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
+use multi_agent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
+use multi_agent_store::{InMemoryStore, InMemorySessionStore, RedisSessionStore, S3ArtifactStore, TieredStore};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     // Initialize tracing
-    mutil_agent_governance::configure_tracing()?;
+    multi_agent_governance::configure_tracing()?;
 
 
-    tracing::info!("Starting MutilAgent v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("Starting Multiagent v{}", env!("CARGO_PKG_VERSION"));
 
     // =========================================================================
     // Initialize L3: Artifact Store
@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize Session Store
     let session_store: Arc<dyn SessionStore> = if let Ok(redis_url) = std::env::var("REDIS_URL") {
         tracing::info!(url = %redis_url, "Initializing Redis Session Store");
-        Arc::new(RedisSessionStore::new(&redis_url, "mutilagent:session", 3600 * 24)?)
+        Arc::new(RedisSessionStore::new(&redis_url, "multiagent:session", 3600 * 24)?)
     } else {
         tracing::info!("Initializing In-Memory Session Store");
         Arc::new(InMemorySessionStore::new())
@@ -77,12 +77,12 @@ async fn main() -> anyhow::Result<()> {
     let router = Arc::new(DefaultRouter::new());
     
     // Initialize LLM Client for embeddings
-    use mutil_agent_core::traits::LlmClient;
-    let llm_client: Arc<dyn LlmClient> = match mutil_agent_model_gateway::create_default_client() {
+    use multi_agent_core::traits::LlmClient;
+    let llm_client: Arc<dyn LlmClient> = match multi_agent_model_gateway::create_default_client() {
         Ok(client) => Arc::new(client),
         Err(e) => {
             tracing::warn!("Failed to create default LLM client: {}. Semantic cache will fallback to exact match.", e);
-            Arc::new(mutil_agent_model_gateway::MockLlmClient::new("dummy"))
+            Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy"))
         }
     };
     
@@ -112,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     println!();
     println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║                     MutilAgent v{}                       ║", env!("CARGO_PKG_VERSION"));
+    println!("║                     Multiagent v{}                       ║", env!("CARGO_PKG_VERSION"));
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║  Multi-Agent AI System - Phase 1 (Core Foundation)           ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // Initialize L4: Observability (Metrics)
     // =========================================================================
-    let metrics_handle = mutil_agent_governance::setup_metrics_recorder()?;
+    let metrics_handle = multi_agent_governance::setup_metrics_recorder()?;
     
     // =========================================================================
     // Start the server

@@ -1,4 +1,4 @@
-//! Core traits for MutilAgent.
+//! Core traits for Multiagent.
 //!
 //! Traits are organized by architectural layer:
 //! - `gateway`: L0 Gateway traits (IntentRouter, SemanticCache)

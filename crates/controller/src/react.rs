@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{ChatMessage, Controller, LlmClient, LlmResponse, ToolRegistry, SessionStore},
     types::{AgentResult, HistoryEntry, Session, SessionStatus, TaskState, TokenUsage, UserIntent, ToolCallInfo},
     Error, Result,

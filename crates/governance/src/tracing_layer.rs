@@ -1,6 +1,6 @@
 //! Distributed tracing configuration.
 
-use mutil_agent_core::{Error, Result};
+use multi_agent_core::{Error, Result};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
@@ -10,7 +10,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 pub fn configure_tracing() -> Result<()> {
     // Basic EnvFilter
     let env_filter = tracing_subscriber::EnvFilter::new(
-        std::env::var("RUST_LOG").unwrap_or_else(|_| "info,mutilAgent=debug".into()),
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "info,multiagent=debug".into()),
     );
 
     // Stdout formatting layer
@@ -35,7 +35,7 @@ pub fn configure_tracing() -> Result<()> {
             .with_trace_config(
                 sdktrace::config().with_resource(Resource::new(vec![KeyValue::new(
                     "service.name",
-                    "mutilAgent-gateway",
+                    "multiagent-gateway",
                 )])),
             )
             .install_batch(runtime::Tokio)

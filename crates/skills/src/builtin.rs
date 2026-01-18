@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{ArtifactStore, Tool},
     types::{RefId, ToolOutput},
     Result,
@@ -93,7 +93,7 @@ impl Tool for ReadArtifactTool {
         let ref_id_str = args
             .get("ref_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| mutil_agent_core::Error::invalid_request("ref_id is required"))?;
+            .ok_or_else(|| multi_agent_core::Error::invalid_request("ref_id is required"))?;
 
         let ref_id = RefId::from_string(ref_id_str);
 
@@ -153,17 +153,17 @@ impl Tool for CalculatorTool {
         let operation = args
             .get("operation")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| mutil_agent_core::Error::invalid_request("operation is required"))?;
+            .ok_or_else(|| multi_agent_core::Error::invalid_request("operation is required"))?;
 
         let a = args
             .get("a")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| mutil_agent_core::Error::invalid_request("a must be a number"))?;
+            .ok_or_else(|| multi_agent_core::Error::invalid_request("a must be a number"))?;
 
         let b = args
             .get("b")
             .and_then(|v| v.as_f64())
-            .ok_or_else(|| mutil_agent_core::Error::invalid_request("b must be a number"))?;
+            .ok_or_else(|| multi_agent_core::Error::invalid_request("b must be a number"))?;
 
         let result = match operation {
             "add" => a + b,
@@ -194,12 +194,12 @@ impl Tool for CalculatorTool {
 
 /// Tool for listing all available tools.
 pub struct ListToolsTool {
-    registry: Arc<dyn mutil_agent_core::traits::ToolRegistry>,
+    registry: Arc<dyn multi_agent_core::traits::ToolRegistry>,
 }
 
 impl ListToolsTool {
     /// Create a new list tools tool.
-    pub fn new(registry: Arc<dyn mutil_agent_core::traits::ToolRegistry>) -> Self {
+    pub fn new(registry: Arc<dyn multi_agent_core::traits::ToolRegistry>) -> Self {
         Self { registry }
     }
 }

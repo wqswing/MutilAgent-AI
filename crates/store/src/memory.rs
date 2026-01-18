@@ -5,7 +5,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use mutil_agent_core::{
+use multi_agent_core::{
     traits::{ArtifactMetadata, ArtifactStore, StorageTier, SessionStore},
     types::{RefId, Session, SessionStatus}, Result,
 };

@@ -4,13 +4,13 @@
 
 use std::sync::Arc;
 
-use mutilAgent_controller::ReActController;
-use mutilAgent_controller::react::ReActConfig;
-use mutilAgent_core::traits::{Controller, IntentRouter, SemanticCache, ToolRegistry};
-use mutilAgent_core::types::{NormalizedRequest, UserIntent};
-use mutilAgent_gateway::{DefaultRouter, InMemorySemanticCache};
-use mutilAgent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
-use mutilAgent_store::InMemoryStore;
+use multiagent_controller::ReActController;
+use multiagent_controller::react::ReActConfig;
+use multiagent_core::traits::{Controller, IntentRouter, SemanticCache, ToolRegistry};
+use multiagent_core::types::{NormalizedRequest, UserIntent};
+use multiagent_gateway::{DefaultRouter, InMemorySemanticCache};
+use multiagent_skills::{DefaultToolRegistry, EchoTool, CalculatorTool};
+use multiagent_store::InMemoryStore;
 
 #[tokio::test]
 async fn test_full_text_pipeline() {
@@ -73,8 +73,8 @@ async fn test_full_text_pipeline() {
 #[tokio::test]
 async fn test_artifact_store_pass_by_reference() {
     use bytes::Bytes;
-    use mutilAgent_core::traits::ArtifactStore;
-    use mutilAgent_store::{maybe_store_by_ref, LARGE_CONTENT_THRESHOLD};
+    use multiagent_core::traits::ArtifactStore;
+    use multiagent_store::{maybe_store_by_ref, LARGE_CONTENT_THRESHOLD};
 
     let store = Arc::new(InMemoryStore::new());
 
@@ -125,7 +125,7 @@ async fn test_controller_fast_path() {
     let result = controller.execute(intent).await.unwrap();
     // Should return mock response since tools not wired up
     match result {
-        mutilAgent_core::types::AgentResult::Text(text) => {
+        multiagent_core::types::AgentResult::Text(text) => {
             assert!(text.contains("Fast path"));
         }
         _ => panic!("Expected Text result"),

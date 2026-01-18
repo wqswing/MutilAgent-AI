@@ -11,8 +11,8 @@
 
 use async_trait::async_trait;
 use std::sync::Arc;
-use mutil_agent_core::{Result, Error};
-use mutil_agent_core::types::{Session, AgentResult, HistoryEntry};
+use multi_agent_core::{Result, Error};
+use multi_agent_core::types::{Session, AgentResult, HistoryEntry};
 use crate::parser::ReActAction;
 use chrono::Utc; // Ensure chrono is available or use via core if re-exported
 
@@ -106,11 +106,11 @@ impl AgentCapability for CompressionCapability {
 
 /// Wrapper for Security Guardrails.
 pub struct SecurityCapability {
-    guardrail: Arc<dyn mutil_agent_governance::Guardrail>,
+    guardrail: Arc<dyn multi_agent_governance::Guardrail>,
 }
 
 impl SecurityCapability {
-    pub fn new(guardrail: Arc<dyn mutil_agent_governance::Guardrail>) -> Self {
+    pub fn new(guardrail: Arc<dyn multi_agent_governance::Guardrail>) -> Self {
         Self { guardrail }
     }
 }
@@ -222,11 +222,11 @@ impl AgentCapability for DelegationCapability {
 
 /// Wrapper for MCP Registry (autonomous selection).
 pub struct McpCapability {
-    registry: Arc<mutil_agent_skills::McpRegistry>,
+    registry: Arc<multi_agent_skills::McpRegistry>,
 }
 
 impl McpCapability {
-    pub fn new(registry: Arc<mutil_agent_skills::McpRegistry>) -> Self {
+    pub fn new(registry: Arc<multi_agent_skills::McpRegistry>) -> Self {
         Self { registry }
     }
 }
