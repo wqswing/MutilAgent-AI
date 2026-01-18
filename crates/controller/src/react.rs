@@ -51,28 +51,8 @@ impl Default for ReActConfig {
     }
 }
 
-/// Parsed action from LLM response.
-#[derive(Debug, Clone)]
-pub enum ReActAction {
-    /// Call a tool with arguments.
-    ToolCall {
-        name: String,
-        args: serde_json::Value,
-    },
-    /// Final answer - task complete.
-    FinalAnswer(String),
-    /// Continue thinking (no action yet).
-    Think(String),
-    /// Delegate to a subagent (v0.2 autonomous capability).
-    Delegate {
-        objective: String,
-        context: String,
-    },
-    /// Select MCP server for a task (v0.2 autonomous capability).
-    McpSelect {
-        task_description: String,
-    },
-}
+// Use the new parser module
+use crate::parser::ReActAction;
 
 /// ReAct controller for executing complex tasks.
 pub struct ReActController {
@@ -192,45 +172,7 @@ Always think before acting. Be concise and focused on the goal."#
 
     /// Parse the LLM response to extract action.
     fn parse_action(&self, response: &str) -> ReActAction {
-        let response_trimmed = response.trim();
-
-        // 1. Check capabilities for custom actions (Delegation, MCP, etc.)
-        for cap in &self.capabilities {
-            if let Some(action) = cap.parse_action(response_trimmed) {
-                return action;
-            }
-        }
-
-        // 2. Check for FINAL ANSWER
-        if let Some(answer) = response_trimmed.strip_prefix("FINAL ANSWER:") {
-            return ReActAction::FinalAnswer(answer.trim().to_string());
-        }
-
-        // 3. Check for ACTION + ARGS pattern (Core Tool Parsing)
-        // This is a simple parser; in production, use regex or more robust parsing
-        let lines: Vec<&str> = response_trimmed.lines().collect();
-        let mut tool_name = None;
-        let mut args_json = None;
-
-        for line in lines {
-            if line.starts_with("ACTION:") {
-                tool_name = Some(line.trim_start_matches("ACTION:").trim().to_string());
-            } else if line.starts_with("ARGS:") {
-                args_json = Some(line.trim_start_matches("ARGS:").trim().to_string());
-            }
-        }
-
-        if let (Some(name), Some(args_str)) = (tool_name, args_json) {
-            match serde_json::from_str::<serde_json::Value>(args_str.as_str()) {
-                Ok(args) => return ReActAction::ToolCall { name, args },
-                Err(_) => {
-                     // If JSON fails, fall through to Think
-                }
-            }
-        }
-
-        // Default: treat as thought
-        ReActAction::Think(response_trimmed.to_string())
+        crate::parser::ActionParser::new(self.capabilities.clone()).parse(response)
     }
 
     /// Execute a single ReAct iteration with LLM.
@@ -574,7 +516,7 @@ impl Controller for ReActController {
 }
 
 /// Get current timestamp.
-fn chrono_timestamp() -> i64 {
+pub fn chrono_timestamp() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

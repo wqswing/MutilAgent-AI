@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use mutil_agent_core::{Result, Error};
 use mutil_agent_core::types::{Session, AgentResult, HistoryEntry};
-use crate::react::ReActAction;
+use crate::parser::ReActAction;
 use chrono::Utc; // Ensure chrono is available or use via core if re-exported
 
 /// A pluggable capability for the agent.

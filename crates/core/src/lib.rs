@@ -9,6 +9,7 @@ pub mod traits;
 pub mod types;
 pub mod template;
 pub mod evidence;
+pub mod mocks;
 
 pub use error::{Error, Result};
 pub use traits::*;

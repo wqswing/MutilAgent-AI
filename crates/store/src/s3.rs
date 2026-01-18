@@ -20,7 +20,9 @@ pub struct S3ArtifactStore {
 impl S3ArtifactStore {
     /// Create a new S3 artifact store.
     pub async fn new(bucket: &str, prefix: &str) -> Self {
-        let config = aws_config::load_from_env().await;
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .load()
+            .await;
         let client = Client::new(&config);
         
         Self {

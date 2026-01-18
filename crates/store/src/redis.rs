@@ -37,7 +37,7 @@ impl RedisSessionStore {
 #[async_trait]
 impl SessionStore for RedisSessionStore {
     async fn load(&self, id: &str) -> Result<Option<Session>> {
-        let mut conn = self.client.get_async_connection().await
+        let mut conn = self.client.get_multiplexed_async_connection().await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
             
         let key = self.key(id);
@@ -55,7 +55,7 @@ impl SessionStore for RedisSessionStore {
     }
 
     async fn save(&self, session: &Session) -> Result<()> {
-        let mut conn = self.client.get_async_connection().await
+        let mut conn = self.client.get_multiplexed_async_connection().await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
 
         let key = self.key(&session.id);
@@ -70,7 +70,7 @@ impl SessionStore for RedisSessionStore {
     }
 
     async fn delete(&self, id: &str) -> Result<()> {
-        let mut conn = self.client.get_async_connection().await
+        let mut conn = self.client.get_multiplexed_async_connection().await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
             
         let key = self.key(id);
@@ -81,7 +81,7 @@ impl SessionStore for RedisSessionStore {
     }
 
     async fn list_running(&self) -> Result<Vec<String>> {
-        let mut conn = self.client.get_async_connection().await
+        let mut conn = self.client.get_multiplexed_async_connection().await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
             
         let pattern = format!("{}*", self.prefix);

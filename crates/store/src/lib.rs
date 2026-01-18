@@ -8,6 +8,7 @@ pub mod memory;
 pub mod redis;
 pub mod s3;
 pub mod vector;
+pub mod qdrant;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -23,6 +24,7 @@ pub use memory::{InMemoryStore, InMemorySessionStore};
 pub use redis::RedisSessionStore;
 pub use s3::S3ArtifactStore;
 pub use vector::SimpleVectorStore;
+pub use qdrant::{QdrantMemoryStore, QdrantConfig};
 
 /// Default threshold in bytes for pass-by-reference.
 /// Content larger than this will be stored in L3 and referenced by ID.

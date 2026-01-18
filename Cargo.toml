@@ -55,9 +55,12 @@ uuid = { version = "1", features = ["v4"] }
 bytes = "1"
 
 # Phase 4: Production Hardening
-redis = { version = "0.24", features = ["tokio-comp"] }
+redis = { version = "0.27", features = ["tokio-comp"] }
 aws-config = "1.1"
 aws-sdk-s3 = "1.14"
+
+# Vector Database
+qdrant-client = "1.12"
 
 # Observability
 metrics = "0.22"
@@ -106,6 +109,7 @@ tracing-subscriber.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
 
 mutil_agent_core.workspace = true
 mutil_agent_gateway.workspace = true
@@ -114,3 +118,7 @@ mutil_agent_skills.workspace = true
 mutil_agent_store.workspace = true
 mutil_agent_governance.workspace = true
 mutil_agent_model_gateway.workspace = true
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { workspace = true, features = ["full", "test-util"] }
