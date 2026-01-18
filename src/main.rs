@@ -128,13 +128,29 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // Initialize L4: Observability (Metrics)
     // =========================================================================
+    // =========================================================================
+    // Initialize L4: Observability (Metrics) & Governance
+    // =========================================================================
     let metrics_handle = multi_agent_governance::setup_metrics_recorder()?;
+    
+    // Initialize Governance Components
+    let audit_store = Arc::new(multi_agent_governance::FileAuditStore::new("audit.log"));
+    // In prod, key should come from Kms/Env. For now, random.
+    let _secrets_manager = Arc::new(multi_agent_governance::AesGcmSecretsManager::new(None)); 
+    let rbac = Arc::new(multi_agent_governance::NoOpRbacConnector);
+    
+    let admin_state = Arc::new(multi_agent_admin::AdminState {
+        audit_store,
+        rbac,
+        metrics: Some(metrics_handle.clone()),
+    });
     
     // =========================================================================
     // Start the server
     // =========================================================================
     server
         .with_metrics(metrics_handle)
+        .with_admin(admin_state)
         .run()
         .await?;
 

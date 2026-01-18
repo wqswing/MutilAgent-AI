@@ -60,6 +60,7 @@ pub struct GatewayServer {
     config: GatewayConfig,
     state: Arc<AppState>,
     metrics_handle: Option<PrometheusHandle>,
+    admin_state: Option<Arc<multi_agent_admin::AdminState>>,
 }
 
 impl GatewayServer {
@@ -77,6 +78,7 @@ impl GatewayServer {
                 controller: None,
             }),
             metrics_handle: None,
+            admin_state: None,
         }
     }
 
@@ -92,6 +94,12 @@ impl GatewayServer {
         self
     }
 
+    /// Set admin state.
+    pub fn with_admin(mut self, state: Arc<multi_agent_admin::AdminState>) -> Self {
+        self.admin_state = Some(state);
+        self
+    }
+
     /// Build the Axum router.
     pub fn build_router(&self) -> Router {
         let mut router = Router::new()
@@ -104,6 +112,10 @@ impl GatewayServer {
         if let Some(handle) = &self.metrics_handle {
             let handle = handle.clone();
             router = router.route("/metrics", get(move || async move { handle.render() }));
+        }
+
+        if let Some(admin_state) = &self.admin_state {
+            router = router.nest("/admin", multi_agent_admin::admin_router(admin_state.clone()));
         }
 
         if self.config.enable_cors {

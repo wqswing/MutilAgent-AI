@@ -96,6 +96,7 @@ multi_agent_skills = { path = "crates/skills" }
 multi_agent_store = { path = "crates/store" }
 multi_agent_governance = { path = "crates/governance" }
 multi_agent_model_gateway = { path = "crates/model_gateway" }
+multi_agent_admin = { path = "crates/admin" }
 
 [package]
 name = "multi_agent"
@@ -123,6 +124,7 @@ multi_agent_skills.workspace = true
 multi_agent_store.workspace = true
 multi_agent_governance.workspace = true
 multi_agent_model_gateway.workspace = true
+multi_agent_admin.workspace = true
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }

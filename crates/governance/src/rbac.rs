@@ -30,11 +30,12 @@ pub struct NoOpRbacConnector;
 
 #[async_trait]
 impl RbacConnector for NoOpRbacConnector {
-    async fn validate(&self, _token: &str) -> Result<UserRoles> {
+    async fn validate(&self, token: &str) -> Result<UserRoles> {
+        let is_admin = token == "admin";
         Ok(UserRoles {
-            user_id: "anonymous".to_string(),
-            roles: vec!["user".to_string()],
-            is_admin: false,
+            user_id: if is_admin { "admin" } else { "anonymous" }.to_string(),
+            roles: if is_admin { vec!["admin".to_string()] } else { vec!["user".to_string()] },
+            is_admin,
         })
     }
     

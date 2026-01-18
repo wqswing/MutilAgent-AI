@@ -16,3 +16,5 @@ utoipa = { version = "4", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "6", features = ["axum"] }
 rust-embed = "8"
 mime_guess = "2"
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true

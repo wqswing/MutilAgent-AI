@@ -29,7 +29,12 @@ struct Asset;
 pub struct AdminState {
     pub audit_store: Arc<dyn AuditStore>,
     pub rbac: Arc<dyn RbacConnector>,
+    pub metrics: Option<metrics_exporter_prometheus::PrometheusHandle>,
 }
+
+// ... existing structs ...
+
+// ... existing structs ...
 
 /// Response for config endpoint.
 #[derive(Serialize)]
@@ -52,9 +57,6 @@ async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // Skip auth for static files and health check if needed, 
-    // but here we apply it to specific routes via router composition.
-    // However, if applied globally or to a sub-router:
     
     let auth_header = req.headers()
         .get(header::AUTHORIZATION)
@@ -96,15 +98,6 @@ async fn get_config() -> impl IntoResponse {
     })
 }
 
-/// Get metrics (placeholder).
-async fn get_metrics() -> impl IntoResponse {
-    Json(serde_json::json!({
-        "requests_total": 0,
-        "tokens_used": 0,
-        "active_sessions": 0
-    }))
-}
-
 /// Query audit logs.
 async fn get_audit(
     State(state): State<Arc<AdminState>>,
@@ -120,6 +113,62 @@ async fn get_audit(
     match state.audit_store.query(filter).await {
         Ok(entries) => Ok(Json(entries)),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// Get metrics.
+async fn get_metrics(
+    State(state): State<Arc<AdminState>>,
+) -> impl IntoResponse {
+    if let Some(handle) = &state.metrics {
+        // Return raw prometheus text for now, or parsed JSON if desired.
+        // For Dashboard compatibility, we need JSON.
+        // We'll parse the text output simply to extract key metrics.
+        let output = handle.render();
+        
+        let mut requests_total = 0;
+        let mut tokens_used = 0;
+        let mut latency_sum = 0.0;
+        let mut latency_count = 0;
+        
+        for line in output.lines() {
+            if line.starts_with("http_requests_total") {
+                if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<u64>().ok()) {
+                    requests_total += val;
+                }
+            } else if line.starts_with("llm_token_usage_total") {
+                 if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<u64>().ok()) {
+                    tokens_used += val;
+                }
+            } else if line.starts_with("http_request_duration_seconds_sum") {
+                if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<f64>().ok()) {
+                    latency_sum += val;
+                }
+            } else if line.starts_with("http_request_duration_seconds_count") {
+                if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<u64>().ok()) {
+                    latency_count += val;
+                }
+            }
+        }
+        
+        let avg_latency = if latency_count > 0 {
+            (latency_sum / latency_count as f64) * 1000.0 // ms
+        } else {
+            0.0
+        };
+
+        Json(serde_json::json!({
+            "requests_total": requests_total,
+            "tokens_used": tokens_used,
+            "active_sessions": 0, // Not tracked yet
+            "avg_latency_ms": avg_latency
+        }))
+    } else {
+         Json(serde_json::json!({
+            "requests_total": 0,
+            "tokens_used": 0,
+            "active_sessions": 0
+        }))
     }
 }
 
