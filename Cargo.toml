@@ -43,6 +43,7 @@ base64 = "0.22"
 # Cryptography
 aes-gcm = "0.10"
 rand = "0.8"
+jsonwebtoken = "9"
 
 # AST parsing for code skeletonization
 syn = { version = "2", features = ["full", "parsing", "visit"] }
