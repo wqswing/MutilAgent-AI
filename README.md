@@ -9,13 +9,21 @@
 
 Multiagent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching, vector memory, and circuit breakers.
 
+## ✨ What's New in v1.2 (Enterprise Evolution)
+
+- **Unified Configuration**: Centralized `AppConfig` with TOML/Env layering and validated defaults across all crates.
+- **Tamper-Evident Audit**: Cryptographically chained audit logs with SHA-256 hashing to ensure data integrity.
+- **Queryable Audit Store**: High-performance SQLite backend for audit trails with structured search and filtering.
+- **Deployment Convergence**: Production-ready Helm charts and Docker Compose profiles for seamless multi-environment rollout.
+- **Security Hardening**: Standardized API namespacing (`/v1/admin`) and enhanced mTLS support for inter-service communication.
+
 ## ✨ What's New in v1.1 (Sovereign & Resilient)
 
-- **System Doctor**: Automated self-diagnosis for API connectivity (OpenAI, Anthropic), storage availability (S3, Redis), and security health.
-- **Sovereign Sandbox**: Docker-based tool execution environment for safe code execution and localized filesystem operations.
-- **Airlock Networking**: Fine-grained network governance for agent tools, including domain allowlisting and automatic rate limiting.
-- **Axum 0.7 Migration**: Fully upgraded web layer with enhanced type safety, standardized error handling, and performance optimizations.
-- **Privacy & Retention**: Automated background pruning of old sessions/artifacts and one-click user data erasure (GDPR ready).
+- **System Doctor**: Automated self-diagnosis for API connectivity, storage availability, and security health.
+- **Sovereign Sandbox**: Docker-based tool execution environment for safe code execution.
+- **Airlock Networking**: Fine-grained network governance for agent tools.
+- **Axum 0.7 Migration**: Fully upgraded web layer with enhanced type safety and performance.
+- **Privacy & Retention**: Automated background pruning of old sessions and one-click data erasure.
 
 ## ✨ What's New in v1.0 (Stateless Architecture)
 
@@ -43,12 +51,13 @@ Multiagent is a production-grade, layered AI agent framework built in Rust. It i
 - **Tiered Storage**: Hybrid storage using In-Memory (fast), Redis (state), and S3 (artifacts)
 - **Circuit Breaker**: Automatic failure detection and isolation for LLM providers
 
-### 👁️ Multi-Modal Support
-- **Vision**: Ingest and process images for visual reasoning
-- **Audio**: Integrated Whisper support for speech-to-text transcription
-- **Sovereign Sandbox**: Secure, isolated environment for executing untrusted tool code (Docker-backed)
+### �️ Governance & Security
+- **Guardrails**: Integrated PII detection, prompt injection mitigation, and custom policy enforcement
+- **Tamper-Evident Auditing**: SHA-256 hash chaining for all administrative actions with SQLite persistence
+- **Budget Control**: Real-time token tracking and usage limits per user/workspace
+- **Sovereign Sandbox**: Secure, isolated environment for executing code tools (Docker-backed)
 - **Airlock**: Multi-layer network governance for tool-triggered outbound requests
-- **MCP Host**: Full support for Model Context Protocol to connect external tools
+- **Secrets Management**: AES-256-GCM encrypted persistence for LLM provider keys
 
 ## 🏗️ Architecture
 
@@ -89,9 +98,10 @@ Multiagent follows a strict 6-layer architecture for separation of concerns and 
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
-│  L4: Governance Layer                                        │
+│  L4: Governance & Audit Layer                                │
 │  ┌─────────────┐ ┌─────────────┐ ┌────────────────┐         │
-│  │ Guardrails  │ │Token Budget │ │ Metrics/Trace  │         │
+│  │ Guardrails  │ │ Audit Store │ │ Metrics/Trace  │         │
+│  │ (PII/Injection)│ (Hash Chained)│ (Prometheus)   │         │
 │  └─────────────┘ └─────────────┘ └────────────────┘         │
 └──────────────────────────┬──────────────────────────────────┘
                            │
@@ -188,6 +198,12 @@ export QDRANT_URL=http://localhost:6334
 
 # Observability
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+
+### Kubernetes (Production)
+```bash
+# Deploy using Helm
+helm install multi-agent ./charts/multi-agent -f values.yaml
+```
 ```
 
 ### Running Locally
@@ -229,6 +245,12 @@ curl http://localhost:3000/metrics
 ### System Doctor (Self-Diagnosis)
 ```bash
 curl -X POST http://localhost:3000/v1/admin/doctor \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+### Query Audit Logs
+```bash
+curl "http://localhost:3000/v1/admin/audit?action=DELETE_PROVIDER" \
   -H "Authorization: Bearer <admin_token>"
 ```
 ```
