@@ -3,9 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { LogViewer } from "./components/LogViewer";
 import { ChatInterface } from "./components/ChatInterface";
+import { SystemHealth } from "./components/SystemHealth";
+
+type View = 'logs' | 'health';
 
 function App() {
   const [appInfo, setAppInfo] = useState<{ version: string, backend_url: string } | null>(null);
+  const [currentView, setCurrentView] = useState<View>('logs');
 
   useEffect(() => {
     invoke("get_app_info").then((info: any) => setAppInfo(info));
@@ -26,8 +30,29 @@ function App() {
       </div>
 
       {/* Main Content / "Fog of War" Dashboard */}
-      <div className="flex-1 flex flex-col p-4 bg-slate-950">
-        <LogViewer />
+      <div className="flex-1 flex flex-col p-4 bg-slate-950 overflow-hidden">
+        <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
+          <button
+            onClick={() => setCurrentView('logs')}
+            className={`px-3 py-1 text-sm rounded ${currentView === 'logs' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            System Logs
+          </button>
+          <button
+            onClick={() => setCurrentView('health')}
+            className={`px-3 py-1 text-sm rounded ${currentView === 'health' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            System Health
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-hidden relative">
+          {currentView === 'logs' ? (
+            <LogViewer />
+          ) : (
+            <SystemHealth />
+          )}
+        </div>
       </div>
     </div>
   );
