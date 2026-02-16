@@ -1,0 +1,47 @@
+[package]
+name = "cratesapp"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "cratesapp_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { workspace = true }
+serde_yaml.workspace = true
+
+# Workspace dependencies
+tokio = { workspace = true, features = ["full"] }
+axum.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+anyhow.workspace = true
+# async-trait.workspace = true # likely not needed directly unless implementing traits
+
+multi_agent_core.workspace = true
+multi_agent_gateway.workspace = true
+multi_agent_controller.workspace = true
+multi_agent_skills.workspace = true
+multi_agent_store.workspace = true
+multi_agent_governance.workspace = true
+multi_agent_ecosystem.workspace = true
+multi_agent_model_gateway.workspace = true
+multi_agent_admin.workspace = true
+multi_agent_sandbox.workspace = true
+

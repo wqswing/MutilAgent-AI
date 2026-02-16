@@ -125,6 +125,10 @@ impl Tool for LocalToolWrapper {
     async fn execute(&self, args: serde_json::Value) -> Result<ToolOutput> {
         self.tool.execute(args).await
     }
+
+    fn risk_level(&self) -> multi_agent_core::types::ToolRiskLevel {
+        self.tool.risk_level()
+    }
 }
 
 /// Create a registry with built-in tools.

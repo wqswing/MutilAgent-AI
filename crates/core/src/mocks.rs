@@ -295,12 +295,17 @@ impl MockRouter {
             goal: goal.to_string(),
             context_summary: String::new(),
             visual_refs: Vec::new(),
+            user_id: None,
         })
     }
 
     /// Create a router that always returns FastAction.
     pub fn fast_action(tool: &str, args: Value) -> Self {
-        Self::new(UserIntent::FastAction { tool_name: tool.to_string(), args })
+        Self::new(UserIntent::FastAction { 
+            tool_name: tool.to_string(), 
+            args,
+            user_id: None,
+        })
     }
 }
 
@@ -341,20 +346,29 @@ impl MockSemanticCache {
 
 #[async_trait]
 impl SemanticCache for MockSemanticCache {
-    async fn get(&self, query: &str) -> Result<Option<String>> {
+    async fn get(&self, workspace_id: &str, session_id: &str, query: &str) -> Result<Option<String>> {
         let cache = self.cache.lock().unwrap();
-        Ok(cache.get(query).cloned())
+        let key = format!("{}:{}:{}", workspace_id, session_id, query);
+        Ok(cache.get(&key).cloned())
     }
 
-    async fn set(&self, query: &str, response: &str) -> Result<()> {
+    async fn set(&self, workspace_id: &str, session_id: &str, query: &str, response: &str) -> Result<()> {
         let mut cache = self.cache.lock().unwrap();
-        cache.insert(query.to_string(), response.to_string());
+        let key = format!("{}:{}:{}", workspace_id, session_id, query);
+        cache.insert(key, response.to_string());
         Ok(())
     }
 
-    async fn invalidate(&self, pattern: &str) -> Result<()> {
+    async fn invalidate(&self, workspace_id: &str, session_id: &str, pattern: &str) -> Result<()> {
         let mut cache = self.cache.lock().unwrap();
-        cache.retain(|k, _| !k.contains(pattern));
+        let prefix = format!("{}:{}:", workspace_id, session_id);
+        cache.retain(|k, _| {
+            if k.starts_with(&prefix) {
+                !k.contains(pattern)
+            } else {
+                true
+            }
+        });
         Ok(())
     }
 }

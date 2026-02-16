@@ -9,6 +9,7 @@ use multi_agent_core::{
     types::RefId,
     Error, Result,
 };
+use crate::retention::{Prunable, Erasable};
 
 /// S3 storage for artifacts.
 pub struct S3ArtifactStore {
@@ -73,6 +74,18 @@ impl ArtifactStore for S3ArtifactStore {
             .map_err(|e| Error::storage(format!("S3 upload error: {}", e)))?;
             
         Ok(id)
+    }
+
+    async fn save_with_id(&self, id: &RefId, data: Bytes) -> Result<()> {
+        let key = self.key(id);
+        self.client.put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .body(ByteStream::from(data))
+            .send()
+            .await
+            .map_err(|e| Error::storage(format!("S3 upload error: {}", e)))?;
+        Ok(())
     }
 
     async fn save_with_type(&self, data: Bytes, content_type: &str) -> Result<RefId> {
@@ -180,5 +193,123 @@ impl ArtifactStore for S3ArtifactStore {
                 }
             }
         }
+    }
+}
+
+#[async_trait]
+impl Prunable for S3ArtifactStore {
+    async fn prune(&self, max_age: std::time::Duration) -> Result<usize> {
+        let mut continuation_token = None;
+        let mut count = 0;
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let cutoff = now_secs - max_age.as_secs() as i64;
+    
+        loop {
+            let output = self.client.list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(&self.prefix)
+                .set_continuation_token(continuation_token)
+                .send()
+                .await
+                .map_err(|e| Error::storage(format!("S3 list error: {}", e)))?;
+    
+            let mut keys_to_delete = Vec::new();
+    
+            for object in output.contents.unwrap_or_default() {
+                if let Some(last_modified) = object.last_modified {
+                    if last_modified.secs() < cutoff {
+                        if let Some(key) = object.key {
+                            // construct ObjectIdentifier for batch delete
+                            keys_to_delete.push(aws_sdk_s3::types::ObjectIdentifier::builder().key(key).build().unwrap());
+                        }
+                    }
+                }
+            }
+    
+            if !keys_to_delete.is_empty() {
+                let len = keys_to_delete.len();
+                let delete = aws_sdk_s3::types::Delete::builder()
+                    .set_objects(Some(keys_to_delete))
+                    .build()
+                    .map_err(|e| Error::storage(format!("Failed to build delete request: {}", e)))?;
+                    
+                 self.client.delete_objects()
+                    .bucket(&self.bucket)
+                    .delete(delete)
+                    .send()
+                    .await
+                    .map_err(|e| Error::storage(format!("S3 delete objects error: {}", e)))?;
+                    
+                 count += len;
+            }
+    
+            if output.is_truncated.unwrap_or(false) {
+                continuation_token = output.next_continuation_token;
+            } else {
+                break;
+            }
+        }
+        
+        Ok(count)
+    }
+}
+
+#[async_trait]
+impl Erasable for S3ArtifactStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        let mut continuation_token = None;
+        let mut count = 0;
+        // Assume namespacing: prefix/user_id/
+        let prefix = if self.prefix.is_empty() {
+             format!("{}/", user_id)
+        } else {
+             format!("{}/{}/", self.prefix, user_id)
+        };
+    
+        loop {
+            let output = self.client.list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(&prefix)
+                .set_continuation_token(continuation_token)
+                .send()
+                .await
+                .map_err(|e| Error::storage(format!("S3 list error: {}", e)))?;
+    
+            let mut keys_to_delete = Vec::new();
+    
+            for object in output.contents.unwrap_or_default() {
+                if let Some(key) = object.key {
+                    keys_to_delete.push(aws_sdk_s3::types::ObjectIdentifier::builder().key(key).build().unwrap());
+                }
+            }
+    
+            if !keys_to_delete.is_empty() {
+                let len = keys_to_delete.len();
+                let delete = aws_sdk_s3::types::Delete::builder()
+                    .set_objects(Some(keys_to_delete))
+                    .build()
+                    .map_err(|e| Error::storage(format!("Failed to build delete request: {}", e)))?;
+                    
+                 self.client.delete_objects()
+                    .bucket(&self.bucket)
+                    .delete(delete)
+                    .send()
+                    .await
+                    .map_err(|e| Error::storage(format!("S3 delete objects error: {}", e)))?;
+                    
+                 count += len;
+            }
+    
+            if output.is_truncated.unwrap_or(false) {
+                continuation_token = output.next_continuation_token;
+            } else {
+                break;
+            }
+        }
+        
+        Ok(count)
     }
 }

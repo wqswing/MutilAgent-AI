@@ -66,6 +66,7 @@ async fn test_multi_instance_session_handoff() -> anyhow::Result<()> {
             goal: "Do a multi-step task".to_string(),
             observations: vec![],
             pending_actions: vec![],
+            consecutive_rejections: 0,
         }),
         token_usage: TokenUsage::default(),
         created_at: chrono_timestamp(),

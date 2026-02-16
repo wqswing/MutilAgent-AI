@@ -9,6 +9,7 @@ use multi_agent_core::{
     traits::{ArtifactMetadata, ArtifactStore, StorageTier, SessionStore},
     types::{RefId, Session, SessionStatus}, Result,
 };
+use crate::retention::{Prunable, Erasable};
 
 /// Stored artifact with metadata.
 #[derive(Debug, Clone)]
@@ -120,9 +121,68 @@ impl SessionStore for InMemorySessionStore {
 }
 
 #[async_trait]
+impl Prunable for InMemorySessionStore {
+    async fn prune(&self, max_age: std::time::Duration) -> Result<usize> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let cutoff = now - max_age.as_secs() as i64;
+        // We use a counter in a cell or just iterate and remove?
+        // DashMap retain closure cannot easily mutate outer state safely if threaded, but here we are in async fn.
+        // Actually dashmap::retain blocks the shard.
+        // To count, we might need to iterate first or just accept that we can't count accurately without locking.
+        // For now, let's iterate and remove to count active deletions (slower but correct return value)
+        // OR better: use retain and just return 0 for now as counting in retain is hard in Rust closures without atomics.
+        // Let's use atomics for counting.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = AtomicUsize::new(0);
+        
+        self.sessions.retain(|_, v| {
+            if v.updated_at < cutoff {
+                count.fetch_add(1, Ordering::Relaxed);
+                false
+            } else {
+                true
+            }
+        });
+        Ok(count.load(Ordering::Relaxed))
+    }
+}
+
+#[async_trait]
+impl Erasable for InMemorySessionStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = AtomicUsize::new(0);
+        
+        // DashMap retain
+        self.sessions.retain(|_, v| {
+            if v.user_id.as_deref() == Some(user_id) {
+                count.fetch_add(1, Ordering::Relaxed);
+                false
+            } else {
+                true
+            }
+        });
+        Ok(count.load(Ordering::Relaxed))
+    }
+}
+
+#[async_trait]
 impl ArtifactStore for InMemoryStore {
     async fn save(&self, data: Bytes) -> Result<RefId> {
         self.save_with_type(data, "application/octet-stream").await
+    }
+
+    async fn save_with_id(&self, id: &RefId, data: Bytes) -> Result<()> {
+        let artifact = StoredArtifact {
+            data,
+            content_type: "application/octet-stream".to_string(),
+            created_at: Self::current_timestamp(),
+        };
+        self.data.insert(id.0.clone(), artifact);
+        Ok(())
     }
 
     async fn save_with_type(&self, data: Bytes, content_type: &str) -> Result<RefId> {
@@ -164,6 +224,46 @@ impl ArtifactStore for InMemoryStore {
             created_at: r.created_at,
             tier: StorageTier::Hot,
         }))
+    }
+}
+
+#[async_trait]
+impl Prunable for InMemoryStore {
+    async fn prune(&self, max_age: std::time::Duration) -> Result<usize> {
+        let now = Self::current_timestamp();
+        let cutoff = now - max_age.as_secs() as i64;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = AtomicUsize::new(0);
+
+        self.data.retain(|_, v| {
+            if v.created_at < cutoff {
+                count.fetch_add(1, Ordering::Relaxed);
+                false
+            } else {
+                true
+            }
+        });
+        Ok(count.load(Ordering::Relaxed))
+    }
+}
+
+#[async_trait]
+impl Erasable for InMemoryStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let count = AtomicUsize::new(0);
+        // Assuming keys are namespaced: "user_id/..."
+        let prefix = format!("{}/", user_id);
+
+        self.data.retain(|k, _| {
+            if k.starts_with(&prefix) {
+                count.fetch_add(1, Ordering::Relaxed);
+                false
+            } else {
+                true
+            }
+        });
+        Ok(count.load(Ordering::Relaxed))
     }
 }
 

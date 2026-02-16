@@ -13,6 +13,9 @@ pub trait ArtifactStore: Send + Sync {
     /// Save data and return a reference ID.
     async fn save(&self, data: Bytes) -> Result<RefId>;
 
+    /// Save data with a specific reference ID.
+    async fn save_with_id(&self, id: &RefId, data: Bytes) -> Result<()>;
+
     /// Save data with a specific content type.
     async fn save_with_type(&self, data: Bytes, content_type: &str) -> Result<RefId>;
 
@@ -78,3 +81,46 @@ pub trait MemoryStore: Send + Sync {
     /// Delete an entry by ID.
     async fn delete(&self, id: &str) -> Result<()>;
 }
+
+// =============================================================================
+// Knowledge Store — Long-Term Summarized Memory
+// =============================================================================
+
+/// A single entry in the knowledge store (summarized from completed tasks).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeEntry {
+    /// Unique ID.
+    pub id: String,
+    /// The summarized knowledge text.
+    pub summary: String,
+    /// The original task/goal that produced this knowledge.
+    pub source_task: String,
+    /// The session ID where the knowledge was generated.
+    pub session_id: String,
+    /// Vector embedding of the summary (for semantic search).
+    pub embedding: Vec<f32>,
+    /// Tags for categorical filtering.
+    pub tags: Vec<String>,
+    /// Unix timestamp of creation.
+    pub created_at: i64,
+}
+
+/// Interface for persistent knowledge storage with semantic search.
+#[async_trait]
+pub trait KnowledgeStore: Send + Sync {
+    /// Store a knowledge entry. Returns the entry ID.
+    async fn store(&self, entry: KnowledgeEntry) -> Result<String>;
+
+    /// Search for relevant knowledge by embedding similarity.
+    async fn search(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<KnowledgeEntry>>;
+
+    /// Search by tags.
+    async fn search_by_tags(&self, tags: &[String], limit: usize) -> Result<Vec<KnowledgeEntry>>;
+
+    /// Delete a knowledge entry.
+    async fn delete(&self, id: &str) -> Result<()>;
+
+    /// Get the total number of knowledge entries.
+    async fn count(&self) -> Result<usize>;
+}
+

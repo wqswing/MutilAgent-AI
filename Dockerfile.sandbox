@@ -1,0 +1,34 @@
+# Sandbox image for Multiagent Sovereign Agent OS.
+#
+# This image is used by DockerSandbox to create isolated execution environments.
+# It runs as a non-root user with minimal privileges.
+#
+# Build: docker build -f Dockerfile.sandbox -t multiagent-sandbox:latest .
+
+FROM alpine:3.19
+
+# Install essential tools (no sudo, no privilege escalation)
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    nodejs \
+    npm \
+    git \
+    curl \
+    bash \
+    coreutils \
+    jq \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN adduser -D -s /bin/bash -h /home/agent agent
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown agent:agent /workspace
+
+# Switch to non-root user
+USER agent
+WORKDIR /workspace
+
+# Default entrypoint (overridden by sandbox engine)
+CMD ["sleep", "infinity"]

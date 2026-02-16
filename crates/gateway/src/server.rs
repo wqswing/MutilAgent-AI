@@ -1,7 +1,7 @@
 //! Axum-based HTTP server for the gateway.
 
 use axum::{
-    extract::{Json, Path, State},
+    extract::{Json, Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -15,9 +15,10 @@ use uuid::Uuid;
 
 use multi_agent_core::{
     traits::{Controller, IntentRouter, SemanticCache},
-    types::{AgentResult, NormalizedRequest, RequestContent, RequestMetadata, UserIntent},
+    types::{AgentResult, ApprovalResponse, NormalizedRequest, RequestContent, RequestMetadata, UserIntent},
     Result,
 };
+use multi_agent_governance::approval::ChannelApprovalGate;
 
 /// Gateway configuration.
 #[derive(Debug, Clone)]
@@ -30,6 +31,8 @@ pub struct GatewayConfig {
     pub enable_cors: bool,
     /// Enable request tracing.
     pub enable_tracing: bool,
+    /// Allowed CORS origins.
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for GatewayConfig {
@@ -39,6 +42,7 @@ impl Default for GatewayConfig {
             port: 3000,
             enable_cors: true,
             enable_tracing: true,
+            allowed_origins: vec!["*".to_string()], // Default to permissive for dev
         }
     }
 }
@@ -53,6 +57,30 @@ pub struct AppState {
     pub controller: Option<Arc<dyn Controller>>,
     /// Optional distributed rate limiter.
     pub rate_limiter: Option<Arc<dyn DistributedRateLimiter>>,
+    /// Approval gate for HITL flow (optional).
+    /// Approval gate for HITL flow (optional).
+    pub approval_gate: Option<Arc<ChannelApprovalGate>>,
+    /// Logs broadcast channel for "Fog of War" UI.
+    pub logs_channel: Option<tokio::sync::broadcast::Sender<String>>,
+    /// Policy engine for rule-based risk assessment.
+    pub policy_engine: Option<Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>>,
+    /// Admin state for configuration persistence.
+    pub admin_state: Option<Arc<multi_agent_admin::AdminState>>,
+    /// Plugin manager for dynamic tool loading.
+    pub plugin_manager: Option<Arc<multi_agent_ecosystem::PluginManager>>,
+}
+
+impl AppState {
+    /// Emit a structured event to the logs channel.
+    pub fn emit_event(&self, envelope: multi_agent_core::events::EventEnvelope) {
+        if let Some(tx) = &self.logs_channel {
+            // Serialize to JSON and broadcast
+            if let Ok(json) = serde_json::to_string(&envelope) {
+                // Ignore send errors (no listeners)
+                let _ = tx.send(json);
+            }
+        }
+    }
 }
 
 use metrics_exporter_prometheus::PrometheusHandle;
@@ -80,16 +108,40 @@ impl GatewayServer {
                 cache,
                 controller: None,
                 rate_limiter: None,
+                approval_gate: None,
+                logs_channel: None,
+                policy_engine: None,
+                admin_state: None,
+                plugin_manager: None,
             }),
             metrics_handle: None,
             admin_state: None,
         }
     }
 
+    /// Set the policy engine.
+    pub fn with_policy_engine(
+        mut self,
+        engine: Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>,
+    ) -> Self {
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.policy_engine = Some(engine);
+        }
+        self
+    }
+
     /// Set the controller.
     pub fn with_controller(mut self, controller: Arc<dyn Controller>) -> Self {
         if let Some(state) = Arc::get_mut(&mut self.state) {
             state.controller = Some(controller);
+        }
+        self
+    }
+
+    /// Set the plugin manager.
+    pub fn with_plugin_manager(mut self, manager: Arc<multi_agent_ecosystem::PluginManager>) -> Self {
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.plugin_manager = Some(manager);
         }
         self
     }
@@ -114,6 +166,22 @@ impl GatewayServer {
         self
     }
 
+    /// Set the approval gate for HITL flow.
+    pub fn with_approval_gate(mut self, gate: Arc<ChannelApprovalGate>) -> Self {
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.approval_gate = Some(gate);
+        }
+        self
+    }
+
+    /// Set the logs broadcast channel.
+    pub fn with_logs_channel(mut self, sender: tokio::sync::broadcast::Sender<String>) -> Self {
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.logs_channel = Some(sender);
+        }
+        self
+    }
+
 
     /// Build the Axum router.
 
@@ -124,6 +192,15 @@ impl GatewayServer {
             .route("/v1/chat", post(chat_handler))
             .route("/v1/intent", post(intent_handler))
             .route("/v1/webhook/{event_type}", post(webhook_handler))
+            .route("/ws/approval", get(approval_ws_handler))
+            .route("/ws/logs", get(logs_ws_handler))
+            .route("/v1/onboarding/status", get(onboarding_status_handler))
+            .route("/v1/onboarding/setup", post(onboarding_setup_handler))
+            .route("/v1/policy", get(get_policy_handler).put(put_policy_handler))
+            .route("/v1/approve/{request_id}", post(approve_rest_handler))
+            .route("/v1/plugins", get(get_plugins_handler))
+            .route("/v1/plugins/{plugin_id}", get(get_plugin_details_handler))
+            .route("/v1/plugins/{plugin_id}/toggle", post(toggle_plugin_handler))
             .with_state(self.state.clone());
 
         if let Some(handle) = &self.metrics_handle {
@@ -132,7 +209,9 @@ impl GatewayServer {
         }
 
         if let Some(admin_state) = &self.admin_state {
-            router = router.nest("/admin", multi_agent_admin::admin_router(admin_state.clone()));
+            let admin_router = multi_agent_admin::admin_router(admin_state.clone())
+                .route_layer(axum::middleware::from_fn(restrict_to_localhost));
+            router = router.nest("/admin", admin_router);
         }
 
         // Apply rate limiting: Distributed (Redis) or Local (Governor)
@@ -160,23 +239,25 @@ impl GatewayServer {
         }
 
         if self.config.enable_cors {
-            // CORS: Check for allowed origins
-            let origins = std::env::var("ALLOWED_ORIGINS").ok();
-            if let Some(ref origins_str) = origins {
-                use axum::http::HeaderValue;
-                let origins: Vec<HeaderValue> = origins_str
-                    .split(',')
-                    .filter_map(|s| s.trim().parse().ok())
-                    .collect();
-                router = router.layer(
-                    CorsLayer::new()
-                        .allow_origin(origins)
-                        .allow_methods(Any)
-                );
-            } else {
-                // Development: Allow any origin (with warning)
-                tracing::warn!("CORS: ALLOWED_ORIGINS not set, allowing all origins");
+            // CORS: Use configured allowed origins
+            if self.config.allowed_origins.iter().any(|o| o == "*") {
+                tracing::warn!("CORS: Wildcard allowed_origins set. Allowing ALL origins.");
                 router = router.layer(CorsLayer::new().allow_origin(Any).allow_methods(Any));
+            } else {
+                use axum::http::HeaderValue;
+                let origins: Vec<HeaderValue> = self.config.allowed_origins.iter()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                
+                if !origins.is_empty() {
+                    router = router.layer(
+                        CorsLayer::new()
+                            .allow_origin(origins)
+                            .allow_methods(Any)
+                    );
+                } else {
+                     tracing::warn!("CORS: Enabled but no valid origins provided. Blocking all.");
+                }
             }
         }
 
@@ -218,6 +299,8 @@ pub struct ChatRequest {
     pub session_id: Option<String>,
     /// Optional user ID.
     pub user_id: Option<String>,
+    /// Optional workspace ID for isolation.
+    pub workspace_id: Option<String>,
 }
 
 /// Chat response.
@@ -281,6 +364,112 @@ async fn health_handler() -> impl IntoResponse {
     })
 }
 
+/// Onboarding status response.
+#[derive(Debug, Serialize)]
+pub struct OnboardingStatus {
+    pub openai_key_set: bool,
+    pub anthropic_key_set: bool,
+    pub onboarding_completed: bool,
+}
+
+/// Onboarding setup request.
+#[derive(Debug, Deserialize)]
+pub struct OnboardingSetup {
+    pub openai_key: Option<String>,
+    pub anthropic_key: Option<String>,
+}
+
+async fn onboarding_status_handler() -> impl IntoResponse {
+    let openai_key_set = std::env::var("OPENAI_API_KEY").is_ok();
+    let anthropic_key_set = std::env::var("ANTHROPIC_API_KEY").is_ok();
+    let onboarding_completed = openai_key_set || anthropic_key_set;
+
+    Json(OnboardingStatus {
+        openai_key_set,
+        anthropic_key_set,
+        onboarding_completed,
+    })
+}
+
+async fn onboarding_setup_handler(
+    State(_state): State<Arc<AppState>>,
+    Json(payload): Json<OnboardingSetup>,
+) -> impl IntoResponse {
+    let mut config = serde_json::json!({});
+    let onboarding_path = ".sovereign_claw/onboarding.json";
+
+    // Load existing config if any
+    if let Ok(content) = std::fs::read_to_string(onboarding_path) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+            config = v;
+        }
+    }
+
+    if let Some(key) = payload.openai_key {
+        std::env::set_var("OPENAI_API_KEY", &key);
+        config["openai_api_key"] = serde_json::Value::String(key);
+    }
+    if let Some(key) = payload.anthropic_key {
+        std::env::set_var("ANTHROPIC_API_KEY", &key);
+        config["anthropic_api_key"] = serde_json::Value::String(key);
+    }
+
+    // Persist to file
+    if let Some(parent) = std::path::Path::new(onboarding_path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(content) = serde_json::to_string_pretty(&config) {
+        if let Err(e) = std::fs::write(onboarding_path, content) {
+            tracing::error!("Failed to write onboarding config: {}", e);
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    StatusCode::OK
+}
+
+async fn get_policy_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    match &state.policy_engine {
+        Some(engine) => {
+            let engine = engine.read().await;
+            (StatusCode::OK, Json(engine.policy.clone())).into_response()
+        },
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Policy engine not configured"})),
+        ).into_response(),
+    }
+}
+
+async fn put_policy_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<multi_agent_governance::PolicyFile>,
+) -> impl IntoResponse {
+    match &state.policy_engine {
+        Some(engine) => {
+            let mut engine = engine.write().await;
+            
+            // Persist to disk
+            let policy_path = ".sovereign_claw/policies/default.yaml";
+            if let Ok(content) = serde_yaml::to_string(&payload) {
+                if let Err(e) = std::fs::write(policy_path, content) {
+                    tracing::error!("Failed to persist policy: {}", e);
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
+
+            engine.policy = payload;
+            StatusCode::OK.into_response()
+        },
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Policy engine not configured"})),
+        ).into_response(),
+    }
+}
+
 /// Chat handler.
 async fn chat_handler(
     State(state): State<Arc<AppState>>,
@@ -294,10 +483,34 @@ async fn chat_handler(
         "Processing chat request"
     );
 
+    // Emit REQUEST_RECEIVED event
+    {
+        use multi_agent_core::events::{EventEnvelope, EventType};
+        let event = EventEnvelope::new(
+            EventType::RequestReceived,
+            serde_json::json!({
+                "message_len": payload.message.len(),
+                "has_session": payload.session_id.is_some(),
+                "has_user": payload.user_id.is_some()
+            })
+        )
+        .with_trace(&trace_id)
+        .with_actor(payload.user_id.as_deref().unwrap_or("anonymous"));
+        
+        if let Some(sid) = &payload.session_id {
+             state.emit_event(event.with_session(sid));
+        } else {
+             state.emit_event(event);
+        }
+    }
+
+    let workspace_id = payload.workspace_id.as_deref().unwrap_or("default");
+    let session_id = payload.session_id.as_deref().unwrap_or("default");
+
     // Check semantic cache first
-    match state.cache.get(&payload.message).await {
+    match state.cache.get(workspace_id, session_id, &payload.message).await {
         Ok(Some(cached_response)) => {
-            tracing::info!(trace_id = %trace_id, "Cache hit");
+            tracing::info!(trace_id = %trace_id, workspace = %workspace_id, session = %session_id, "Cache hit");
             return (
                 StatusCode::OK,
                 Json(ChatResponse {
@@ -327,14 +540,31 @@ async fn chat_handler(
         refs: Vec::new(),
         metadata: RequestMetadata {
             user_id: payload.user_id,
+            workspace_id: payload.workspace_id,
             session_id: payload.session_id,
+            trace_id: Some(trace_id.clone()),
             custom: Default::default(),
         },
     };
 
     // Classify intent
     let intent = match state.router.classify(&request).await {
-        Ok(intent) => intent,
+        Ok(intent) => {
+            // Emit INTENT_RESOLVED
+            {
+                 use multi_agent_core::events::{EventEnvelope, EventType};
+                 let event = EventEnvelope::new(
+                    EventType::IntentResolved,
+                    serde_json::json!({
+                        "intent_type": format!("{:?}", intent),
+                        "router": "default" // Placeholder
+                    })
+                )
+                .with_trace(&trace_id);
+                state.emit_event(event);
+            }
+            intent
+        },
         Err(e) => {
             tracing::error!(trace_id = %trace_id, error = %e, "Failed to classify intent");
             return (
@@ -358,11 +588,14 @@ async fn chat_handler(
 
     // Execute via controller if available
     let result = if let Some(ref controller) = state.controller {
-        match controller.execute(intent.clone()).await {
+        match controller.execute(intent.clone(), trace_id.clone()).await {
             Ok(result) => {
                 // Cache successful text responses
                 if let AgentResult::Text(ref text) = result {
-                    let _ = state.cache.set(&payload.message, text).await;
+                    // Extract IDs again as payload was moved or use references
+                    let w_id = request.metadata.workspace_id.as_deref().unwrap_or("default");
+                    let s_id = request.metadata.session_id.as_deref().unwrap_or("default");
+                    let _ = state.cache.set(w_id, s_id, &request.content, text).await;
                 }
                 Some(result)
             }
@@ -507,6 +740,253 @@ async fn webhook_handler(
     )
 }
 
+// =============================================================================
+// HITL Approval Endpoints
+// =============================================================================
+
+/// WebSocket approval request message (sent to client).
+#[derive(Debug, Serialize)]
+struct WsApprovalRequest {
+    /// Message type.
+    #[serde(rename = "type")]
+    msg_type: String,
+    /// The approval request data.
+    data: multi_agent_core::types::ApprovalRequest,
+}
+
+/// WebSocket approval response message (received from client).
+#[derive(Debug, Deserialize)]
+struct WsApprovalResponse {
+    /// Message type (should be "approval_response").
+    #[serde(rename = "type")]
+    #[allow(dead_code)]
+    msg_type: String,
+    /// Request ID being responded to.
+    request_id: String,
+    /// Decision: "approved", "denied", or "modified".
+    decision: String,
+    /// Reason (for denied or optional for others).
+    reason: Option<String>,
+    /// Reason code (mandatory for auditing).
+    reason_code: Option<String>,
+    /// Modified args (for modified).
+    modified_args: Option<serde_json::Value>,
+}
+
+/// REST approval request body.
+#[derive(Debug, Deserialize)]
+pub struct ApproveRequest {
+    /// Decision: "approved" or "denied".
+    pub decision: String,
+    /// Reason (for denied).
+    pub reason: Option<String>,
+    /// Reason code (e.g., "USER_APPROVED", "USER_DENIED").
+    pub reason_code: Option<String>,
+}
+
+/// REST approval response.
+#[derive(Debug, Serialize)]
+pub struct ApproveResponse {
+    /// Whether the response was accepted.
+    pub accepted: bool,
+    /// Message.
+    pub message: String,
+}
+
+/// WebSocket handler for real-time approval flow.
+///
+/// Clients connect via `ws://host/ws/approval` and receive approval requests
+/// as JSON. They respond with approval/denial decisions.
+async fn approval_ws_handler(
+    State(state): State<Arc<AppState>>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_approval_ws(state, socket))
+}
+
+async fn handle_approval_ws(state: Arc<AppState>, mut socket: WebSocket) {
+    let gate = match &state.approval_gate {
+        Some(gate) => gate.clone(),
+        None => {
+            tracing::warn!("WebSocket approval connection attempted but no approval gate configured");
+            let _ = socket.send(Message::Text(
+                serde_json::json!({"type": "error", "message": "Approval gate not configured"}).to_string().into()
+            )).await;
+            return;
+        }
+    };
+
+    let mut rx = gate.subscribe();
+
+    loop {
+        tokio::select! {
+            // Forward approval requests from broadcast channel to WebSocket
+            result = rx.recv() => {
+                match result {
+                    Ok(req) => {
+                        let msg = WsApprovalRequest {
+                            msg_type: "approval_request".to_string(),
+                            data: req,
+                        };
+                        if let Ok(json) = serde_json::to_string(&msg) {
+                            if socket.send(Message::Text(json)).await.is_err() {
+                                break; // Client disconnected
+                            }
+                        }
+                    }
+                    Err(_) => break, // Broadcast sender dropped
+                }
+            }
+            // Receive approval responses from WebSocket client
+            result = socket.recv() => {
+                match result {
+                    Some(Ok(Message::Text(text))) => {
+                        match serde_json::from_str::<WsApprovalResponse>(&text) {
+                            Ok(resp) => {
+                                let approval_response = match resp.decision.as_str() {
+                                    "approved" => ApprovalResponse::Approved {
+                                        reason: resp.reason.clone(),
+                                        reason_code: resp.reason_code.clone().unwrap_or_else(|| "USER_APPROVED".to_string()),
+                                    },
+                                    "denied" => ApprovalResponse::Denied {
+                                        reason: resp.reason.clone().unwrap_or_else(|| "Denied via WebSocket".into()),
+                                        reason_code: resp.reason_code.clone().unwrap_or_else(|| "USER_DENIED".to_string()),
+                                    },
+                                    "modified" => match resp.modified_args {
+                                        Some(args) => ApprovalResponse::Modified {
+                                            args,
+                                            reason: resp.reason.clone(),
+                                            reason_code: resp.reason_code.clone().unwrap_or_else(|| "USER_MODIFIED".to_string()),
+                                        },
+                                        None => ApprovalResponse::Denied {
+                                            reason: "Modified without args".into(),
+                                            reason_code: "INVALID_RESPONSE".to_string(),
+                                        },
+                                    },
+                                    _ => {
+                                        tracing::warn!("Unknown decision: {}", resp.decision);
+                                        continue;
+                                    }
+                                };
+
+                                if let Err(e) = gate.submit_response(&resp.request_id, approval_response).await {
+                                    tracing::warn!("Failed to submit approval response: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Invalid approval response JSON: {}", e);
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Err(e)) => {
+                        tracing::warn!("WebSocket error: {}", e);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    tracing::info!("Approval WebSocket session ended");
+}
+
+async fn logs_ws_handler(
+    State(state): State<Arc<AppState>>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_logs_ws(state, socket))
+}
+
+async fn handle_logs_ws(state: Arc<AppState>, mut socket: WebSocket) {
+    let mut rx = match &state.logs_channel {
+        Some(tx) => tx.subscribe(),
+        None => {
+            let _ = socket.send(Message::Text(
+                serde_json::json!({"type": "error", "message": "Logs channel not configured"}).to_string()
+            )).await;
+            return;
+        }
+    };
+
+    loop {
+        match rx.recv().await {
+            Ok(log_line) => {
+                if socket.send(Message::Text(log_line)).await.is_err() {
+                    break;
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                // Skip lagged messages
+                continue;
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                break;
+            }
+        }
+    }
+}
+
+/// REST endpoint for submitting approval decisions.
+///
+/// `POST /v1/approve/:request_id`
+async fn approve_rest_handler(
+    State(state): State<Arc<AppState>>,
+    Path(request_id): Path<String>,
+    Json(payload): Json<ApproveRequest>,
+) -> impl IntoResponse {
+    let gate = match &state.approval_gate {
+        Some(gate) => gate.clone(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApproveResponse {
+                    accepted: false,
+                    message: "Approval gate not configured".into(),
+                }),
+            );
+        }
+    };
+
+    let response = match payload.decision.as_str() {
+        "approved" => ApprovalResponse::Approved {
+            reason: payload.reason.clone(),
+            reason_code: payload.reason_code.clone().unwrap_or_else(|| "USER_APPROVED".to_string()),
+        },
+        "denied" => ApprovalResponse::Denied {
+            reason: payload.reason.clone().unwrap_or_else(|| "Denied via REST".into()),
+            reason_code: payload.reason_code.clone().unwrap_or_else(|| "USER_DENIED".to_string()),
+        },
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApproveResponse {
+                    accepted: false,
+                    message: format!("Unknown decision: '{}'. Use 'approved' or 'denied'.", payload.decision),
+                }),
+            );
+        }
+    };
+
+    match gate.submit_response(&request_id, response).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(ApproveResponse {
+                accepted: true,
+                message: format!("Response submitted for request '{}'", request_id),
+            }),
+        ),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(ApproveResponse {
+                accepted: false,
+                message: e,
+            }),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,4 +1033,120 @@ async fn distributed_rate_limit(
     }
     
     next.run(req).await
+}
+
+/// Middleware to restrict access to localhost.
+async fn restrict_to_localhost(
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if addr.ip().is_loopback() {
+        next.run(req).await
+    } else {
+        tracing::warn!(client_ip = %addr.ip(), "Blocked non-localhost access to Admin API");
+        (StatusCode::FORBIDDEN, "Admin API restricted to localhost").into_response()
+    }
+}
+
+// =============================================================================
+// Plugin Management Endpoints
+// =============================================================================
+
+/// List all plugins.
+async fn get_plugins_handler(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if let Some(manager) = &state.plugin_manager {
+        let plugins = manager.list();
+        let response: Vec<serde_json::Value> = plugins.into_iter().map(|(manifest, enabled)| {
+            serde_json::json!({
+                "id": manifest.id,
+                "name": manifest.name,
+                "version": manifest.version,
+                "description": manifest.description,
+                "enabled": enabled,
+                "capabilities": manifest.capabilities,
+            })
+        }).collect();
+        (StatusCode::OK, Json(response)).into_response()
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Plugin manager not configured"})),
+        ).into_response()
+    }
+}
+
+/// Get plugin details.
+async fn get_plugin_details_handler(
+    State(state): State<Arc<AppState>>,
+    Path(plugin_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(manager) = &state.plugin_manager {
+        if let Some(manifest) = manager.get(&plugin_id) {
+            let enabled = manager.is_enabled(&plugin_id);
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "manifest": manifest,
+                    "enabled": enabled,
+                })),
+            ).into_response()
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "Plugin not found"})),
+            ).into_response()
+        }
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Plugin manager not configured"})),
+        ).into_response()
+    }
+}
+
+/// Toggle plugin enabled state.
+#[derive(Debug, Deserialize)]
+pub struct TogglePluginRequest {
+    pub enabled: bool,
+}
+
+async fn toggle_plugin_handler(
+    State(state): State<Arc<AppState>>,
+    Path(plugin_id): Path<String>,
+    Json(payload): Json<TogglePluginRequest>,
+) -> impl IntoResponse {
+    if let Some(manager) = &state.plugin_manager {
+        let result = if payload.enabled {
+            manager.enable(&plugin_id).await
+        } else {
+            manager.disable(&plugin_id).await
+        };
+
+        match result {
+            Ok(_) => {
+                // Return updated state
+                let enabled = manager.is_enabled(&plugin_id);
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "id": plugin_id,
+                        "enabled": enabled,
+                        "message": if enabled { "Plugin enabled" } else { "Plugin disabled" }
+                    })),
+                ).into_response()
+            }
+            Err(e) => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ).into_response(),
+        }
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Plugin manager not configured"})),
+        ).into_response()
+    }
 }

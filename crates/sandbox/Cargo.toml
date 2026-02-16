@@ -1,0 +1,40 @@
+[package]
+name = "multi_agent_sandbox"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Async runtime
+tokio.workspace = true
+
+# Docker SDK for Rust
+bollard = "0.18"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Async traits
+async-trait.workspace = true
+
+# Tracing
+tracing.workspace = true
+
+# UUID for sandbox IDs
+uuid.workspace = true
+
+# Base64 encoding for file transfer
+base64.workspace = true
+
+# Futures (stream processing)
+futures.workspace = true
+
+# Internal crates
+multi_agent_core.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

@@ -5,6 +5,7 @@
 //! intelligent routing, ReAct-based orchestration, and production-grade resilience.
 
 use std::sync::Arc;
+use multi_agent_sandbox::SandboxEngine;
 
 use multi_agent_core::traits::{ToolRegistry, ArtifactStore, SessionStore};
 use multi_agent_controller::ReActController;
@@ -52,6 +53,36 @@ async fn main() -> anyhow::Result<()> {
     // Register built-in tools
     tools.register(Box::new(EchoTool)).await?;
     tools.register(Box::new(CalculatorTool)).await?;
+    
+    // =========================================================================
+    // Initialize Sandbox (Sovereign Execution Plane)
+    // =========================================================================
+    let sandbox_manager = match multi_agent_sandbox::DockerSandbox::new() {
+        Ok(engine) => {
+            let engine = std::sync::Arc::new(engine);
+            if engine.is_available().await {
+                let config = multi_agent_sandbox::SandboxConfig::default();
+                let manager = Arc::new(multi_agent_sandbox::SandboxManager::new(engine, config));
+                
+                // Register sandbox tools
+                tools.register(Box::new(multi_agent_sandbox::SandboxShellTool::new(manager.clone()))).await?;
+                tools.register(Box::new(multi_agent_sandbox::SandboxWriteFileTool::new(manager.clone()))).await?;
+                tools.register(Box::new(multi_agent_sandbox::SandboxReadFileTool::new(manager.clone()))).await?;
+                tools.register(Box::new(multi_agent_sandbox::SandboxListFilesTool::new(manager.clone()))).await?;
+                
+                tracing::info!("🐳 Sovereign Sandbox initialized (Docker available)");
+                Some(manager)
+            } else {
+                tracing::warn!("Docker daemon not reachable — sandbox tools disabled");
+                None
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Docker not available ({}). Sandbox tools disabled.", e);
+            None
+        }
+    };
+    let _sandbox_manager = sandbox_manager; // keep alive
     
     tracing::info!(
         tools_count = tools.len(),

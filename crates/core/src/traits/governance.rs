@@ -36,3 +36,26 @@ pub trait SecurityProxy: Send + Sync {
     /// Validate output before returning to user.
     async fn validate_output(&self, output: &AgentResult) -> Result<()>;
 }
+
+/// Human-in-the-Loop approval gate.
+///
+/// When the agent attempts to execute a high-risk tool, the approval gate
+/// pauses execution and requests human authorization before proceeding.
+#[async_trait]
+pub trait ApprovalGate: Send + Sync {
+    /// Request human approval for a tool execution.
+    ///
+    /// Returns `Approved` to proceed, `Denied(reason)` to block,
+    /// or `Modified(new_args)` to execute with different arguments.
+    async fn request_approval(
+        &self,
+        req: &crate::types::ApprovalRequest,
+    ) -> Result<crate::types::ApprovalResponse>;
+
+    /// Get the minimum risk level that triggers approval.
+    /// Tools at or above this level require human approval.
+    fn threshold(&self) -> crate::types::ToolRiskLevel {
+        crate::types::ToolRiskLevel::High
+    }
+}
+

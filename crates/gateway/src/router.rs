@@ -165,10 +165,12 @@ impl Default for DefaultRouter {
 impl IntentRouter for DefaultRouter {
     async fn classify(&self, request: &NormalizedRequest) -> Result<UserIntent> {
         let content = &request.content;
+        let user_id = request.metadata.user_id.clone();
 
         tracing::debug!(
             trace_id = %request.trace_id,
             content_length = content.len(),
+            user_id = ?user_id,
             "Classifying intent"
         );
 
@@ -182,6 +184,7 @@ impl IntentRouter for DefaultRouter {
                 goal: self.extract_goal(content),
                 context_summary: content.clone(),
                 visual_refs: request.refs.iter().map(|r| r.0.clone()).collect(),
+                user_id,
             });
         }
 
@@ -192,6 +195,7 @@ impl IntentRouter for DefaultRouter {
                 goal: self.extract_goal(content),
                 context_summary: content.clone(),
                 visual_refs: Vec::new(),
+                user_id,
             });
         }
 
@@ -201,6 +205,7 @@ impl IntentRouter for DefaultRouter {
             return Ok(UserIntent::FastAction {
                 tool_name: self.extract_tool_name(content),
                 args: json!({ "query": content }),
+                user_id,
             });
         }
 
@@ -210,6 +215,7 @@ impl IntentRouter for DefaultRouter {
             goal: self.extract_goal(content),
             context_summary: content.clone(),
             visual_refs: Vec::new(),
+            user_id,
         })
     }
 }

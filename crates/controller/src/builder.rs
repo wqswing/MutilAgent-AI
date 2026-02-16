@@ -1,7 +1,7 @@
 //! Builder for ReActController.
 
 use std::sync::Arc;
-use multi_agent_core::traits::{LlmClient, ToolRegistry, ArtifactStore, SessionStore};
+use multi_agent_core::traits::{LlmClient, ToolRegistry, ArtifactStore, SessionStore, ApprovalGate};
 use multi_agent_governance::Guardrail;
 
 use crate::react::{ReActController, ReActConfig};
@@ -22,6 +22,9 @@ pub struct ReActBuilder {
     session_store: Option<Arc<dyn SessionStore>>,
     compression_config: CompressionConfig,
     capabilities: Vec<Arc<dyn AgentCapability>>,
+    approval_gate: Option<Arc<dyn ApprovalGate>>,
+    policy_engine: Option<Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>>,
+    event_emitter: Option<Arc<dyn multi_agent_core::traits::EventEmitter>>,
 }
 
 impl ReActBuilder {
@@ -35,6 +38,9 @@ impl ReActBuilder {
             session_store: None,
             compression_config: CompressionConfig::default(),
             capabilities: Vec::new(),
+            approval_gate: None,
+            policy_engine: None,
+            event_emitter: None,
         }
     }
 
@@ -127,6 +133,24 @@ impl ReActBuilder {
         self
     }
 
+    /// Set the HITL approval gate for high-risk tool execution.
+    pub fn with_approval_gate(mut self, gate: Arc<dyn ApprovalGate>) -> Self {
+        self.approval_gate = Some(gate);
+        self
+    }
+
+    /// Set the event emitter for structured events.
+    pub fn with_event_emitter(mut self, emitter: Arc<dyn multi_agent_core::traits::EventEmitter>) -> Self {
+        self.event_emitter = Some(emitter);
+        self
+    }
+
+    /// Set the Policy Engine for rule-based risk assessment.
+    pub fn with_policy_engine(mut self, engine: Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>) -> Self {
+        self.policy_engine = Some(engine);
+        self
+    }
+
     /// Build the ReActController.
     pub fn build(self) -> ReActController {
         ReActController {
@@ -137,6 +161,9 @@ impl ReActBuilder {
             session_store: self.session_store,
             // compression_config is used to configure capabilities, not stored in Controller
             capabilities: self.capabilities,
+            approval_gate: self.approval_gate,
+            policy_engine: self.policy_engine,
+            event_emitter: self.event_emitter,
         }
     }
 }

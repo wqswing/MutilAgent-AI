@@ -8,6 +8,7 @@ multi_agent_core.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
+futures.workspace = true
 
 # Persistence
 redis.workspace = true

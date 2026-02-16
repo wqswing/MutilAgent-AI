@@ -38,6 +38,7 @@ async fn test_resume_session() -> anyhow::Result<()> {
             goal: "Do something".to_string(),
             observations: vec![],
             pending_actions: vec![],
+            consecutive_rejections: 0,
         }),
         token_usage: TokenUsage::default(),
         created_at: chrono_timestamp(),

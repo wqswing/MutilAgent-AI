@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use multi_agent_governance::{AuditStore, AuditFilter, AuditEntry, RbacConnector};
+use multi_agent_governance::privacy::{PrivacyController, DeletionReport};
 
 /// Embedded static assets for the dashboard.
 #[derive(RustEmbed)]
@@ -30,7 +31,9 @@ struct Asset;
 
 use multi_agent_skills::mcp_registry::{McpRegistry, McpServerInfo};
 use multi_agent_governance::SecretsManager;
-use multi_agent_core::traits::ProviderStore;
+use multi_agent_core::traits::{ProviderStore, ArtifactStore, SessionStore};
+
+pub mod doctor;
 
 // =========================================
 // State & Data Structures
@@ -49,6 +52,12 @@ pub struct AdminState {
     pub provider_store: Option<Arc<dyn ProviderStore>>,
     /// Secrets manager for encrypting sensitive data (API keys).
     pub secrets: Arc<dyn SecretsManager>,
+    /// Privacy controller for GDPR operations.
+    pub privacy_controller: Option<Arc<PrivacyController>>,
+    /// Artifact Store for diagnostics.
+    pub artifact_store: Option<Arc<dyn ArtifactStore>>,
+    /// Session Store for diagnostics.
+    pub session_store: Option<Arc<dyn SessionStore>>,
 }
 
 
@@ -454,6 +463,7 @@ async fn register_mcp(
         capabilities,
         keywords: vec![req.name.clone()],
         connection_uri: req.command,
+        args: vec![],
         transport_type: req.transport_type,
         priority: 50,
         available: true,
@@ -645,6 +655,10 @@ pub fn admin_router(state: Arc<AdminState>) -> Router {
         .route("/providers/:id/test", post(test_provider_by_id))
         // Persistence
         .route("/persistence/test", post(test_s3_connection))
+        // Governance
+        .route("/governance/forget-user", post(forget_user))
+        // Doctor
+        .route("/doctor", post(doctor::check_all))
         // MCP
         .route("/mcp/servers", get(get_mcp_servers))
         .route("/mcp/register", post(register_mcp))

@@ -9,6 +9,10 @@ pub mod redis;
 pub mod s3;
 pub mod vector;
 pub mod qdrant;
+pub mod knowledge;
+pub mod file_provider;
+pub mod isolation;
+pub mod retention;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -26,6 +30,8 @@ pub use redis::{RedisSessionStore, RedisStateStore, RedisRateLimiter, RedisProvi
 pub use s3::S3ArtifactStore;
 pub use vector::SimpleVectorStore;
 pub use qdrant::{QdrantMemoryStore, QdrantConfig};
+pub use knowledge::InMemoryKnowledgeStore;
+pub use file_provider::FileProviderStore;
 
 
 /// Default threshold in bytes for pass-by-reference.
@@ -114,6 +120,17 @@ impl ArtifactStore for TieredStore {
             "Saving artifact to tier"
         );
         self.get_store(tier).save(data).await
+    }
+
+    async fn save_with_id(&self, id: &RefId, data: Bytes) -> Result<()> {
+        let tier = self.select_tier(data.len());
+        tracing::debug!(
+            tier = ?tier,
+            size = data.len(),
+            id = %id,
+            "Saving artifact with ID to tier"
+        );
+        self.get_store(tier).save_with_id(id, data).await
     }
 
     async fn save_with_type(&self, data: Bytes, content_type: &str) -> Result<RefId> {

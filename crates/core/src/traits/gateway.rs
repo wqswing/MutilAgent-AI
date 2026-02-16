@@ -16,11 +16,11 @@ pub trait IntentRouter: Send + Sync {
 pub trait SemanticCache: Send + Sync {
     /// Check if a similar query exists in the cache.
     /// Returns the cached response if similarity > threshold.
-    async fn get(&self, query: &str) -> Result<Option<String>>;
+    async fn get(&self, workspace_id: &str, session_id: &str, query: &str) -> Result<Option<String>>;
 
     /// Store a query-response pair in the cache.
-    async fn set(&self, query: &str, response: &str) -> Result<()>;
+    async fn set(&self, workspace_id: &str, session_id: &str, query: &str, response: &str) -> Result<()>;
 
     /// Invalidate cache entries matching a pattern.
-    async fn invalidate(&self, pattern: &str) -> Result<()>;
+    async fn invalidate(&self, workspace_id: &str, session_id: &str, pattern: &str) -> Result<()>;
 }

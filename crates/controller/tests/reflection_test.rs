@@ -29,6 +29,7 @@ async fn test_reflection_loop_detection() -> anyhow::Result<()> {
             iteration: 0,
             observations: Vec::new(),
             pending_actions: Vec::new(),
+            consecutive_rejections: 0,
         }),
     };
     

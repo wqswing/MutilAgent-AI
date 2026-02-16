@@ -11,6 +11,12 @@ pub struct Session {
     /// Unique session ID.
     pub id: String,
 
+    /// Trace ID for the session/task.
+    pub trace_id: String,
+
+    /// User ID of the session owner (for isolation).
+    pub user_id: Option<String>,
+
     /// Current status.
     pub status: SessionStatus,
 
@@ -84,10 +90,14 @@ pub struct TaskState {
 
     /// Pending actions.
     pub pending_actions: Vec<serde_json::Value>,
+
+    /// Consecutive HITL rejections (for deadlock circuit breaker).
+    #[serde(default)]
+    pub consecutive_rejections: usize,
 }
 
 /// Token usage tracking.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenUsage {
     /// Tokens used for prompts.
     pub prompt_tokens: u64,
@@ -100,6 +110,17 @@ pub struct TokenUsage {
 
     /// Budget limit.
     pub budget_limit: u64,
+}
+
+impl Default for TokenUsage {
+    fn default() -> Self {
+        Self {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            budget_limit: 1_000_000,
+        }
+    }
 }
 
 impl TokenUsage {

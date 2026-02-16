@@ -110,6 +110,11 @@ impl InMemorySemanticCache {
     pub fn cleanup(&self) {
         self.cache.retain(|_: &String, v: &mut CacheEntry| !v.is_expired());
     }
+
+    fn cache_key(&self, workspace_id: &str, session_id: &str, query: &str) -> String {
+        let normalized = self.normalize_query(query);
+        format!("{}:{}:{}", workspace_id, session_id, normalized)
+    }
 }
 
 /// Cache statistics.
@@ -123,14 +128,14 @@ pub struct CacheStats {
 
 #[async_trait]
 impl SemanticCache for InMemorySemanticCache {
-    async fn get(&self, query: &str) -> Result<Option<String>> {
-        let normalized = self.normalize_query(query);
+    async fn get(&self, workspace_id: &str, session_id: &str, query: &str) -> Result<Option<String>> {
+        let key = self.cache_key(workspace_id, session_id, query);
 
         // 1. Exact match (Fast path)
-        if let Some(mut entry) = self.cache.get_mut(&normalized) {
+        if let Some(mut entry) = self.cache.get_mut(&key) {
             if !entry.is_expired() {
                 entry.hit_count += 1;
-                tracing::debug!(query = query, "Semantic cache exact hit");
+                tracing::debug!(workspace = workspace_id, session = session_id, "Semantic cache exact hit");
                 return Ok(Some(entry.response.clone()));
             }
         }
@@ -145,12 +150,13 @@ impl SemanticCache for InMemorySemanticCache {
             }
         };
 
-        // Iterate and find best match
+        // Iterate and find best match - restrict to current workspace/session prefix
+        let prefix = format!("{}:{}:", workspace_id, session_id);
         let mut best_match: Option<String> = None;
         let mut max_similarity = 0.0;
 
         for entry in self.cache.iter() {
-             if entry.is_expired() {
+             if entry.is_expired() || !entry.key().starts_with(&prefix) {
                  continue;
              }
              
@@ -178,8 +184,8 @@ impl SemanticCache for InMemorySemanticCache {
         Ok(None)
     }
 
-    async fn set(&self, query: &str, response: &str) -> Result<()> {
-        let normalized = self.normalize_query(query);
+    async fn set(&self, workspace_id: &str, session_id: &str, query: &str, response: &str) -> Result<()> {
+        let key = self.cache_key(workspace_id, session_id, query);
 
         let query_embedding = match self.llm_client.embed(query).await {
             Ok(emb) => Some(emb),
@@ -198,20 +204,27 @@ impl SemanticCache for InMemorySemanticCache {
         };
 
         tracing::debug!(
-            query = query,
+            workspace = workspace_id,
+            session = session_id,
             response_len = response.len(),
-            has_embedding = entry.query_embedding.is_some(),
             "Caching response"
         );
 
-        self.cache.insert(normalized, entry);
+        self.cache.insert(key, entry);
         Ok(())
     }
 
-    async fn invalidate(&self, pattern: &str) -> Result<()> {
+    async fn invalidate(&self, workspace_id: &str, session_id: &str, pattern: &str) -> Result<()> {
+        let prefix = format!("{}:{}:", workspace_id, session_id);
         let pattern_lower = pattern.to_lowercase();
-        self.cache.retain(|key: &String, _: &mut CacheEntry| !key.contains(&pattern_lower));
-        tracing::debug!(pattern = pattern, "Invalidated cache entries");
+        self.cache.retain(|key: &String, _: &mut CacheEntry| {
+             if key.starts_with(&prefix) {
+                 !key.contains(&pattern_lower)
+             } else {
+                 true
+             }
+        });
+        tracing::debug!(workspace = workspace_id, session = session_id, pattern = pattern, "Invalidated cache entries");
         Ok(())
     }
 }
@@ -238,8 +251,12 @@ mod tests {
         let client = Arc::new(MockLlm);
         let cache = InMemorySemanticCache::new(client);
 
-        cache.set("Rust", "Language").await.unwrap();
-        let hit = cache.get("Rust").await.unwrap();
+        cache.set("w1", "s1", "Rust", "Language").await.unwrap();
+        let hit = cache.get("w1", "s1", "Rust").await.unwrap();
         assert_eq!(hit, Some("Language".to_string()));
+        
+        // Different workspace should miss
+        let miss = cache.get("w2", "s1", "Rust").await.unwrap();
+        assert_eq!(miss, None);
     }
 }

@@ -54,6 +54,7 @@ async fn test_memory_context_injection() -> Result<()> {
             iteration: 0,
             observations: Vec::new(),
             pending_actions: Vec::new(),
+            consecutive_rejections: 0,
         }),
     };
 
@@ -88,7 +89,7 @@ async fn test_memory_archival() -> Result<()> {
             goal: "Fix the bug".to_string(), // This is cached in on_start
             iteration: 0,
             observations: Vec::new(),
-            pending_actions: Vec::new(),
+            pending_actions: Vec::new(), consecutive_rejections: 0,
         }),
     };
 

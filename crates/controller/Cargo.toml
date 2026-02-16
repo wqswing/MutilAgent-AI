@@ -22,3 +22,4 @@ chrono = "0.4.43"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
+multi_agent_sandbox.workspace = true

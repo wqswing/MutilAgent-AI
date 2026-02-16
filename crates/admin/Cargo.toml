@@ -25,6 +25,7 @@ aws-sdk-s3 = "1"
 aws-config = "1"
 uuid = { version = "1.10", features = ["v4", "serde"] }
 tracing.workspace = true
+bollard = "0.18"
 
 
 

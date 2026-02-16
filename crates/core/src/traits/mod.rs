@@ -16,6 +16,7 @@ pub mod store;
 pub mod governance;
 pub mod llm;
 pub mod state_store;
+pub mod events;
 
 // Re-export all traits for backward compatibility
 pub use gateway::*;
@@ -25,4 +26,5 @@ pub use store::*;
 pub use governance::*;
 pub use llm::*;
 pub use state_store::*;
+pub use events::*;
 

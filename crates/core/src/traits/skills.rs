@@ -19,6 +19,12 @@ pub trait Tool: Send + Sync {
 
     /// Execute the tool with the given arguments.
     async fn execute(&self, args: Value) -> Result<ToolOutput>;
+
+    /// Get the risk level of this tool for HITL approval gating.
+    /// Override this for tools that modify state or execute code.
+    fn risk_level(&self) -> crate::types::ToolRiskLevel {
+        crate::types::ToolRiskLevel::Low
+    }
 }
 
 /// Tool registry for managing available tools.
@@ -35,6 +41,15 @@ pub trait ToolRegistry: Send + Sync {
 
     /// Execute a tool by name with arguments.
     async fn execute(&self, name: &str, args: Value) -> Result<ToolOutput>;
+
+    /// Get the risk level of a tool by name.
+    /// Returns `Low` if the tool is not found.
+    async fn get_risk_level(&self, name: &str) -> crate::types::ToolRiskLevel {
+        match self.get(name).await {
+            Ok(Some(tool)) => tool.risk_level(),
+            _ => crate::types::ToolRiskLevel::Low,
+        }
+    }
 }
 
 /// MCP (Model Context Protocol) adapter.

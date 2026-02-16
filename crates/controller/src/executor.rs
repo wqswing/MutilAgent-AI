@@ -85,6 +85,7 @@ impl ToolExecutor {
             if cap.name() == "security_guardrails" {
                 let mut temp_session = Session {
                     id: "security_check".to_string(),
+                    trace_id: "security_check".to_string(),
                     status: multi_agent_core::types::SessionStatus::Running,
                     history: vec![HistoryEntry {
                         role: "user".to_string(),

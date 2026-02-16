@@ -16,6 +16,7 @@ pub mod planning;
 pub mod builder;
 pub mod parser;
 pub mod executor;
+pub mod summarization;
 
 pub use persistence::InMemorySessionStore;
 pub use multi_agent_core::traits::SessionStore;
@@ -28,3 +29,4 @@ pub use capability::{
 };
 pub use memory::MemoryCapability;
 pub use planning::PlanningCapability;
+pub use summarization::SummarizationCapability;

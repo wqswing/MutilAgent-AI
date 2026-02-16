@@ -63,8 +63,14 @@ pub struct RequestMetadata {
     /// User identifier.
     pub user_id: Option<String>,
 
+    /// Workspace identifier for multi-tenancy isolation.
+    pub workspace_id: Option<String>,
+
     /// Session identifier for stateful conversations.
     pub session_id: Option<String>,
+
+    /// Trace identifier for distributed tracing.
+    pub trace_id: Option<String>,
 
     /// Custom key-value metadata.
     pub custom: std::collections::HashMap<String, String>,

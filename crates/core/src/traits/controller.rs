@@ -9,10 +9,10 @@ use crate::types::AgentResult;
 #[async_trait]
 pub trait Controller: Send + Sync {
     /// Execute a complex mission through the ReAct loop.
-    async fn execute(&self, intent: crate::types::UserIntent) -> Result<AgentResult>;
+    async fn execute(&self, intent: crate::types::UserIntent, trace_id: String) -> Result<AgentResult>;
 
     /// Resume a previously interrupted task.
-    async fn resume(&self, session_id: &str) -> Result<AgentResult>;
+    async fn resume(&self, session_id: &str, user_id: Option<&str>) -> Result<AgentResult>;
 
     /// Cancel a running task.
     async fn cancel(&self, session_id: &str) -> Result<()>;

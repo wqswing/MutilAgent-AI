@@ -59,6 +59,7 @@ async fn test_planning_generation() -> Result<()> {
             iteration: 0,
             observations: Vec::new(),
             pending_actions: Vec::new(),
+            consecutive_rejections: 0,
         }),
     };
 

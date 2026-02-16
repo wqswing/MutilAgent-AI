@@ -14,3 +14,4 @@ uuid.workspace = true
 anyhow.workspace = true
 tera = "1.19"
 sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }

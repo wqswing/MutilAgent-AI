@@ -9,6 +9,7 @@ use multi_agent_core::{
     types::Session,
     Error, Result,
 };
+use crate::retention::{Prunable, Erasable};
 
 // =============================================================================
 // Redis Provider Store (for Admin)
@@ -18,6 +19,7 @@ use multi_agent_core::{
 pub struct RedisProviderStore {
     client: Client,
     prefix: String,
+    strict_mode: bool,
 }
 
 impl RedisProviderStore {
@@ -28,21 +30,38 @@ impl RedisProviderStore {
         Ok(Self {
             client,
             prefix: prefix.to_string(),
+            strict_mode: false,
         })
+    }
+
+    /// Enable or disable strict mode (disables expensive operations like SCAN).
+    pub fn with_strict_mode(mut self, enabled: bool) -> Self {
+        self.strict_mode = enabled;
+        self
     }
 }
 
 #[async_trait]
 impl ProviderStore for RedisProviderStore {
     async fn list(&self) -> Result<Vec<ProviderEntry>> {
+        if self.strict_mode {
+             return Err(Error::SecurityViolation("Expensive SCAN operations are disabled in strict mode".into()));
+        }
         let mut conn = self.client.get_multiplexed_async_connection().await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
             
-        // Scan for all provider keys
+        // SCAN for all provider keys (safe for production)
+        use futures::StreamExt;
         let pattern = format!("{}:*", self.prefix);
-        let keys: Vec<String> = conn.keys(&pattern).await
-            .map_err(|e| Error::storage(format!("Redis keys error: {}", e)))?;
+        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+            .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
             
+        let mut keys = Vec::new();
+        while let Some(key) = keys_iter.next().await {
+            keys.push(key);
+        }
+        drop(keys_iter);
+        
         let mut providers = Vec::new();
         for key in keys {
             let data: Option<String> = conn.get(&key).await
@@ -113,6 +132,7 @@ pub struct RedisSessionStore {
     client: Client,
     prefix: String,
     ttl_seconds: usize,
+    strict_mode: bool,
 }
 
 impl RedisSessionStore {
@@ -125,7 +145,14 @@ impl RedisSessionStore {
             client,
             prefix: prefix.to_string(),
             ttl_seconds,
+            strict_mode: false,
         })
+    }
+
+    /// Enable or disable strict mode.
+    pub fn with_strict_mode(mut self, enabled: bool) -> Self {
+        self.strict_mode = enabled;
+        self
     }
 
     fn key(&self, id: &str) -> String {
@@ -180,12 +207,23 @@ impl SessionStore for RedisSessionStore {
     }
 
     async fn list_running(&self) -> Result<Vec<String>> {
+        if self.strict_mode {
+             return Err(Error::SecurityViolation("Expensive SCAN operations are disabled in strict mode".into()));
+        }
         let mut conn = self.client.get_multiplexed_async_connection().await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
             
+        // SCAN for all session keys (safe for production)
+        use futures::StreamExt;
         let pattern = format!("{}*", self.prefix);
-        let keys: Vec<String> = conn.keys(&pattern).await
-            .map_err(|e| Error::storage(format!("Redis keys error: {}", e)))?;
+        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+            .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
+            
+        let mut keys = Vec::new();
+        while let Some(key) = keys_iter.next().await {
+            keys.push(key);
+        }
+        drop(keys_iter);
             
         let mut running_ids = Vec::new();
         for key in keys {
@@ -202,6 +240,100 @@ impl SessionStore for RedisSessionStore {
         }
         
         Ok(running_ids)
+    }
+}
+
+#[async_trait]
+impl Prunable for RedisSessionStore {
+    async fn prune(&self, max_age: Duration) -> Result<usize> {
+        if self.strict_mode {
+             // To avoid accidental DoS in prod, we don't prune via SCAN strict mode.
+             // We rely on native TTL.
+             return Ok(0);
+        }
+
+        let mut conn = self.client.get_multiplexed_async_connection().await
+             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+
+        use futures::StreamExt;
+        let pattern = format!("{}*", self.prefix);
+        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+            .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
+
+        let mut keys = Vec::new();
+        while let Some(key) = keys_iter.next().await {
+            keys.push(key);
+        }
+        drop(keys_iter);
+        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let cutoff = now - max_age.as_secs() as i64;
+        let mut deleted_count = 0;
+
+        for key in keys {
+            // We optimized by only fetching if we need to check content.
+            // But here we need to check updated_at inside the JSON.
+            // Alternatively, we could check IDLETIME but that's access time, not update time.
+            let data: Option<String> = conn.get(&key).await
+                .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
+
+            if let Some(json) = data {
+                if let Ok(session) = serde_json::from_str::<Session>(&json) {
+                    if session.updated_at < cutoff {
+                        let _: () = conn.del(&key).await
+                             .map_err(|e| Error::storage(format!("Redis del error: {}", e)))?;
+                        deleted_count += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(deleted_count)
+    }
+}
+
+#[async_trait]
+impl Erasable for RedisSessionStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        if self.strict_mode {
+             return Err(Error::SecurityViolation("Expensive SCAN operations are disabled in strict mode".into()));
+        }
+
+        let mut conn = self.client.get_multiplexed_async_connection().await
+             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+
+        use futures::StreamExt;
+        let pattern = format!("{}*", self.prefix);
+        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+            .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
+
+        let mut keys = Vec::new();
+        while let Some(key) = keys_iter.next().await {
+            keys.push(key);
+        }
+        drop(keys_iter);
+        
+        let mut deleted_count = 0;
+
+        for key in keys {
+            let data: Option<String> = conn.get(&key).await
+                .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
+
+            if let Some(json) = data {
+                if let Ok(session) = serde_json::from_str::<Session>(&json) {
+                    if session.user_id.as_deref() == Some(user_id) {
+                        let _: () = conn.del(&key).await
+                             .map_err(|e| Error::storage(format!("Redis del error: {}", e)))?;
+                        deleted_count += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(deleted_count)
     }
 }
 

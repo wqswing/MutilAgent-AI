@@ -1,0 +1,516 @@
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_core-3csfgmrpjpadq/s-hftqjcmmv7-0xxbruj-working`
+
+warning: `multi_agent_core` (lib) generated 1 warning
+   Compiling tungstenite v0.24.0
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_governance-1s2vks0idu4kw/s-hftqje97hd-1hfqp0l-working`
+
+warning: `multi_agent_governance` (lib) generated 1 warning
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_model_gateway-3ck4xx8xpmw61/s-hftqje8ec2-13cf0dh-working`
+
+warning: `multi_agent_model_gateway` (lib) generated 1 warning
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_sandbox-0372fitu49l53/s-hftqje90op-14e4i6c-working`
+
+warning: `multi_agent_sandbox` (lib) generated 1 warning
+   Compiling multi_agent_sandbox v0.1.0 (/Volumes/扩展池/MutilAgent/crates/sandbox)
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_sandbox-3jo0kkktiac91/s-hftqjfob6s-1gutrxp-working`
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_model_gateway-22aykon2q68x2/s-hftqjfo8da-1l2b0mo-working`
+
+warning: `multi_agent_sandbox` (lib test) generated 1 warning
+warning: `multi_agent_model_gateway` (lib test) generated 1 warning
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/rbac_audit_test-1x1sqg5hqecq1/s-hftqjvne2z-064j5z9-working`
+
+warning: unused import: `UserRoles`
+ --> crates/governance/tests/rbac_audit_test.rs:5:39
+  |
+5 |     NoOpRbacConnector, RbacConnector, UserRoles,
+  |                                       ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_governance-20e3bp0iswvd9/s-hftqjfoik9-08eo0hg-working`
+
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `/Volumes/扩展池/MutilAgent/target/debug/incremental/multi_agent_core-01mvcl6ay9qdz/s-hftqjcnl6k-1uyfc7m-working`
+
+warning: `multi_agent_governance` (test "rbac_audit_test") generated 2 warnings (run `cargo fix --test "rbac_audit_test" -p multi_agent_governance` to apply 1 suggestion)
+warning: `multi_agent_governance` (lib test) generated 1 warning
+warning: `multi_agent_core` (lib test) generated 1 warning
+   Compiling tokio-tungstenite v0.24.0
+   Compiling axum v0.7.9
+   Compiling tonic v0.12.3
+   Compiling utoipa-swagger-ui v6.0.0
+   Compiling axum-extra v0.9.6
+   Compiling tower_governor v0.4.3
+   Compiling qdrant-client v1.16.0
+   Compiling multi_agent_store v0.1.0 (/Volumes/扩展池/MutilAgent/crates/store)
+   Compiling multi_agent_skills v0.1.0 (/Volumes/扩展池/MutilAgent/crates/skills)
+   Compiling multi_agent_controller v0.1.0 (/Volumes/扩展池/MutilAgent/crates/controller)
+   Compiling multi_agent_admin v0.1.0 (/Volumes/扩展池/MutilAgent/crates/admin)
+   Compiling multi_agent_gateway v0.1.0 (/Volumes/扩展池/MutilAgent/crates/gateway)
+warning: unused import: `ReActConfig`
+ --> crates/controller/tests/resume_test.rs:2:47
+  |
+2 | use multi_agent_controller::{ReActController, ReActConfig, InMemorySessionStore, SessionStore};
+  |                                               ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AgentResult`
+ --> crates/controller/tests/security_test.rs:4:31
+  |
+4 | use multi_agent_core::types::{AgentResult, UserIntent};
+  |                               ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `ModifyGate` is never constructed
+  --> crates/controller/tests/hitl_integration_test.rs:72:8
+   |
+72 | struct ModifyGate;
+   |        ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `multi_agent_controller` (test "security_test") generated 1 warning (run `cargo fix --test "security_test" -p multi_agent_controller` to apply 1 suggestion)
+warning: `multi_agent_controller` (test "resume_test") generated 1 warning (run `cargo fix --test "resume_test" -p multi_agent_controller` to apply 1 suggestion)
+warning: unused variable: `controller`
+  --> crates/controller/tests/registry_test.rs:42:9
+   |
+42 |     let controller = ReActController::builder()
+   |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_controller`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `multi_agent_controller` (test "hitl_integration_test") generated 1 warning
+warning: `multi_agent_controller` (test "registry_test") generated 1 warning (run `cargo fix --test "registry_test" -p multi_agent_controller` to apply 1 suggestion)
+   Compiling multi_agent v0.1.0 (/Volumes/扩展池/MutilAgent)
+warning: unused import: `ReActConfig`
+ --> tests/multi_instance_test.rs:3:47
+  |
+3 | use multi_agent_controller::{ReActController, ReActConfig};
+  |                                               ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `UserIntent`
+ --> tests/multi_instance_test.rs:5:92
+  |
+5 | use multi_agent_core::types::{Session, SessionStatus, TokenUsage, TaskState, HistoryEntry, UserIntent};
+  |                                                                                            ^^^^^^^^^^
+
+warning: use of deprecated method `redis::Client::get_async_connection`: aio::Connection is deprecated. Use client::get_multiplexed_async_connection instead.
+  --> tests/multi_instance_test.rs:17:18
+   |
+17 |     match client.get_async_connection().await {
+   |                  ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `controller_a`
+  --> tests/multi_instance_test.rs:41:9
+   |
+41 |     let controller_a = ReActController::builder()
+   |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_controller_a`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `LlmClient` and `MockSessionStore`
+ --> tests/algorithm_test.rs:2:28
+  |
+2 |     traits::{IntentRouter, LlmClient, Tool, ToolRegistry, SessionStore, Controller},
+  |                            ^^^^^^^^^
+3 |     types::{NormalizedRequest, UserIntent, AgentResult, ToolOutput, RefId},
+4 |     mocks::{MockLlm, MockToolRegistry, MockSessionStore},
+  |                                        ^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ToolRegistry`
+ --> tests/algorithm_test.rs:2:45
+  |
+2 |     traits::{IntentRouter, LlmClient, Tool, ToolRegistry, SessionStore, Controller},
+  |                                             ^^^^^^^^^^^^
+
+warning: unused import: `AesGcmSecretsManager`
+ --> crates/gateway/tests/integration_v0_8.rs:9:46
+  |
+9 | use multi_agent_governance::{FileAuditStore, AesGcmSecretsManager, NoOpRbacConnector, setup_metrics_recorder};
+  |                                              ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `multi_agent` (test "algorithm_test") generated 2 warnings (run `cargo fix --test "algorithm_test" -p multi_agent` to apply 1 suggestion)
+warning: `multi_agent` (test "multi_instance_test") generated 4 warnings (run `cargo fix --test "multi_instance_test" -p multi_agent` to apply 3 suggestions)
+warning: `multi_agent_gateway` (test "integration_v0_8") generated 1 warning (run `cargo fix --test "integration_v0_8" -p multi_agent_gateway` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 33s
+     Running unittests src/main.rs (target/debug/deps/multiagent-86aef12743db8eda)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/algorithm_test.rs (target/debug/deps/algorithm_test-4fa4af67ca0076a1)
+
+running 5 tests
+test test_routing_visual_override ... ok
+test test_react_persistence_trigger ... ok
+test test_react_max_iterations ... ok
+test test_routing_precision ... ok
+test test_react_perfect_execution ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/governance_test.rs (target/debug/deps/governance_test-75706d79225abe12)
+
+running 2 tests
+test test_budget_exceeded ... ok
+test test_deadlock_breaker ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/multi_instance_test.rs (target/debug/deps/multi_instance_test-a368f4d531676bce)
+
+running 2 tests
+test test_distributed_rate_limit_persistence ... ok
+test test_multi_instance_session_handoff ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/system_test.rs (target/debug/deps/system_test-2648d24cd8515ba5)
+
+running 5 tests
+test test_system_memory_retrieval ... ok
+test test_system_health_check ... ok
+test test_system_e2e_happy_path ... ok
+test test_system_semantic_cache ... ok
+test test_system_security_block ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_admin-bdf18cf1e32ae487)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/admin_test.rs (target/debug/deps/admin_test-602a6bbaa4fd1889)
+
+running 1 test
+test test_admin_provider_crud_with_encryption ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_controller-8ad7be7e719df341)
+
+running 20 tests
+test delegation::tests::test_delegation_result ... ok
+test delegation::tests::test_delegation_request_builder ... ok
+test context::tests::test_needs_compression ... ok
+test parser::tests::test_parse_final_answer ... ok
+test parser::tests::test_parse_think ... ok
+test parser::tests::test_parse_text_tool_call ... ok
+test parser::tests::test_parse_json_function_call ... ok
+test react::tests::test_parse_final_answer ... ok
+test react::tests::test_parse_thought ... ok
+test react::tests::test_parse_tool_call ... ok
+test react::tests::test_fast_action ... ok
+test context::tests::test_truncation_compressor ... ok
+test persistence::tests::test_save_and_load ... ok
+test react::tests::test_complex_mission_mock ... ok
+test persistence::tests::test_list_running ... ok
+test summarization::tests::test_extract_tags ... ok
+test summarization::tests::test_simple_embedding ... ok
+test summarization::tests::test_knowledge_retrieval_on_start ... ok
+test summarization::tests::test_summarization_on_finish ... ok
+test sop::tests::test_yaml_parsing ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hitl_integration_test.rs (target/debug/deps/hitl_integration_test-7278250e98e3b687)
+
+running 4 tests
+test test_approve_gate_allows_execution ... ok
+test test_deny_gate_triggers_deadlock_breaker ... ok
+test test_channel_gate_async_approve ... ok
+test test_channel_gate_timeout_auto_deny ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/knowledge_integration_test.rs (target/debug/deps/knowledge_integration_test-a85eb4622bd8bd67)
+
+running 4 tests
+test test_empty_knowledge_store_no_injection ... ok
+test test_knowledge_searchable_by_tags ... ok
+test test_knowledge_stored_after_task_completion ... ok
+test test_knowledge_injected_into_new_session ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/memory_test.rs (target/debug/deps/memory_test-e7d2d9d1ab6842a8)
+
+running 2 tests
+test test_memory_context_injection ... ok
+test test_memory_archival ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/planning_test.rs (target/debug/deps/planning_test-29f6503d7c318dfc)
+
+running 1 test
+test test_planning_generation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/reflection_test.rs (target/debug/deps/reflection_test-9e5c7ddca058fd3b)
+
+running 1 test
+test test_reflection_loop_detection ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/registry_test.rs (target/debug/deps/registry_test-68ba747c9e44a3bd)
+
+running 1 test
+test test_unified_registry_routing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/resume_test.rs (target/debug/deps/resume_test-d7a55ad4e8cef388)
+
+running 1 test
+test test_resume_session ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/security_test.rs (target/debug/deps/security_test-d7c1515092a33159)
+
+running 1 test
+test test_security_pii_violation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_core-a629315ab522272c)
+
+running 7 tests
+test evidence::tests::test_evidence_verify_failure ... ok
+test evidence::tests::test_evidence_verify_success ... ok
+test evidence::tests::test_evidence_seal ... ok
+test evidence::tests::test_evidence_metadata ... ok
+test evidence::tests::test_evidence_tool_response ... ok
+test template::tests::test_hydrate_simple_template ... ok
+test template::tests::test_hydrate_with_sop ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_gateway-c40caabc4e30c0a1)
+
+running 8 tests
+test audio::tests::test_audio_format_detection ... ok
+test audio::tests::test_audio_format_mime_type ... ok
+test router::tests::test_complex_mission_classification ... ok
+test router::tests::test_fast_action_classification ... ok
+test router::tests::test_refs_force_complex ... ok
+test semantic_cache::tests::test_exact_match ... ok
+test server::tests::test_health_handler ... ok
+test vision::tests::test_store_image ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/gateway_test.rs (target/debug/deps/gateway_test-721cd61015c2f6df)
+
+running 3 tests
+test test_health_endpoint ... ok
+test test_intent_endpoint ... ok
+test test_chat_endpoint_with_controller ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/integration_v0_8.rs (target/debug/deps/integration_v0_8-06bf3b09b392d3c2)
+
+running 1 test
+test test_v0_8_features_integration ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests/rate_limit_test.rs (target/debug/deps/rate_limit_test-a4c95aec2f853a5d)
+
+running 1 test
+test test_rate_limiting ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_governance-4481be5949b49f04)
+
+running 15 tests
+test budget::tests::test_budget_exceeded ... ok
+test budget::tests::test_release ... ok
+test approval::tests::test_auto_approve_gate ... ok
+test budget::tests::test_reserve_and_record ... ok
+test security::tests::test_content_too_large ... ok
+test security::tests::test_blocked_tool ... ok
+test security::tests::test_blocked_pattern ... ok
+test security::tests::test_validate_request ... ok
+test guardrails::tests::test_injection_detector ... ok
+test guardrails::tests::test_pii_scanner_clean ... ok
+test guardrails::tests::test_pii_scanner_email ... ok
+test guardrails::tests::test_composite_guardrail ... ok
+test approval::tests::test_channel_gate_denial ... ok
+test approval::tests::test_channel_gate_submit_response ... ok
+test approval::tests::test_channel_gate_timeout ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests/rbac_audit_test.rs (target/debug/deps/rbac_audit_test-79d8d20382162e22)
+
+running 3 tests
+test test_rbac_noop_connector_allows_all ... ok
+test test_audit_store_log_and_query ... ok
+test test_audit_outcome_serialization ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_model_gateway-0b553de6f47825e2)
+
+running 13 tests
+test pricing::tests::test_session_cost_tracker ... ok
+test pricing::tests::test_model_pricing ... ok
+test rig_client::tests::test_build_prompt ... ok
+test providers::tests::test_provider_status ... ok
+test pricing::tests::test_cheapest_with_quality ... ok
+test pricing::tests::test_pricing_registry ... ok
+test rig_client::tests::test_config_builder ... ok
+test providers::tests::test_provider_registry ... ok
+test providers::tests::test_mock_client_failure ... ok
+test selector::tests::test_selector_no_providers ... ok
+test providers::tests::test_mock_client ... ok
+test selector::tests::test_report_failure ... ok
+test providers::tests::test_circuit_breaker ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_sandbox-bbc6f6beee4619da)
+
+running 11 tests
+test engine::tests::test_exec_result_success ... ok
+test engine::tests::test_sandbox_config_defaults ... ok
+test engine::tests::test_mock_sandbox_file_not_found ... ok
+test tools::tests::test_shell_tool_timeout ... ok
+test tools::tests::test_sandbox_manager_lazy_creation ... ok
+test tools::tests::test_read_file_path_traversal ... ok
+test engine::tests::test_mock_sandbox_lifecycle ... ok
+test tools::tests::test_write_and_read_file ... ok
+test tools::tests::test_shell_tool_success ... ok
+test tools::tests::test_shell_tool_failure ... ok
+test tools::tests::test_write_file_path_traversal ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/sandbox_integration_test.rs (target/debug/deps/sandbox_integration_test-61e045794eebfe6d)
+
+running 5 tests
+test test_risk_levels ... ok
+test test_shell_exec_success ... ok
+test test_sandbox_lifecycle ... ok
+test test_shell_exec_timeout ... ok
+test test_write_then_read_file_pipeline ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_skills-6991911628345ef9)
+
+running 17 tests
+test code_simplifier::tests::test_simplify_enum ... ok
+test code_simplifier::tests::test_simplify_struct ... ok
+test code_simplifier::tests::test_simplify_trait ... ok
+test builtin::tests::test_calculator_divide_by_zero ... ok
+test mcp_adapter::tests::test_call_tool ... ok
+test mcp_adapter::tests::test_connect_and_list ... ok
+test code_simplifier::tests::test_simplify_function ... ok
+test builtin::tests::test_calculator_add ... ok
+test builtin::tests::test_echo_tool ... ok
+test mcp_adapter::tests::test_is_mcp_tool ... ok
+test mcp_registry::tests::test_keyword_matching ... ok
+test code_simplifier::tests::test_simplify_impl ... ok
+test mcp_registry::tests::test_register_and_find ... ok
+test registry::tests::test_execute_not_found ... ok
+test registry::tests::test_execute ... ok
+test registry::tests::test_register_and_list ... ok
+test mcp_registry::tests::test_select_for_task ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/multi_agent_store-a8856711d1319822)
+
+running 12 tests
+test knowledge::tests::test_delete ... ok
+test knowledge::tests::test_tag_search ... ok
+test knowledge::tests::test_upsert ... ok
+test knowledge::tests::test_store_and_count ... ok
+test knowledge::tests::test_semantic_search ... ok
+test memory::tests::test_not_found ... ok
+test memory::tests::test_delete ... ok
+test memory::tests::test_save_with_type ... ok
+test memory::tests::test_save_and_load ... ok
+test memory::tests::test_memory_usage ... ok
+test tests::test_tiered_store ... ok
+test vector::tests::test_vector_search ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_admin
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_controller
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_core
+
+running 1 test
+test crates/core/src/template.rs - template::hydrate_template (line 72) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_gateway
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_governance
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_model_gateway
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_sandbox
+
+running 1 test
+test crates/sandbox/src/lib.rs - (line 29) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_skills
+
+running 1 test
+test crates/skills/src/mcp_adapter.rs - mcp_adapter::McpToolAdapter::connect (line 83) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests multi_agent_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

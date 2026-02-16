@@ -15,6 +15,9 @@ pub enum UserIntent {
         tool_name: String,
         /// Arguments for the tool.
         args: serde_json::Value,
+        /// User ID for isolation.
+        #[serde(default)]
+        user_id: Option<String>,
     },
 
     /// Slow path: start L1 Controller for complex reasoning.
@@ -26,5 +29,8 @@ pub enum UserIntent {
         context_summary: String,
         /// Visual references (image RefIds).
         visual_refs: Vec<String>,
+        /// User ID for isolation.
+        #[serde(default)]
+        user_id: Option<String>,
     },
 }

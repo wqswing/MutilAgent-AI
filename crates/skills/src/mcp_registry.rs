@@ -65,6 +65,9 @@ pub struct McpServerInfo {
     pub keywords: Vec<String>,
     /// Connection URL or command.
     pub connection_uri: String,
+    /// Command arguments (for stdio transport).
+    pub args: Vec<String>,
+    /// Transport type (stdio, sse, websocket).
     /// Transport type (stdio, sse, websocket).
     pub transport_type: String,
     /// Priority (higher = preferred).
@@ -83,6 +86,7 @@ impl McpServerInfo {
             capabilities: Vec::new(),
             keywords: Vec::new(),
             connection_uri: String::new(),
+            args: Vec::new(),
             transport_type: "stdio".to_string(),
             priority: 5,
             available: true,
@@ -110,6 +114,12 @@ impl McpServerInfo {
     /// Set connection URI.
     pub fn with_uri(mut self, uri: impl Into<String>) -> Self {
         self.connection_uri = uri.into();
+        self
+    }
+
+    /// Set command arguments.
+    pub fn with_args(mut self, args: Vec<&str>) -> Self {
+        self.args = args.into_iter().map(|s| s.to_string()).collect();
         self
     }
     
@@ -208,7 +218,15 @@ impl McpRegistry {
     
     /// Unregister an MCP server.
     pub fn unregister(&self, id: &str) -> Option<McpServerInfo> {
+        tracing::info!(id = %id, "Unregistering MCP server");
+        // TODO: In a real implementation, we should also signal the adapter to disconnect.
+        // For now, removing from registry prevents future selection.
         self.servers.remove(id).map(|(_, v)| v)
+    }
+
+    /// Check if a server is registered.
+    pub fn contains(&self, id: &str) -> bool {
+        self.servers.contains_key(id)
     }
     
     /// List all registered servers.
@@ -307,7 +325,7 @@ impl McpRegistry {
         let transport = match server.transport_type.as_str() {
             "stdio" => McpTransport::Stdio {
                 command: server.connection_uri.clone(),
-                args: vec![],
+                args: server.args.clone(),
             },
             "sse" => McpTransport::Sse {
                 url: server.connection_uri.clone(),
@@ -333,7 +351,8 @@ impl McpRegistry {
             .with_description("Read, write, and manage files on the local filesystem")
             .with_capabilities(vec![McpCapability::FileSystem])
             .with_keywords(vec!["file", "read", "write", "directory", "path", "folder"])
-            .with_uri("npx -y @modelcontextprotocol/server-filesystem /tmp")
+            .with_uri("npx")
+            .with_args(vec!["-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
             .with_transport("stdio")
             .with_priority(8));
         
@@ -342,7 +361,8 @@ impl McpRegistry {
             .with_description("Execute SQL queries on SQLite databases")
             .with_capabilities(vec![McpCapability::Database])
             .with_keywords(vec!["sql", "database", "query", "sqlite", "table", "select"])
-            .with_uri("npx -y @modelcontextprotocol/server-sqlite")
+            .with_uri("npx")
+            .with_args(vec!["-y", "@modelcontextprotocol/server-sqlite"])
             .with_transport("stdio")
             .with_priority(8));
         
@@ -351,7 +371,8 @@ impl McpRegistry {
             .with_description("Fetch content from URLs and web pages")
             .with_capabilities(vec![McpCapability::Web])
             .with_keywords(vec!["http", "url", "fetch", "web", "download", "api"])
-            .with_uri("npx -y @modelcontextprotocol/server-fetch")
+            .with_uri("npx")
+            .with_args(vec!["-y", "@modelcontextprotocol/server-fetch"])
             .with_transport("stdio")
             .with_priority(7));
         
@@ -360,7 +381,8 @@ impl McpRegistry {
             .with_description("Store and retrieve knowledge and memories")
             .with_capabilities(vec![McpCapability::Memory, McpCapability::Search])
             .with_keywords(vec!["remember", "memory", "store", "retrieve", "knowledge"])
-            .with_uri("npx -y @modelcontextprotocol/server-memory")
+            .with_uri("npx")
+            .with_args(vec!["-y", "@modelcontextprotocol/server-memory"])
             .with_transport("stdio")
             .with_priority(6));
         
@@ -369,7 +391,8 @@ impl McpRegistry {
             .with_description("Perform Git operations on repositories")
             .with_capabilities(vec![McpCapability::Git])
             .with_keywords(vec!["git", "commit", "branch", "push", "pull", "repository"])
-            .with_uri("npx -y @modelcontextprotocol/server-git")
+            .with_uri("npx")
+            .with_args(vec!["-y", "@modelcontextprotocol/server-git"])
             .with_transport("stdio")
             .with_priority(6));
     }

@@ -16,8 +16,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use multi_agent_core::{
-    traits::{ChatMessage, Controller, LlmClient, LlmResponse, ToolRegistry, SessionStore},
-    types::{AgentResult, HistoryEntry, Session, SessionStatus, TaskState, TokenUsage, UserIntent, ToolCallInfo},
+    traits::{ChatMessage, Controller, LlmClient, LlmResponse, ToolRegistry, SessionStore, ApprovalGate},
+    types::{AgentResult, HistoryEntry, Session, SessionStatus, TaskState, TokenUsage, UserIntent, ToolCallInfo, ApprovalRequest, ApprovalResponse, ToolRiskLevel},
     Error, Result,
 };
 
@@ -66,6 +66,12 @@ pub struct ReActController {
     pub(crate) session_store: Option<Arc<dyn SessionStore>>,
     /// Agent capabilities (Unification of Compression, Delegation, MCP, Security).
     pub(crate) capabilities: Vec<Arc<dyn AgentCapability>>,
+    /// Human-in-the-Loop approval gate for high-risk tools.
+    pub(crate) approval_gate: Option<Arc<dyn ApprovalGate>>,
+    /// Policy Engine for rule-based risk assessment.
+    pub(crate) policy_engine: Option<Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>>,
+    /// Event emitter for structured events.
+    pub(crate) event_emitter: Option<Arc<dyn multi_agent_core::traits::EventEmitter>>,
 }
 
 impl ReActController {
@@ -82,13 +88,17 @@ impl ReActController {
             tools: None,
             session_store: None,
             capabilities: Vec::new(),
+            approval_gate: None,
+            event_emitter: None,
+            policy_engine: None,
         }
     }
 
     /// Create a new session.
-    fn create_session(&self, goal: &str) -> Session {
+    fn create_session(&self, goal: &str, trace_id: &str) -> Session {
         Session {
             id: Uuid::new_v4().to_string(),
+            trace_id: trace_id.to_string(),
             status: SessionStatus::Running,
             history: vec![HistoryEntry {
                 role: "system".to_string(),
@@ -101,6 +111,7 @@ impl ReActController {
                 goal: goal.to_string(),
                 observations: Vec::new(),
                 pending_actions: Vec::new(),
+                consecutive_rejections: 0,
             }),
             token_usage: TokenUsage::with_budget(self.config.default_budget),
             created_at: chrono_timestamp(),
@@ -239,8 +250,21 @@ Always think before acting. Be concise and focused on the goal."#
                     }
                 }
                 
+                let final_result = AgentResult::Text(answer.clone());
+
+                // Run on_finish hooks (e.g., knowledge summarization)
+                for cap in &self.capabilities {
+                    if let Err(e) = cap.on_finish(session, &final_result).await {
+                        tracing::warn!(
+                            capability = cap.name(),
+                            error = %e,
+                            "on_finish hook failed (non-fatal)"
+                        );
+                    }
+                }
+
                 tracing::info!(answer_len = answer.len(), "Task completed with final answer");
-                Ok(Some(AgentResult::Text(answer.clone())))
+                Ok(Some(final_result))
             }
 
             ReActAction::ToolCall { name, args } => {
@@ -339,7 +363,7 @@ Always think before acting. Be concise and focused on the goal."#
     async fn validate_fast_action_security(&self, args: &serde_json::Value) -> Result<()> {
         for cap in &self.capabilities {
             if cap.name() == "security_guardrails" {
-                let mut temp_session = self.create_session("fast_action_check");
+                let mut temp_session = self.create_session("fast_action_check", "temp-trace-id");
                 temp_session.history.push(HistoryEntry {
                     role: "user".to_string(),
                     content: Arc::new(serde_json::to_string(args).unwrap_or_default()),
@@ -360,8 +384,201 @@ Always think before acting. Be concise and focused on the goal."#
     ) -> Result<Option<AgentResult>> {
         tracing::info!(tool = %name, "Executing tool call");
 
+        // Emit TOOL_CALL_PROPOSED
+        if let Some(emitter) = &self.event_emitter {
+             use multi_agent_core::events::{EventEnvelope, EventType};
+             let event = EventEnvelope::new(
+                 EventType::ToolCallProposed,
+                 serde_json::json!({
+                     "tool_name": name,
+                     "args": args
+                 })
+             )
+             .with_trace(&session.trace_id)
+             .with_session(&session.id);
+             emitter.emit(event).await;
+        }
+
+        // =====================================================================
+        // Policy Evaluation & HITL Approval Gate
+        // =====================================================================
+        let mut effective_args = args.clone();
+
+        // 1. Evaluate Policy
+        let (risk, risk_score, reason, matched_rule, policy_version) = if let Some(ref engine) = self.policy_engine {
+             let engine = engine.read().await;
+             let decision = engine.evaluate(&name, &effective_args);
+             (
+                 decision.risk_level,
+                 decision.risk_score,
+                 decision.reason,
+                 decision.matched_rule,
+                 decision.policy_version,
+             )
+        } else {
+             // Fallback to legacy behavior if no engine is configured
+             let risk = if let Some(ref tools) = self.tools {
+                 tools.get_risk_level(&name).await
+             } else {
+                 ToolRiskLevel::Low
+             };
+             (
+                 risk,
+                 risk.score(),
+                 "Default policy (no engine)".to_string(),
+                 None,
+                 "0.0.0".to_string()
+             )
+        };
+
+        // 2. Emit POLICY_EVALUATED event
+        if let Some(emitter) = &self.event_emitter {
+             use multi_agent_core::events::{EventEnvelope, EventType, PolicyEvaluationPayload};
+             let event = EventEnvelope::new(
+                 EventType::PolicyEvaluated,
+                 serde_json::to_value(PolicyEvaluationPayload {
+                     tool_name: name.clone(),
+                     risk_level: format!("{:?}", risk),
+                     risk_score,
+                     matched_rule,
+                     reason: reason.clone(),
+                     policy_version,
+                 }).unwrap_or_default()
+             )
+             .with_trace(&session.trace_id)
+             .with_session(&session.id);
+             emitter.emit(event).await;
+        }
+
+        // 3. Approval Check
+        if let Some(ref gate) = self.approval_gate {
+            let threshold_score = 50; // TODO: Make configurable via policy thresholds
+
+            if risk_score >= threshold_score {
+                tracing::info!(
+                    tool = %name,
+                    risk_score = risk_score,
+                    threshold = threshold_score,
+                    reason = %reason,
+                    "Tool exceeds risk threshold — requesting human approval"
+                );
+
+                let approval_req = ApprovalRequest {
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    session_id: session.id.clone(),
+                    tool_name: name.clone(),
+                    args: effective_args.clone(),
+                    risk_level: risk,
+                    context: format!("Policy Reason: {}. Session Goal: {}", reason, session.task_state.as_ref()
+                        .map(|t| t.goal.clone())
+                        .unwrap_or_default()),
+                    timeout_secs: None,
+                };
+
+                match gate.request_approval(&approval_req).await? {
+                    ApprovalResponse::Approved { reason, reason_code } => {
+                        tracing::info!(
+                            tool = %name,
+                            reason = ?reason,
+                            reason_code = %reason_code,
+                            "Tool call APPROVED by human"
+                        );
+                        // Reset deadlock counter
+                        if let Some(ref mut task_state) = session.task_state {
+                            task_state.consecutive_rejections = 0;
+                        }
+                    }
+                    ApprovalResponse::Denied { reason, reason_code } => {
+                        tracing::warn!(
+                            tool = %name,
+                            reason = %reason,
+                            reason_code = %reason_code,
+                            "Tool call DENIED by human"
+                        );
+                        
+                        // Increment deadlock counter
+                        if let Some(ref mut task_state) = session.task_state {
+                            task_state.consecutive_rejections += 1;
+                        }
+
+                        let observation = format!(
+                            "Tool '{}' was DENIED by human reviewer ({}): {}", name, reason_code, reason
+                        );
+                        session.history.push(HistoryEntry {
+                            role: "user".to_string(),
+                            content: Arc::new(format!("OBSERVATION: {}", observation)),
+                            tool_call: Some(ToolCallInfo {
+                                name: name.clone(),
+                                arguments: effective_args,
+                                result: Some(Arc::new(observation.clone())),
+                            }),
+                            timestamp: chrono_timestamp(),
+                        });
+                        if let Some(ref mut task_state) = session.task_state {
+                            task_state.observations.push(Arc::new(observation));
+                        }
+                        return Ok(None); // Continue loop; agent must adapt
+                    }
+                    ApprovalResponse::Modified { args, reason, reason_code } => {
+                        tracing::info!(
+                            tool = %name,
+                            reason = ?reason,
+                            reason_code = %reason_code,
+                            "Tool call MODIFIED by human"
+                        );
+                        // Reset deadlock counter
+                        if let Some(ref mut task_state) = session.task_state {
+                            task_state.consecutive_rejections = 0;
+                        }
+                        effective_args = args;
+                    }
+                }
+            }
+        }
+
+        // =====================================================================
+        // Execute the tool
+        // =====================================================================
         let observation = if let Some(ref tools) = self.tools {
-            match tools.execute(&name, args.clone()).await {
+            // Emit TOOL_EXEC_STARTED
+            if let Some(emitter) = &self.event_emitter {
+                 use multi_agent_core::events::{EventEnvelope, EventType};
+                 let event = EventEnvelope::new(
+                     EventType::ToolExecStarted,
+                     serde_json::json!({ "tool_name": name })
+                 )
+                 .with_trace(&session.trace_id)
+                 .with_session(&session.id);
+                 emitter.emit(event).await;
+            }
+
+            let start_time = std::time::Instant::now();
+            let result = tools.execute(&name, effective_args.clone()).await;
+            let duration = start_time.elapsed().as_millis() as u64;
+
+            // Emit TOOL_EXEC_FINISHED
+            if let Some(emitter) = &self.event_emitter {
+                 use multi_agent_core::events::{EventEnvelope, EventType};
+                 let (success, output) = match &result {
+                     Ok(o) => (o.success, o.content.clone()),
+                     Err(e) => (false, e.to_string()),
+                 };
+                 
+                 let event = EventEnvelope::new(
+                     EventType::ToolExecFinished,
+                     serde_json::json!({
+                         "tool_name": name,
+                         "success": success,
+                         "duration_ms": duration,
+                         "output_len": output.len()
+                     })
+                 )
+                 .with_trace(&session.trace_id)
+                 .with_session(&session.id);
+                 emitter.emit(event).await;
+            }
+
+            match result {
                 Ok(output) => {
                     if output.success {
                         format!("Tool '{}' succeeded:\n{}", name, output.content)
@@ -380,7 +597,7 @@ Always think before acting. Be concise and focused on the goal."#
             content: Arc::new(format!("OBSERVATION: {}", observation)),
             tool_call: Some(ToolCallInfo {
                 name: name.clone(),
-                arguments: args,
+                arguments: effective_args,
                 result: Some(Arc::new(observation.clone())),
             }),
             timestamp: chrono_timestamp(),
@@ -410,6 +627,27 @@ Always think before acting. Be concise and focused on the goal."#
         for iteration in start_iteration..self.config.max_iterations {
             if let Some(ref mut task_state) = session.task_state {
                 task_state.iteration = iteration;
+            }
+
+            // 1. Check Budget Limits
+            if session.token_usage.is_exceeded() {
+                tracing::warn!(session_id = %session.id, "Token budget exceeded");
+                session.status = SessionStatus::Failed;
+                self.persist_session(session).await;
+                return Err(Error::BudgetExceeded {
+                    used: session.token_usage.total_tokens,
+                    limit: session.token_usage.budget_limit,
+                });
+            }
+
+            // 2. Check Deadlock Circuit Breaker
+            if let Some(ref task_state) = session.task_state {
+                if task_state.consecutive_rejections >= 3 {
+                    tracing::error!(session_id = %session.id, "Deadlock detected: too many consecutive rejections");
+                    session.status = SessionStatus::Failed;
+                    self.persist_session(session).await;
+                    return Err(Error::controller("Deadlock: Too many consecutive human rejections (3). Terminating session."));
+                }
             }
 
             match self.execute_iteration(session, iteration).await? {
@@ -445,8 +683,7 @@ Always think before acting. Be concise and focused on the goal."#
 
 #[async_trait]
 impl Controller for ReActController {
-
-    async fn execute(&self, intent: UserIntent) -> Result<AgentResult> {
+    async fn execute(&self, intent: UserIntent, trace_id: String) -> Result<AgentResult> {
         match intent {
             UserIntent::FastAction { tool_name, args } => {
                 self.validate_fast_action_security(&args).await?;
@@ -481,43 +718,17 @@ impl Controller for ReActController {
 
             UserIntent::ComplexMission {
                 goal,
-                context_summary,
-                visual_refs,
+                context_summary: _,
+                visual_refs: _,
             } => {
-                let mut session = self.create_session(&goal);
-                
-                // v0.3: Capability On-Start Hook
-                for cap in &self.capabilities {
-                    cap.on_start(&mut session).await.map_err(|e| Error::controller(e.to_string()))?;
-                }
-
-                // Add user context to history
-                session.history.push(HistoryEntry {
-                    role: "user".to_string(),
-                    content: Arc::new(if visual_refs.is_empty() {
-                        context_summary.clone()
-                    } else {
-                        format!("{}\n\nReferences: {:?}", context_summary, visual_refs)
-                    }),
-                    tool_call: None,
-                    timestamp: chrono_timestamp(),
-                });
-                
-                for cap in &self.capabilities {
-                     cap.on_pre_reasoning(&mut session).await.map_err(|e| Error::controller(e.to_string()))?;
-                }
-
-                tracing::info!(
-                    goal = %goal,
-                    context_len = context_summary.len(),
-                    refs_count = visual_refs.len(),
-                    "Starting ReAct loop"
-                );
-
+                let mut session = self.create_session(&goal, &trace_id);
+                // Run the loop
                 self.run_loop(&mut session).await
             }
         }
     }
+
+
 
 
 

@@ -1,0 +1,19 @@
+[package]
+name = "multi_agent_ecosystem"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+multi_agent_core.workspace = true
+multi_agent_skills.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+dashmap.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

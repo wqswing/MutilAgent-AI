@@ -148,7 +148,10 @@ impl RbacConnector for OidcRbacConnector {
     }
 
     async fn check_permission(&self, token: &str, _resource: &str, _action: &str) -> Result<bool> {
-        self.validate(token).await.map(|_| true) // simplistic
+        match self.validate(token).await {
+            Ok(roles) => Ok(roles.is_admin),
+            Err(_) => Ok(false),
+        }
     }
 }
 
@@ -168,5 +171,35 @@ impl RbacConnector for NoOpRbacConnector {
     
     async fn check_permission(&self, _token: &str, _resource: &str, _action: &str) -> Result<bool> {
         Ok(true)
+    }
+}
+
+/// A RBAC connector that validates against a single static token.
+pub struct StaticTokenRbacConnector {
+    token: String,
+}
+
+impl StaticTokenRbacConnector {
+    pub fn new(token: impl Into<String>) -> Self {
+        Self { token: token.into() }
+    }
+}
+
+#[async_trait]
+impl RbacConnector for StaticTokenRbacConnector {
+    async fn validate(&self, token: &str) -> Result<UserRoles> {
+        if token == self.token {
+            Ok(UserRoles {
+                user_id: "admin".to_string(),
+                roles: vec!["admin".to_string()],
+                is_admin: true,
+            })
+        } else {
+            Err(multi_agent_core::Error::SecurityViolation("Invalid admin token".into()))
+        }
+    }
+    
+    async fn check_permission(&self, token: &str, _resource: &str, _action: &str) -> Result<bool> {
+        Ok(token == self.token)
     }
 }
