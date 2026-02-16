@@ -518,6 +518,7 @@ async fn chat_handler(
                     intent: UserIntent::FastAction {
                         tool_name: "cache".to_string(),
                         args: serde_json::json!({}),
+                        user_id: payload.user_id.clone(),
                     },
                     result: Some(AgentResult::Text(cached_response)),
                     cached: true,
@@ -539,9 +540,9 @@ async fn chat_handler(
         original_content: multi_agent_core::types::RequestContent::Text(payload.message.clone()),
         refs: Vec::new(),
         metadata: RequestMetadata {
-            user_id: payload.user_id,
-            workspace_id: payload.workspace_id,
-            session_id: payload.session_id,
+            user_id: payload.user_id.clone(),
+            workspace_id: payload.workspace_id.clone(),
+            session_id: payload.session_id.clone(),
             trace_id: Some(trace_id.clone()),
             custom: Default::default(),
         },
@@ -575,6 +576,7 @@ async fn chat_handler(
                         goal: "Error".to_string(),
                         context_summary: e.to_string(),
                         visual_refs: Vec::new(),
+                        user_id: payload.user_id.clone(),
                     },
                     result: Some(AgentResult::Error {
                         message: e.to_string(),
@@ -648,6 +650,7 @@ async fn intent_handler(
                     goal: "Error".to_string(),
                     context_summary: e.to_string(),
                     visual_refs: Vec::new(),
+                    user_id: None,
                 },
             }),
         ),

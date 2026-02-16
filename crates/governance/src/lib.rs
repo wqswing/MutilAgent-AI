@@ -18,9 +18,11 @@ pub mod guardrails;
 pub mod policy;
 pub mod rbac;
 pub mod audit;
+pub mod privacy;
 pub mod secrets;
 pub mod approval;
 
+pub use privacy::{PrivacyController, DeletionReport};
 pub use budget::TokenBudgetController;
 pub use security::DefaultSecurityProxy;
 pub use tracing_layer::configure_tracing;

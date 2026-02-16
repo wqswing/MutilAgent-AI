@@ -294,7 +294,7 @@ thresholds:
                 version: "0.0.0".into(),
                 name: "Empty Backup Policy".into(),
                 rules: vec![],
-                thresholds: multi_agent_governance::PolicyThresholds::default(),
+                thresholds: multi_agent_governance::policy::PolicyThresholds::default(),
             })))
         }
     };
@@ -341,10 +341,10 @@ thresholds:
     });
 
     // Composite Registry
-    let tools = Arc::new(CompositeToolRegistry::new(vec![
-        local_registry.clone(),
-        mcp_registry.clone(),
-    ]));
+    let mut composite_tools = CompositeToolRegistry::new();
+    composite_tools.add_registry(local_registry.clone());
+    composite_tools.add_registry(mcp_registry.clone());
+    let tools = Arc::new(composite_tools);
 
     // =========================================================================
     // Initialize L1: Controller
@@ -359,7 +359,8 @@ thresholds:
     } else {
         std::path::PathBuf::from("plugins")
     };
-    let plugin_manager = Arc::new(multi_agent_ecosystem::PluginManager::new(plugins_dir).with_event_emitter(event_emitter.clone()));
+    let state_file = plugins_dir.join("state.json");
+    let plugin_manager = Arc::new(multi_agent_ecosystem::PluginManager::new(plugins_dir, state_file).with_event_emitter(event_emitter.clone()));
     if let Err(e) = plugin_manager.initialize().await {
         tracing::warn!("Failed to initialize plugin manager: {}", e);
     }
@@ -451,7 +452,7 @@ thresholds:
     // =========================================================================
     // Start Background Retention Pruning
     // =========================================================================
-    use multi_agent_store::retention::Prunable;
+    // use multi_agent_store::retention::Prunable; // Removed duplicate import
     
     // We need to collect prunables. 
     // We have `all_erasables`. Assuming objects implementing Erasable also implement Prunable?

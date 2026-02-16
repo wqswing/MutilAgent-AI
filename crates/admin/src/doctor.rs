@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use axum::{extract::State, Json, http::StatusCode};
-use multi_agent_core::traits::{ArtifactStore, SessionStore};
+// Traits are brought in scope via AdminState if needed, or keeping them for trait bounds
 use crate::AdminState;
 use std::time::Instant;
 
@@ -107,10 +107,7 @@ pub async fn check_all(
     // 2. Check Storage (Artifacts)
     if let Some(store) = &state.artifact_store {
         let start = Instant::now();
-        // Check if we can write and read a small blob
-        // Actually, just checking existence of a dummy ID might be safer/faster?
-        // Or `save` a small test file.
-        let test_data = bytes::Bytes::from("doctor_check");
+        let test_data = axum::body::Bytes::from("doctor_check");
         match store.save(test_data).await {
             Ok(id) => {
                  // Try to delete immediately to clean up
@@ -124,18 +121,17 @@ pub async fn check_all(
         checks.push(CheckResult::fail("Storage", "Artifact Store", "Not initialized".to_string()));
     }
 
-    // 3. Check Storage (Session)
     if let Some(store) = &state.session_store {
-        // Just checking connectivity usually mandates a ping. 
-        // SessionStore trait doesn't have `ping`. 
-        // We can try `load_session("doctor_check")`.
         let start = Instant::now();
-        match store.load_session("doctor_check").await {
+        match store.load("doctor_check").await {
             Ok(_) => {
                 let latency = start.elapsed().as_millis() as u64;
                 checks.push(CheckResult::pass("Storage", "Session Store", Some(latency)));
             }
-            Err(e) => checks.push(CheckResult::fail("Storage", "Session Store", e.to_string())),
+            Err(e) => {
+                let msg = e.to_string();
+                checks.push(CheckResult::fail("Storage", "Session Store", msg));
+            }
         }
     } else {
         checks.push(CheckResult::fail("Storage", "Session Store", "Not initialized".to_string()));
@@ -143,11 +139,6 @@ pub async fn check_all(
 
     // 4. Check Sandbox (Docker)
     // Verify docker socket connectivity
-    #[cfg(unix)]
-    let socket = "unix:///var/run/docker.sock";
-    #[cfg(windows)]
-    let socket = "npipe:////./pipe/docker_engine";
-
     let docker = bollard::Docker::connect_with_socket_defaults();
     match docker {
         Ok(d) => {

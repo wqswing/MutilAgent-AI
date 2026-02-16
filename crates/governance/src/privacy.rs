@@ -1,11 +1,10 @@
 //! Privacy and GDPR compliance logic.
 
 use std::sync::Arc;
-use multi_agent_core::Result;
+use serde::{Deserialize, Serialize};
 use multi_agent_core::events::{EventEnvelope, EventType, EventSeverity};
 use multi_agent_core::traits::events::EventEmitter;
-use multi_agent_store::retention::Erasable;
-
+use multi_agent_core::traits::store::Erasable;
 
 /// Report of a data deletion operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,8 +15,6 @@ pub struct DeletionReport {
 }
 
 /// Controller for privacy operations.
-use crate::retention::Erasable;
-
 /// Controller for privacy operations.
 pub struct PrivacyController {
     stores: Vec<Arc<dyn Erasable>>,
@@ -38,7 +35,7 @@ impl PrivacyController {
         let init_event = EventEnvelope::new(
             EventType::DataDeletionInitiated,
             serde_json::json!({ "user_id": user_id })
-        ).with_severity(EventSeverity::Warn).with_actor("system");
+        ).with_severity(EventSeverity::Warning).with_actor("system");
         self.event_emitter.emit(init_event).await;
 
         let mut report = DeletionReport {

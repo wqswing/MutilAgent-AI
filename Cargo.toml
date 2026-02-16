@@ -30,7 +30,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 
 
 # Web framework
-axum = "0.7"
+axum = { version = "0.7", features = ["macros"] }
 axum-extra = { version = "0.9", features = ["json-lines"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["trace", "cors"] }
@@ -77,13 +77,13 @@ aws-sdk-s3 = "1.14"
 qdrant-client = "1.12"
 
 # Observability
-metrics = "0.22"
-metrics-exporter-prometheus = "0.13"
-opentelemetry = "0.22"
-opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
-opentelemetry-otlp = "0.15"
-tracing-opentelemetry = "0.23"
-opentelemetry-jaeger = "0.21"
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+opentelemetry = "0.24"
+opentelemetry_sdk = { version = "0.24", features = ["rt-tokio"] }
+opentelemetry-otlp = "0.17"
+tracing-opentelemetry = "0.25"
+# opentelemetry-jaeger is deprecated, Jaeger now supports OTLP directly
 
 # Error handling
 thiserror = "1"

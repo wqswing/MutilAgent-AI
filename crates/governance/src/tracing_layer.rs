@@ -25,22 +25,24 @@ pub fn configure_tracing() -> Result<()> {
     if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
         tracing::info!(endpoint = %endpoint, "Initializing OpenTelemetry tracing");
 
-        let tracer = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(
-                opentelemetry_otlp::new_exporter()
-                    .tonic()
-                    .with_endpoint(endpoint),
-            )
-            .with_trace_config(
+        let exporter = opentelemetry_otlp::new_exporter()
+            .tonic()
+            .with_endpoint(endpoint)
+            .build_span_exporter()
+            .map_err(|e| Error::governance(format!("Failed to create OTLP exporter: {}", e)))?;
+
+        let provider = sdktrace::TracerProvider::builder()
+            .with_batch_exporter(exporter, runtime::Tokio)
+            .with_config(
                 sdktrace::config().with_resource(Resource::new(vec![KeyValue::new(
                     "service.name",
                     "multiagent-gateway",
                 )])),
             )
-            .install_batch(runtime::Tokio)
-            .map_err(|e| Error::governance(format!("Failed to install OTLP pipeline: {}", e)))?;
+            .build();
 
+        use opentelemetry::trace::TracerProvider;
+        let tracer = provider.tracer("multiagent-gateway");
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
         registry.with(otel_layer).init();

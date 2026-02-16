@@ -155,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or(3000),
         enable_cors: true,
         enable_tracing: true,
+        allowed_origins: vec!["*".to_string()],
     };
 
     let server = GatewayServer::new(config.clone(), router, cache)
@@ -256,6 +257,9 @@ async fn main() -> anyhow::Result<()> {
         providers: Arc::new(tokio::sync::RwLock::new(Vec::new())),
         provider_store, 
         secrets: secrets_manager,
+        artifact_store: Some(store.clone()),
+        session_store: Some(session_store.clone()),
+        privacy_controller: None,
     });
 
     

@@ -34,10 +34,4 @@ pub trait Prunable: Send + Sync {
     async fn prune(&self, max_age: Duration) -> Result<usize>;
 }
 
-/// Trait for stores that support deleting all data for a specific user (GDPR).
-#[async_trait]
-pub trait Erasable: Send + Sync {
-    /// Delete all data associated with the given user ID.
-    /// Returns the number of items deleted.
-    async fn erase_user(&self, user_id: &str) -> Result<usize>;
-}
+pub use multi_agent_core::traits::Erasable;

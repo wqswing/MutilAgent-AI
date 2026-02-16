@@ -96,9 +96,10 @@ impl AuditSubscriber {
 impl multi_agent_core::traits::EventEmitter for AuditSubscriber {
     async fn emit(&self, event: EventEnvelope) {
         // Filter events for auditing
+        use multi_agent_core::events::EventType;
         let should_audit = matches!(
-            event.event_type.as_str(),
-            "TOOL_EXEC_FINISHED" | "APPROVAL_DECIDED" | "POLICY_EVALUATED" | "FS_WRITE" | "FS_READ"
+            event.event_type,
+            EventType::ToolExecFinished | EventType::ApprovalDecided | EventType::PolicyEvaluated | EventType::FsWrite | EventType::FsRead
         );
 
         if should_audit {

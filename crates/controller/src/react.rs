@@ -95,10 +95,11 @@ impl ReActController {
     }
 
     /// Create a new session.
-    fn create_session(&self, goal: &str, trace_id: &str) -> Session {
+    fn create_session(&self, goal: &str, trace_id: &str, user_id: Option<String>) -> Session {
         Session {
             id: Uuid::new_v4().to_string(),
             trace_id: trace_id.to_string(),
+            user_id,
             status: SessionStatus::Running,
             history: vec![HistoryEntry {
                 role: "system".to_string(),
@@ -363,7 +364,7 @@ Always think before acting. Be concise and focused on the goal."#
     async fn validate_fast_action_security(&self, args: &serde_json::Value) -> Result<()> {
         for cap in &self.capabilities {
             if cap.name() == "security_guardrails" {
-                let mut temp_session = self.create_session("fast_action_check", "temp-trace-id");
+                let mut temp_session = self.create_session("fast_action_check", "temp-trace-id", None);
                 temp_session.history.push(HistoryEntry {
                     role: "user".to_string(),
                     content: Arc::new(serde_json::to_string(args).unwrap_or_default()),
@@ -685,7 +686,7 @@ Always think before acting. Be concise and focused on the goal."#
 impl Controller for ReActController {
     async fn execute(&self, intent: UserIntent, trace_id: String) -> Result<AgentResult> {
         match intent {
-            UserIntent::FastAction { tool_name, args } => {
+            UserIntent::FastAction { tool_name, args, user_id: _ } => {
                 self.validate_fast_action_security(&args).await?;
 
                 // Fast path: direct tool execution
@@ -720,8 +721,9 @@ impl Controller for ReActController {
                 goal,
                 context_summary: _,
                 visual_refs: _,
+                user_id,
             } => {
-                let mut session = self.create_session(&goal, &trace_id);
+                let mut session = self.create_session(&goal, &trace_id, user_id);
                 // Run the loop
                 self.run_loop(&mut session).await
             }
@@ -732,7 +734,7 @@ impl Controller for ReActController {
 
 
 
-    async fn resume(&self, session_id: &str) -> Result<AgentResult> {
+    async fn resume(&self, session_id: &str, _user_id: Option<&str>) -> Result<AgentResult> {
         let session_store = self.session_store.as_ref().ok_or_else(|| {
              Error::controller("State persistence not configured (session_store is None)")
         })?;

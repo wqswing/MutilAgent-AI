@@ -124,3 +124,10 @@ pub trait KnowledgeStore: Send + Sync {
     async fn count(&self) -> Result<usize>;
 }
 
+/// Trait for stores that support data erasure (GDPR/Privacy).
+#[async_trait]
+pub trait Erasable: Send + Sync {
+    /// Delete all data associated with a user.
+    /// Returns the number of items deleted.
+    async fn erase_user(&self, user_id: &str) -> Result<usize>;
+}

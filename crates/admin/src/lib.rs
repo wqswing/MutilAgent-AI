@@ -21,8 +21,8 @@ use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use multi_agent_governance::{AuditStore, AuditFilter, AuditEntry, RbacConnector};
-use multi_agent_governance::privacy::{PrivacyController, DeletionReport};
+use multi_agent_governance::{AuditStore, AuditFilter, RbacConnector};
+use multi_agent_governance::{PrivacyController, SecretsManager};
 
 /// Embedded static assets for the dashboard.
 #[derive(RustEmbed)]
@@ -30,7 +30,6 @@ use multi_agent_governance::privacy::{PrivacyController, DeletionReport};
 struct Asset;
 
 use multi_agent_skills::mcp_registry::{McpRegistry, McpServerInfo};
-use multi_agent_governance::SecretsManager;
 use multi_agent_core::traits::{ProviderStore, ArtifactStore, SessionStore};
 
 pub mod doctor;
@@ -159,7 +158,7 @@ async fn auth_middleware(
     State(state): State<Arc<AdminState>>,
     req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Response {
     let auth_header = req.headers()
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
@@ -170,15 +169,15 @@ async fn auth_middleware(
             match state.rbac.validate(token).await {
                 Ok(roles) => {
                     if roles.is_admin {
-                        Ok(next.run(req).await)
+                        next.run(req).await
                     } else {
-                        Err(StatusCode::FORBIDDEN)
+                        StatusCode::FORBIDDEN.into_response()
                     }
                 }
-                Err(_) => Err(StatusCode::UNAUTHORIZED),
+                Err(_) => StatusCode::UNAUTHORIZED.into_response(),
             }
         }
-        None => Err(StatusCode::UNAUTHORIZED),
+        None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
 
@@ -189,11 +188,11 @@ async fn auth_middleware(
 /// List all providers.
 async fn list_providers(
     State(state): State<Arc<AdminState>>,
-) -> Json<Vec<ProviderEntry>> {
+) -> Response {
     if let Some(store) = &state.provider_store {
         if let Ok(providers) = store.list().await {
             // Convert legacy core::ProviderEntry to admin::ProviderEntry
-            let admin_providers = providers.into_iter().map(|p| ProviderEntry {
+            let admin_providers: Vec<ProviderEntry> = providers.into_iter().map(|p| ProviderEntry {
                 id: p.id,
                 vendor: p.vendor,
                 model_id: p.model_id,
@@ -204,26 +203,27 @@ async fn list_providers(
                 capabilities: p.capabilities,
                 status: p.status,
             }).collect();
-            return Json(admin_providers);
+            return Json(admin_providers).into_response();
         }
         tracing::error!("Failed to list providers from store");
-        return Json(vec![]);
+        return Json(Vec::<ProviderEntry>::new()).into_response();
     }
     let providers = state.providers.read().await;
-    Json(providers.clone())
+    Json(providers.clone()).into_response()
 }
 
 /// Add a new provider.
 async fn add_provider(
     State(state): State<Arc<AdminState>>,
     Json(req): Json<AddProviderRequest>,
-) -> Result<Json<ProviderEntry>, StatusCode> {
+) -> Response {
     let provider_id = format!("prov-{}", chrono::Utc::now().timestamp_millis());
     
     // Encrypt the API key and store it in the secrets manager
     let api_key_id = format!("api_key:{}", provider_id);
-    state.secrets.store(&api_key_id, &req.api_key).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if let Err(_) = state.secrets.store(&api_key_id, &req.api_key).await {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
     
     let entry = ProviderEntry {
         id: provider_id,
@@ -250,8 +250,9 @@ async fn add_provider(
             capabilities: entry.capabilities.clone(),
             status: entry.status.clone(),
         };
-        store.upsert(&core_entry).await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if let Err(_) = store.upsert(&core_entry).await {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
     } else {
         let mut providers = state.providers.write().await;
         providers.push(entry.clone());
@@ -272,14 +273,14 @@ async fn add_provider(
     }).await;
 
 
-    Ok(Json(entry))
+    Json(entry).into_response()
 }
 
 
 /// Test provider connection.
 async fn test_provider(
     Json(req): Json<TestProviderRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Response {
     // Simple connectivity check - try to reach the base URL
     let client = reqwest::Client::new();
     
@@ -293,9 +294,9 @@ async fn test_provider(
     match result {
         Ok(res) if res.status().is_success() || res.status() == 401 => {
             // 401 is acceptable - means server responded
-            Ok(Json(serde_json::json!({"status": "connected"})))
+            Json(serde_json::json!({"status": "connected"})).into_response()
         }
-        _ => Err(StatusCode::SERVICE_UNAVAILABLE),
+        _ => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
 }
 
@@ -303,14 +304,16 @@ async fn test_provider(
 async fn test_provider_by_id(
     State(state): State<Arc<AdminState>>,
     Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Response {
     let mut providers = state.providers.write().await;
     
     if let Some(provider) = providers.iter_mut().find(|p| p.id == id) {
         // Decrypt the API key from secrets manager
-        let api_key = state.secrets.retrieve(&provider.api_key_id).await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-            .ok_or(StatusCode::NOT_FOUND)?;
+        let api_key = match state.secrets.retrieve(&provider.api_key_id).await {
+            Ok(Some(key)) => key,
+            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
         
         let client = reqwest::Client::new();
         
@@ -324,15 +327,15 @@ async fn test_provider_by_id(
         match result {
             Ok(res) if res.status().is_success() || res.status() == 401 => {
                 provider.status = "connected".to_string();
-                Ok(Json(serde_json::json!({"status": "connected"})))
+                Json(serde_json::json!({"status": "connected"})).into_response()
             }
             _ => {
                 provider.status = "error".to_string();
-                Err(StatusCode::SERVICE_UNAVAILABLE)
+                StatusCode::SERVICE_UNAVAILABLE.into_response()
             }
         }
     } else {
-        Err(StatusCode::NOT_FOUND)
+        StatusCode::NOT_FOUND.into_response()
     }
 }
 
@@ -341,7 +344,7 @@ async fn test_provider_by_id(
 async fn delete_provider(
     State(state): State<Arc<AdminState>>,
     Path(id): Path<String>,
-) -> StatusCode {
+) -> Response {
     let mut deleted = false;
     let mut api_key_id = None;
 
@@ -378,9 +381,9 @@ async fn delete_provider(
             metadata: None,
         }).await;
 
-        StatusCode::NO_CONTENT
+        StatusCode::NO_CONTENT.into_response()
     } else {
-        StatusCode::NOT_FOUND
+        StatusCode::NOT_FOUND.into_response()
     }
 }
 
@@ -392,7 +395,7 @@ async fn delete_provider(
 /// Test S3 connection.
 async fn test_s3_connection(
     Json(req): Json<S3ConfigRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Response {
     use aws_config::Region;
     use aws_sdk_s3::config::{Credentials, Builder as S3ConfigBuilder};
 
@@ -417,8 +420,26 @@ async fn test_s3_connection(
     let client = aws_sdk_s3::Client::from_conf(s3_config);
 
     match client.head_bucket().bucket(&req.bucket).send().await {
-        Ok(_) => Ok(Json(serde_json::json!({"status": "connected"}))),
-        Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE),
+        Ok(_) => Json(serde_json::json!({"status": "connected"})).into_response(),
+        Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ForgetUserRequest {
+    pub user_id: String,
+}
+
+/// Right to be Forgotten: Forget a user.
+async fn forget_user(
+    State(state): State<Arc<AdminState>>,
+    Json(req): Json<ForgetUserRequest>,
+) -> Response {
+    if let Some(pc) = &state.privacy_controller {
+        let report = pc.forget_user(&req.user_id).await;
+        Json(report).into_response()
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE.into_response()
     }
 }
 
@@ -429,15 +450,15 @@ async fn test_s3_connection(
 /// Get MCP servers.
 async fn get_mcp_servers(
     State(state): State<Arc<AdminState>>,
-) -> Json<Vec<McpServerInfo>> {
-    Json(state.mcp_registry.list_all())
+) -> Response {
+    Json(state.mcp_registry.list_all()).into_response()
 }
 
 /// Register MCP server.
 async fn register_mcp(
     State(state): State<Arc<AdminState>>,
     Json(req): Json<RegisterMcpRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Response {
     use multi_agent_skills::mcp_registry::McpCapability;
     
     // Map string capabilities to enum
@@ -470,7 +491,7 @@ async fn register_mcp(
     };
 
     state.mcp_registry.register(info.clone());
-    Ok(Json(serde_json::json!({"id": info.id, "status": "registered"})))
+    Json(serde_json::json!({"id": info.id, "status": "registered"})).into_response()
 }
 
 
@@ -478,9 +499,9 @@ async fn register_mcp(
 async fn remove_mcp(
     State(state): State<Arc<AdminState>>,
     Path(id): Path<String>,
-) -> StatusCode {
+) -> Response {
     state.mcp_registry.unregister(&id);
-    StatusCode::NO_CONTENT
+    StatusCode::NO_CONTENT.into_response()
 }
 
 // =========================================
@@ -488,12 +509,12 @@ async fn remove_mcp(
 // =========================================
 
 /// Health check endpoint (public).
-async fn health() -> impl IntoResponse {
-    Json(serde_json::json!({"status": "ok"}))
+async fn health() -> Response {
+    Json(serde_json::json!({"status": "ok"})).into_response()
 }
 
 /// Get current configuration.
-async fn get_config() -> impl IntoResponse {
+async fn get_config() -> Response {
     let (p_mode, p_bucket, p_endpoint) = if let Ok(bucket) = std::env::var("AWS_S3_BUCKET") {
         ("S3 (Tiered)".to_string(), Some(bucket), std::env::var("AWS_ENDPOINT_URL").ok())
     } else {
@@ -522,7 +543,7 @@ async fn get_config() -> impl IntoResponse {
             provider_source: source.to_string(),
             providers_file_present: has_providers,
         },
-    })
+    }).into_response()
 }
 
 // =========================================
@@ -533,7 +554,7 @@ async fn get_config() -> impl IntoResponse {
 async fn get_audit(
     State(state): State<Arc<AdminState>>,
     Query(query): Query<AuditQuery>,
-) -> Result<Json<Vec<AuditEntry>>, StatusCode> {
+) -> Response {
     let filter = AuditFilter {
         user_id: query.user_id,
         action: query.action,
@@ -542,15 +563,15 @@ async fn get_audit(
     };
     
     match state.audit_store.query(filter).await {
-        Ok(entries) => Ok(Json(entries)),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(entries) => Json(entries).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
 /// Get metrics.
 async fn get_metrics(
     State(state): State<Arc<AdminState>>,
-) -> impl IntoResponse {
+) -> Response {
     if let Some(handle) = &state.metrics {
         let output = handle.render();
         
@@ -590,13 +611,13 @@ async fn get_metrics(
             "tokens_used": tokens_used,
             "active_sessions": 0,
             "avg_latency_ms": avg_latency
-        }))
+        })).into_response()
     } else {
         Json(serde_json::json!({
             "requests_total": 0,
             "tokens_used": 0,
             "active_sessions": 0
-        }))
+        })).into_response()
     }
 }
 
@@ -605,7 +626,7 @@ async fn get_metrics(
 // =========================================
 
 /// Serve static files from embedded assets.
-async fn static_handler(Path(path): Path<String>) -> impl IntoResponse {
+async fn static_handler(Path(path): Path<String>) -> Response {
     let path = if path.is_empty() { "index.html".to_string() } else { path };
     
     match Asset::get(&path) {
@@ -624,7 +645,7 @@ async fn static_handler(Path(path): Path<String>) -> impl IntoResponse {
 }
 
 /// Serve index.html for root path.
-async fn index_handler() -> impl IntoResponse {
+async fn index_handler() -> Response {
     match Asset::get("index.html") {
         Some(content) => Response::builder()
             .header(header::CONTENT_TYPE, "text/html")
@@ -643,30 +664,24 @@ async fn index_handler() -> impl IntoResponse {
 
 /// Build the admin API router.
 pub fn admin_router(state: Arc<AdminState>) -> Router {
-    let api_routes = Router::new()
-        // Config & Metrics
+    Router::new()
+        // API Routes with state
         .route("/config", get(get_config))
         .route("/metrics", get(get_metrics))
         .route("/audit", get(get_audit))
-        // Providers
         .route("/providers", get(list_providers).post(add_provider))
         .route("/providers/test", post(test_provider))
         .route("/providers/:id", delete(delete_provider))
         .route("/providers/:id/test", post(test_provider_by_id))
-        // Persistence
         .route("/persistence/test", post(test_s3_connection))
-        // Governance
         .route("/governance/forget-user", post(forget_user))
-        // Doctor
         .route("/doctor", post(doctor::check_all))
-        // MCP
         .route("/mcp/servers", get(get_mcp_servers))
         .route("/mcp/register", post(register_mcp))
         .route("/mcp/servers/:id", delete(remove_mcp))
-        .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
-
-    Router::new()
-        .merge(api_routes)
+        // Apply auth layer with state
+        .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware))
+        // Static and public routes
         .route("/", get(index_handler))
         .route("/health", get(health))
         .route("/*path", get(static_handler))
