@@ -1,6 +1,6 @@
 # Multiagent: Advanced Multi-Agent AI System
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Language](https://img.shields.io/badge/rust-1.75%2B-blue.svg)](https://www.rust-lang.org)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/wqswing/MultiAgent-AI/actions)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
@@ -252,6 +252,6 @@ let tool = RecordingTool::new("search", "Search the web", "Results...");
 
 ## 📄 License
 
-MIT License - See [LICENSE](LICENSE) for details.
+AGPLv3 License - See [LICENSE](LICENSE) for details.
 
 Copyright (c) 2024-2026 Multiagent Contributors

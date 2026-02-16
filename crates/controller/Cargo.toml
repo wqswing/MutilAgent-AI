@@ -2,6 +2,7 @@
 name = "multi_agent_controller"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [dependencies]
 multi_agent_core.workspace = true
