@@ -5,9 +5,17 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/wqswing/MultiAgent-AI/actions)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-1.1.0-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v1.1.0)
 
 Multiagent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching, vector memory, and circuit breakers.
+
+## ✨ What's New in v1.1 (Sovereign & Resilient)
+
+- **System Doctor**: Automated self-diagnosis for API connectivity (OpenAI, Anthropic), storage availability (S3, Redis), and security health.
+- **Sovereign Sandbox**: Docker-based tool execution environment for safe code execution and localized filesystem operations.
+- **Airlock Networking**: Fine-grained network governance for agent tools, including domain allowlisting and automatic rate limiting.
+- **Axum 0.7 Migration**: Fully upgraded web layer with enhanced type safety, standardized error handling, and performance optimizations.
+- **Privacy & Retention**: Automated background pruning of old sessions/artifacts and one-click user data erasure (GDPR ready).
 
 ## ✨ What's New in v1.0 (Stateless Architecture)
 
@@ -38,6 +46,8 @@ Multiagent is a production-grade, layered AI agent framework built in Rust. It i
 ### 👁️ Multi-Modal Support
 - **Vision**: Ingest and process images for visual reasoning
 - **Audio**: Integrated Whisper support for speech-to-text transcription
+- **Sovereign Sandbox**: Secure, isolated environment for executing untrusted tool code (Docker-backed)
+- **Airlock**: Multi-layer network governance for tool-triggered outbound requests
 - **MCP Host**: Full support for Model Context Protocol to connect external tools
 
 ## 🏗️ Architecture
@@ -215,6 +225,12 @@ curl -X POST http://localhost:3000/v1/intent \
 ```bash
 curl http://localhost:3000/health
 curl http://localhost:3000/metrics
+
+### System Doctor (Self-Diagnosis)
+```bash
+curl -X POST http://localhost:3000/v1/admin/doctor \
+  -H "Authorization: Bearer <admin_token>"
+```
 ```
 
 ## 🧪 Testing
