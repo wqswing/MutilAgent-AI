@@ -4,7 +4,7 @@ use std::io;
 use tokio::sync::broadcast;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use multi_agent_sandbox::SandboxEngine;
+
 use multi_agent_core::traits::{ToolRegistry, ArtifactStore, SessionStore};
 use multi_agent_controller::ReActController;
 use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};

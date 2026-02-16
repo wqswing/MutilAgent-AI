@@ -2,7 +2,7 @@ use sha2::{Sha256, Digest};
 use serde::{Serialize, Deserialize};
 use std::fs::{OpenOptions, File};
 use std::io::{Write, BufReader, BufRead};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use multi_agent_core::events::EventEnvelope;
 use anyhow::{Result, Context};
 

@@ -31,14 +31,14 @@ pub fn configure_tracing() -> Result<()> {
             .build_span_exporter()
             .map_err(|e| Error::governance(format!("Failed to create OTLP exporter: {}", e)))?;
 
+        let resource = Resource::new(vec![KeyValue::new(
+            "service.name",
+            "multiagent-gateway",
+        )]);
+
         let provider = sdktrace::TracerProvider::builder()
             .with_batch_exporter(exporter, runtime::Tokio)
-            .with_config(
-                sdktrace::config().with_resource(Resource::new(vec![KeyValue::new(
-                    "service.name",
-                    "multiagent-gateway",
-                )])),
-            )
+            .with_config(sdktrace::Config::default().with_resource(resource))
             .build();
 
         use opentelemetry::trace::TracerProvider;

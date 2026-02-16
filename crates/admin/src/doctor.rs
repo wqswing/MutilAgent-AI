@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
 use axum::{extract::State, Json, http::StatusCode};
 // Traits are brought in scope via AdminState if needed, or keeping them for trait bounds
