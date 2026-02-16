@@ -3,12 +3,12 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 
-use std::sync::Arc;
 use multi_agent_core::{
     traits::{Tool, ToolRegistry},
     types::{ToolDefinition, ToolOutput},
     Error, Result,
 };
+use std::sync::Arc;
 
 /// Thread-safe wrapper for tools.
 struct ToolEntry {
@@ -63,14 +63,21 @@ impl ToolRegistry for DefaultToolRegistry {
             )));
         }
 
-        self.tools.insert(name, ToolEntry { tool: Arc::from(tool) });
+        self.tools.insert(
+            name,
+            ToolEntry {
+                tool: Arc::from(tool),
+            },
+        );
         Ok(())
     }
 
     async fn get(&self, name: &str) -> Result<Option<Box<dyn Tool>>> {
         if let Some(entry) = self.tools.get(name) {
             // Return a wrapper that holds the Arc
-            let wrapper = LocalToolWrapper { tool: entry.tool.clone() };
+            let wrapper = LocalToolWrapper {
+                tool: entry.tool.clone(),
+            };
             return Ok(Some(Box::new(wrapper)));
         }
         Ok(None)
@@ -113,15 +120,15 @@ impl Tool for LocalToolWrapper {
     fn name(&self) -> &str {
         self.tool.name()
     }
-    
+
     fn description(&self) -> &str {
         self.tool.description()
     }
-    
+
     fn parameters(&self) -> serde_json::Value {
         self.tool.parameters()
     }
-    
+
     async fn execute(&self, args: serde_json::Value) -> Result<ToolOutput> {
         self.tool.execute(args).await
     }
@@ -133,12 +140,7 @@ impl Tool for LocalToolWrapper {
 
 /// Create a registry with built-in tools.
 pub fn create_default_registry() -> DefaultToolRegistry {
-    let registry = DefaultToolRegistry::new();
-
-    // Register built-in tools
-    // Tools will be registered in the main function
-
-    registry
+    DefaultToolRegistry::new()
 }
 
 #[cfg(test)]

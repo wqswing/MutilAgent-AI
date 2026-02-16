@@ -1,15 +1,15 @@
 //! Redis implementation of SessionStore.
 
 use async_trait::async_trait;
-use redis::{Client, AsyncCommands, Script};
+use redis::{AsyncCommands, Client, Script};
 use std::time::Duration;
 
+use crate::retention::{Erasable, Prunable};
 use multi_agent_core::{
-    traits::{SessionStore, StateStore, DistributedRateLimiter, ProviderStore, ProviderEntry},
+    traits::{DistributedRateLimiter, ProviderEntry, ProviderStore, SessionStore, StateStore},
     types::Session,
     Error, Result,
 };
-use crate::retention::{Prunable, Erasable};
 
 // =============================================================================
 // Redis Provider Store (for Admin)
@@ -45,83 +45,106 @@ impl RedisProviderStore {
 impl ProviderStore for RedisProviderStore {
     async fn list(&self) -> Result<Vec<ProviderEntry>> {
         if self.strict_mode {
-             return Err(Error::SecurityViolation("Expensive SCAN operations are disabled in strict mode".into()));
+            return Err(Error::SecurityViolation(
+                "Expensive SCAN operations are disabled in strict mode".into(),
+            ));
         }
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-            
+
         // SCAN for all provider keys (safe for production)
         use futures::StreamExt;
         let pattern = format!("{}:*", self.prefix);
-        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+        let mut keys_iter = conn
+            .scan_match::<_, String>(pattern)
+            .await
             .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
-            
+
         let mut keys = Vec::new();
         while let Some(key) = keys_iter.next().await {
             keys.push(key);
         }
         drop(keys_iter);
-        
+
         let mut providers = Vec::new();
         for key in keys {
-            let data: Option<String> = conn.get(&key).await
+            let data: Option<String> = conn
+                .get(&key)
+                .await
                 .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
-                
+
             if let Some(json) = data {
                 if let Ok(provider) = serde_json::from_str::<ProviderEntry>(&json) {
                     providers.push(provider);
                 }
             }
         }
-        
+
         Ok(providers)
     }
 
     async fn get(&self, id: &str) -> Result<Option<ProviderEntry>> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-            
+
         let key = format!("{}:{}", self.prefix, id);
-        let data: Option<String> = conn.get(&key).await
-             .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
+        let data: Option<String> = conn
+            .get(&key)
+            .await
+            .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
 
         match data {
             Some(json) => {
-                let provider = serde_json::from_str(&json)
-                    .map_err(|e| Error::storage(format!("Failed to deserialize provider: {}", e)))?;
+                let provider = serde_json::from_str(&json).map_err(|e| {
+                    Error::storage(format!("Failed to deserialize provider: {}", e))
+                })?;
                 Ok(Some(provider))
-            },
+            }
             None => Ok(None),
         }
     }
 
     async fn upsert(&self, provider: &ProviderEntry) -> Result<()> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
 
         let key = format!("{}:{}", self.prefix, provider.id);
         let json = serde_json::to_string(provider)
             .map_err(|e| Error::storage(format!("Failed to serialize provider: {}", e)))?;
 
-        let _: () = conn.set(&key, json).await
+        let _: () = conn
+            .set(&key, json)
+            .await
             .map_err(|e| Error::storage(format!("Redis set error: {}", e)))?;
 
         Ok(())
     }
 
     async fn delete(&self, id: &str) -> Result<bool> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-            
+
         let key = format!("{}:{}", self.prefix, id);
-        let count: i32 = conn.del(&key).await
-             .map_err(|e| Error::storage(format!("Redis delete error: {}", e)))?;
-             
+        let count: i32 = conn
+            .del(&key)
+            .await
+            .map_err(|e| Error::storage(format!("Redis delete error: {}", e)))?;
+
         Ok(count > 0)
     }
 }
-
-
 
 // =============================================================================
 // Redis Session Store (existing implementation)
@@ -140,7 +163,7 @@ impl RedisSessionStore {
     pub fn new(url: &str, prefix: &str, ttl_seconds: usize) -> Result<Self> {
         let client = Client::open(url)
             .map_err(|e| Error::storage(format!("Failed to connect to Redis: {}", e)))?;
-        
+
         Ok(Self {
             client,
             prefix: prefix.to_string(),
@@ -163,11 +186,16 @@ impl RedisSessionStore {
 #[async_trait]
 impl SessionStore for RedisSessionStore {
     async fn load(&self, id: &str) -> Result<Option<Session>> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-            
+
         let key = self.key(id);
-        let data: Option<String> = conn.get(&key).await
+        let data: Option<String> = conn
+            .get(&key)
+            .await
             .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
 
         match data {
@@ -175,13 +203,16 @@ impl SessionStore for RedisSessionStore {
                 let session = serde_json::from_str(&json)
                     .map_err(|e| Error::storage(format!("Failed to deserialize session: {}", e)))?;
                 Ok(Some(session))
-            },
+            }
             None => Ok(None),
         }
     }
 
     async fn save(&self, session: &Session) -> Result<()> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
 
         let key = self.key(&session.id);
@@ -189,47 +220,63 @@ impl SessionStore for RedisSessionStore {
             .map_err(|e| Error::storage(format!("Failed to serialize session: {}", e)))?;
 
         // Set with TTL
-        let _: () = conn.set_ex(&key, json, self.ttl_seconds as u64).await
+        let _: () = conn
+            .set_ex(&key, json, self.ttl_seconds as u64)
+            .await
             .map_err(|e| Error::storage(format!("Redis set error: {}", e)))?;
 
         Ok(())
     }
 
     async fn delete(&self, id: &str) -> Result<()> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-            
+
         let key = self.key(id);
-        let _: () = conn.del(&key).await
-             .map_err(|e| Error::storage(format!("Redis delete error: {}", e)))?;
-             
+        let _: () = conn
+            .del(&key)
+            .await
+            .map_err(|e| Error::storage(format!("Redis delete error: {}", e)))?;
+
         Ok(())
     }
 
     async fn list_running(&self) -> Result<Vec<String>> {
         if self.strict_mode {
-             return Err(Error::SecurityViolation("Expensive SCAN operations are disabled in strict mode".into()));
+            return Err(Error::SecurityViolation(
+                "Expensive SCAN operations are disabled in strict mode".into(),
+            ));
         }
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-            
+
         // SCAN for all session keys (safe for production)
         use futures::StreamExt;
         let pattern = format!("{}*", self.prefix);
-        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+        let mut keys_iter = conn
+            .scan_match::<_, String>(pattern)
+            .await
             .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
-            
+
         let mut keys = Vec::new();
         while let Some(key) = keys_iter.next().await {
             keys.push(key);
         }
         drop(keys_iter);
-            
+
         let mut running_ids = Vec::new();
         for key in keys {
-            let data: Option<String> = conn.get(&key).await
+            let data: Option<String> = conn
+                .get(&key)
+                .await
                 .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
-                
+
             if let Some(json) = data {
                 if let Ok(session) = serde_json::from_str::<Session>(&json) {
                     if session.status == multi_agent_core::types::SessionStatus::Running {
@@ -238,26 +285,32 @@ impl SessionStore for RedisSessionStore {
                 }
             }
         }
-        
+
         Ok(running_ids)
     }
-}
 
-#[async_trait]
-impl Prunable for RedisSessionStore {
-    async fn prune(&self, max_age: Duration) -> Result<usize> {
+    async fn list_sessions(
+        &self,
+        status: Option<multi_agent_core::types::SessionStatus>,
+        user_id: Option<&str>,
+    ) -> Result<Vec<Session>> {
         if self.strict_mode {
-             // To avoid accidental DoS in prod, we don't prune via SCAN strict mode.
-             // We rely on native TTL.
-             return Ok(0);
+            return Err(Error::SecurityViolation(
+                "Expensive SCAN operations are disabled in strict mode".into(),
+            ));
         }
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
 
-        let mut conn = self.client.get_multiplexed_async_connection().await
-             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-
+        // SCAN for all session keys
         use futures::StreamExt;
         let pattern = format!("{}*", self.prefix);
-        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+        let mut keys_iter = conn
+            .scan_match::<_, String>(pattern)
+            .await
             .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
 
         let mut keys = Vec::new();
@@ -265,7 +318,71 @@ impl Prunable for RedisSessionStore {
             keys.push(key);
         }
         drop(keys_iter);
-        
+
+        let mut sessions = Vec::new();
+        for key in keys {
+            let data: Option<String> = conn
+                .get(&key)
+                .await
+                .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
+
+            if let Some(json) = data {
+                if let Ok(session) = serde_json::from_str::<Session>(&json) {
+                    let status_match = status.is_none_or(|s| session.status == s);
+                    let user_match = user_id.is_none_or(|u| session.user_id.as_deref() == Some(u));
+                    if status_match && user_match {
+                        sessions.push(session);
+                    }
+                }
+            }
+        }
+        Ok(sessions)
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| Error::storage(format!("Redis health check failed to connect: {}", e)))?;
+
+        let _: String = redis::cmd("PING")
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| Error::storage(format!("Redis health check PING failed: {}", e)))?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Prunable for RedisSessionStore {
+    async fn prune(&self, max_age: Duration) -> Result<usize> {
+        if self.strict_mode {
+            // To avoid accidental DoS in prod, we don't prune via SCAN strict mode.
+            // We rely on native TTL.
+            return Ok(0);
+        }
+
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+
+        use futures::StreamExt;
+        let pattern = format!("{}*", self.prefix);
+        let mut keys_iter = conn
+            .scan_match::<_, String>(pattern)
+            .await
+            .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
+
+        let mut keys = Vec::new();
+        while let Some(key) = keys_iter.next().await {
+            keys.push(key);
+        }
+        drop(keys_iter);
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -277,14 +394,18 @@ impl Prunable for RedisSessionStore {
             // We optimized by only fetching if we need to check content.
             // But here we need to check updated_at inside the JSON.
             // Alternatively, we could check IDLETIME but that's access time, not update time.
-            let data: Option<String> = conn.get(&key).await
+            let data: Option<String> = conn
+                .get(&key)
+                .await
                 .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
 
             if let Some(json) = data {
                 if let Ok(session) = serde_json::from_str::<Session>(&json) {
                     if session.updated_at < cutoff {
-                        let _: () = conn.del(&key).await
-                             .map_err(|e| Error::storage(format!("Redis del error: {}", e)))?;
+                        let _: () = conn
+                            .del(&key)
+                            .await
+                            .map_err(|e| Error::storage(format!("Redis del error: {}", e)))?;
                         deleted_count += 1;
                     }
                 }
@@ -299,15 +420,22 @@ impl Prunable for RedisSessionStore {
 impl Erasable for RedisSessionStore {
     async fn erase_user(&self, user_id: &str) -> Result<usize> {
         if self.strict_mode {
-             return Err(Error::SecurityViolation("Expensive SCAN operations are disabled in strict mode".into()));
+            return Err(Error::SecurityViolation(
+                "Expensive SCAN operations are disabled in strict mode".into(),
+            ));
         }
 
-        let mut conn = self.client.get_multiplexed_async_connection().await
-             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
 
         use futures::StreamExt;
         let pattern = format!("{}*", self.prefix);
-        let mut keys_iter = conn.scan_match::<_, String>(pattern).await
+        let mut keys_iter = conn
+            .scan_match::<_, String>(pattern)
+            .await
             .map_err(|e| Error::storage(format!("Redis scan error: {}", e)))?;
 
         let mut keys = Vec::new();
@@ -315,18 +443,22 @@ impl Erasable for RedisSessionStore {
             keys.push(key);
         }
         drop(keys_iter);
-        
+
         let mut deleted_count = 0;
 
         for key in keys {
-            let data: Option<String> = conn.get(&key).await
+            let data: Option<String> = conn
+                .get(&key)
+                .await
                 .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
 
             if let Some(json) = data {
                 if let Ok(session) = serde_json::from_str::<Session>(&json) {
                     if session.user_id.as_deref() == Some(user_id) {
-                        let _: () = conn.del(&key).await
-                             .map_err(|e| Error::storage(format!("Redis del error: {}", e)))?;
+                        let _: () = conn
+                            .del(&key)
+                            .await
+                            .map_err(|e| Error::storage(format!("Redis del error: {}", e)))?;
                         deleted_count += 1;
                     }
                 }
@@ -358,46 +490,70 @@ impl RedisStateStore {
 #[async_trait]
 impl StateStore for RedisStateStore {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-        let data: Option<Vec<u8>> = conn.get(key).await
+        let data: Option<Vec<u8>> = conn
+            .get(key)
+            .await
             .map_err(|e| Error::storage(format!("Redis get error: {}", e)))?;
         Ok(data)
     }
 
     async fn set(&self, key: &str, value: &[u8], ttl: Option<Duration>) -> Result<()> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-        
+
         if let Some(ttl) = ttl {
-            let _: () = conn.set_ex(key, value, ttl.as_secs()).await
+            let _: () = conn
+                .set_ex(key, value, ttl.as_secs())
+                .await
                 .map_err(|e| Error::storage(format!("Redis set error: {}", e)))?;
         } else {
-            let _: () = conn.set(key, value).await
+            let _: () = conn
+                .set(key, value)
+                .await
                 .map_err(|e| Error::storage(format!("Redis set error: {}", e)))?;
         }
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-        let _: () = conn.del(key).await
+        let _: () = conn
+            .del(key)
+            .await
             .map_err(|e| Error::storage(format!("Redis delete error: {}", e)))?;
         Ok(())
     }
 
     async fn set_nx(&self, key: &str, value: &[u8], ttl: Option<Duration>) -> Result<bool> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-        
+
         // SETNX returns true if key was set (did not exist)
-        let result: bool = conn.set_nx(key, value).await
+        let result: bool = conn
+            .set_nx(key, value)
+            .await
             .map_err(|e| Error::storage(format!("Redis setnx error: {}", e)))?;
-        
+
         if result {
             if let Some(ttl) = ttl {
-                let _: () = conn.expire(key, ttl.as_secs() as i64).await
+                let _: () = conn
+                    .expire(key, ttl.as_secs() as i64)
+                    .await
                     .map_err(|e| Error::storage(format!("Redis expire error: {}", e)))?;
             }
         }
@@ -420,7 +576,7 @@ impl RedisRateLimiter {
     pub fn new(url: &str) -> Result<Self> {
         let client = Client::open(url)
             .map_err(|e| Error::storage(format!("Failed to connect to Redis: {}", e)))?;
-        
+
         // Sliding window rate limiter using sorted sets
         // KEYS[1] = rate limit key
         // ARGV[1] = current timestamp (ms)
@@ -449,7 +605,7 @@ impl RedisRateLimiter {
                 return 0  -- Rate limited
             end
         "#;
-        
+
         Ok(Self {
             client,
             script: Script::new(lua_script),
@@ -460,17 +616,21 @@ impl RedisRateLimiter {
 #[async_trait]
 impl DistributedRateLimiter for RedisRateLimiter {
     async fn check_and_increment(&self, key: &str, limit: u32, window: Duration) -> Result<bool> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-        
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
         let window_ms = window.as_millis() as u64;
         let request_id = format!("{}:{}", now, rand::random::<u64>());
-        
-        let result: i32 = self.script
+
+        let result: i32 = self
+            .script
             .key(key)
             .arg(now)
             .arg(window_ms)
@@ -479,35 +639,46 @@ impl DistributedRateLimiter for RedisRateLimiter {
             .invoke_async(&mut conn)
             .await
             .map_err(|e| Error::storage(format!("Redis script error: {}", e)))?;
-        
+
         Ok(result == 1)
     }
 
     async fn remaining(&self, key: &str, limit: u32, window: Duration) -> Result<u32> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-        
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
         let window_ms = window.as_millis() as u64;
-        
+
         // Remove expired and count
-        let _: () = conn.zrembyscore(key, 0i64, (now - window_ms) as i64).await
+        let _: () = conn
+            .zrembyscore(key, 0i64, (now - window_ms) as i64)
+            .await
             .map_err(|e| Error::storage(format!("Redis zremrangebyscore error: {}", e)))?;
-        let count: u32 = conn.zcard(key).await
+        let count: u32 = conn
+            .zcard(key)
+            .await
             .map_err(|e| Error::storage(format!("Redis zcard error: {}", e)))?;
-        
+
         Ok(limit.saturating_sub(count))
     }
 
     async fn reset(&self, key: &str) -> Result<()> {
-        let mut conn = self.client.get_multiplexed_async_connection().await
+        let mut conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
             .map_err(|e| Error::storage(format!("Redis connection error: {}", e)))?;
-        let _: () = conn.del(key).await
+        let _: () = conn
+            .del(key)
+            .await
             .map_err(|e| Error::storage(format!("Redis delete error: {}", e)))?;
         Ok(())
     }
 }
-

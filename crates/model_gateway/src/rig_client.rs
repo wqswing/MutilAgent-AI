@@ -33,6 +33,8 @@ pub struct RigConfig {
     pub temperature: Option<f32>,
     /// Max tokens.
     pub max_tokens: Option<u32>,
+    /// API key override.
+    pub api_key: Option<String>,
 }
 
 impl Default for RigConfig {
@@ -43,6 +45,7 @@ impl Default for RigConfig {
             system_prompt: None,
             temperature: Some(0.7),
             max_tokens: Some(4096),
+            api_key: None,
         }
     }
 }
@@ -64,6 +67,12 @@ impl RigConfig {
             model: model.into(),
             ..Default::default()
         }
+    }
+
+    /// Set API key.
+    pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
+        self.api_key = Some(key.into());
+        self
     }
 
     /// Set system prompt.
@@ -144,19 +153,19 @@ impl RigLlmClient {
     async fn call_openai(&self, prompt: &str) -> Result<LlmResponse> {
         use rig::providers::openai;
 
-        // Check env var first to avoid panic
-        if std::env::var("OPENAI_API_KEY").is_err() {
-            return Err(Error::ModelProvider("OPENAI_API_KEY not set".to_string()));
+        let client = if let Some(key) = &self.config.api_key {
+            openai::Client::new(key)
+        } else {
+            Ok(openai::Client::from_env())
         }
+        .map_err(|e| Error::ModelProvider(format!("OpenAI client error: {}", e)))?;
 
-        let client = openai::Client::from_env();
-        
         let mut agent_builder = client.agent(&self.config.model);
-        
+
         if let Some(ref system) = self.config.system_prompt {
             agent_builder = agent_builder.preamble(system);
         }
-        
+
         let agent = agent_builder.build();
 
         let response: String = agent
@@ -180,19 +189,19 @@ impl RigLlmClient {
     async fn call_anthropic(&self, prompt: &str) -> Result<LlmResponse> {
         use rig::providers::anthropic;
 
-        // Check env var first to avoid panic
-        if std::env::var("ANTHROPIC_API_KEY").is_err() {
-            return Err(Error::ModelProvider("ANTHROPIC_API_KEY not set".to_string()));
+        let client = if let Some(key) = &self.config.api_key {
+            anthropic::Client::new(key)
+        } else {
+            Ok(anthropic::Client::from_env())
         }
+        .map_err(|e| Error::ModelProvider(format!("Anthropic client error: {}", e)))?;
 
-        let client = anthropic::Client::from_env();
-        
         let mut agent_builder = client.agent(&self.config.model);
-        
+
         if let Some(ref system) = self.config.system_prompt {
             agent_builder = agent_builder.preamble(system);
         }
-        
+
         let agent = agent_builder.build();
 
         let response: String = agent
@@ -235,14 +244,15 @@ impl LlmClient for RigLlmClient {
     }
 
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        use rig::providers::openai;
         use rig::embeddings::EmbeddingsBuilder;
+        use rig::providers::openai;
 
-        if std::env::var("OPENAI_API_KEY").is_err() {
-            return Err(Error::ModelProvider("OPENAI_API_KEY not set for embeddings".to_string()));
+        let client = if let Some(key) = &self.config.api_key {
+            openai::Client::new(key)
+        } else {
+            Ok(openai::Client::from_env())
         }
-
-        let client = openai::Client::from_env();
+        .map_err(|e| Error::ModelProvider(format!("OpenAI client error: {}", e)))?;
         let embedding_model = client.embedding_model(openai::TEXT_EMBEDDING_3_SMALL);
 
         let result = EmbeddingsBuilder::new(embedding_model)
@@ -255,12 +265,16 @@ impl LlmClient for RigLlmClient {
         // Rig v0.28 returns Vec<(&str, OneOrMany<Embedding>)>
         // OneOrMany can be iterated. Embeddings are f64, convert to f32.
         if let Some((_, one_or_many)) = result.into_iter().next() {
-            if let Some(embedding) = one_or_many.into_iter().next() {
-                let vec_f32: Vec<f32> = embedding.vec.into_iter().map(|x| x as f32).collect();
+            // Explicitly iterate over OneOrMany
+            use rig::embeddings::Embedding;
+            let mut iter = one_or_many.into_iter();
+            if let Some(embedding) = iter.next() {
+                let e: Embedding = embedding;
+                let vec_f32: Vec<f32> = e.vec.into_iter().map(|x| x as f32).collect();
                 return Ok(vec_f32);
             }
         }
-        
+
         Err(Error::ModelProvider("No embedding returned".to_string()))
     }
 }
@@ -290,14 +304,17 @@ mod tests {
 
         assert_eq!(config.provider, RigProvider::OpenAI);
         assert_eq!(config.model, "gpt-4o");
-        assert_eq!(config.system_prompt, Some("You are a helpful assistant".to_string()));
+        assert_eq!(
+            config.system_prompt,
+            Some("You are a helpful assistant".to_string())
+        );
         assert_eq!(config.temperature, Some(0.5));
     }
 
     #[test]
     fn test_build_prompt() {
         let client = RigLlmClient::gpt4o_mini();
-        
+
         let messages = vec![
             ChatMessage {
                 role: "system".to_string(),

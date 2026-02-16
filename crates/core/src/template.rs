@@ -1,12 +1,12 @@
 //! Template Hydration Engine (L-T Layer)
-//! 
+//!
 //! Provides dynamic YAML template rendering using Tera templating engine.
 //! Enables Config-as-Code pattern for Agent configurations.
 
-use std::collections::HashMap;
-use tera::{Tera, Context};
-use serde::{Deserialize, Serialize};
 use crate::error::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tera::{Context, Tera};
 
 /// Configuration generated from a hydrated template.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,14 +60,14 @@ struct RawSop {
 }
 
 /// Hydrates a YAML template with the provided variables.
-/// 
+///
 /// # Arguments
 /// * `yaml_content` - Raw YAML template content (may contain `{{ variable }}` placeholders).
 /// * `vars` - HashMap of variable names to values for injection.
-/// 
+///
 /// # Returns
 /// * `AgentConfig` - Fully rendered and parsed configuration.
-/// 
+///
 /// # Example
 /// ```ignore
 /// let yaml = r#"
@@ -78,7 +78,7 @@ struct RawSop {
 /// let mut vars = HashMap::new();
 /// vars.insert("client_name".to_string(), "Acme Corp".to_string());
 /// vars.insert("db_path".to_string(), "/data/acme.db".to_string());
-/// 
+///
 /// let config = hydrate_template(yaml, &vars)?;
 /// assert_eq!(config.system_prompt, "Hello, Acme Corp!");
 /// ```
@@ -89,20 +89,21 @@ pub fn hydrate_template(yaml_content: &str, vars: &HashMap<String, String>) -> R
     for (key, value) in vars {
         context.insert(key, value);
     }
-    
-    let rendered_yaml = tera.render_str(yaml_content, &context)
+
+    let rendered_yaml = tera
+        .render_str(yaml_content, &context)
         .map_err(|e| crate::error::Error::Template(e.to_string()))?;
-    
+
     // 2. Parse the rendered YAML
     let raw: RawTemplate = serde_yaml::from_str(&rendered_yaml)
         .map_err(|e| crate::error::Error::Template(e.to_string()))?;
-    
+
     // 3. Assemble the AgentConfig
     let sop_flow = raw.sop.map(|s| SopDefinition {
         name: s.name,
         steps: s.steps,
     });
-    
+
     Ok(AgentConfig {
         system_prompt: raw.system_prompt,
         mcp_servers: raw.mcp_servers,
@@ -114,7 +115,7 @@ pub fn hydrate_template(yaml_content: &str, vars: &HashMap<String, String>) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_hydrate_simple_template() {
         let yaml = r#"
@@ -127,14 +128,14 @@ native_tools:
         let mut vars = HashMap::new();
         vars.insert("company".to_string(), "TestCorp".to_string());
         vars.insert("db".to_string(), "/tmp/test.db".to_string());
-        
+
         let config = hydrate_template(yaml, &vars).unwrap();
-        
+
         assert_eq!(config.system_prompt, "You are an assistant for TestCorp.");
         assert_eq!(config.mcp_servers, vec!["sqlite:///tmp/test.db"]);
         assert_eq!(config.native_tools, vec!["search"]);
     }
-    
+
     #[test]
     fn test_hydrate_with_sop() {
         let yaml = r#"
@@ -149,9 +150,9 @@ sop:
 "#;
         let mut vars = HashMap::new();
         vars.insert("client".to_string(), "Acme".to_string());
-        
+
         let config = hydrate_template(yaml, &vars).unwrap();
-        
+
         assert!(config.sop_flow.is_some());
         let sop = config.sop_flow.unwrap();
         assert_eq!(sop.name, "audit_flow");

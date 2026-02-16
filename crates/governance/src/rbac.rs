@@ -19,17 +19,17 @@ pub struct UserRoles {
 pub trait RbacConnector: Send + Sync {
     /// Validate a token/session against enterprise IAM and return user roles.
     async fn validate(&self, token: &str) -> Result<UserRoles>;
-    
+
     /// Check if a user has permission to perform an action on a resource.
     /// This is a convenience method that calls validate and checks roles.
     async fn check_permission(&self, token: &str, resource: &str, action: &str) -> Result<bool>;
 }
 
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use multi_agent_core::Error;
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, Duration};
-use multi_agent_core::Error;
+use std::time::{Duration, SystemTime};
 
 // ... existing structs ...
 
@@ -59,11 +59,13 @@ struct RealmAccess {
     roles: Vec<String>,
 }
 
+type JwkCache = Arc<RwLock<Option<(Vec<Jwk>, SystemTime)>>>;
+
 /// OIDC Connector that validates JWTs against an issuer's JWKS.
 pub struct OidcRbacConnector {
     issuer: String,
     jwks_url: String,
-    cached_keys: Arc<RwLock<Option<(Vec<Jwk>, SystemTime)>>>,
+    cached_keys: JwkCache,
 }
 
 impl OidcRbacConnector {
@@ -80,10 +82,13 @@ impl OidcRbacConnector {
         let fetch = {
             let cache = self.cached_keys.read().unwrap();
             match &*cache {
-                Some((keys, time)) if time.elapsed().unwrap_or_default() < Duration::from_secs(300) => {
+                Some((keys, time))
+                    if time.elapsed().unwrap_or_default() < Duration::from_secs(300) =>
+                {
                     if let Some(jwk) = keys.iter().find(|k| k.kid == kid) {
-                        return DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
-                            .map_err(|e| Error::SecurityViolation(format!("Invalid RSA components: {}", e)));
+                        return DecodingKey::from_rsa_components(&jwk.n, &jwk.e).map_err(|e| {
+                            Error::SecurityViolation(format!("Invalid RSA components: {}", e))
+                        });
                     }
                     false // Key not found, force refresh
                 }
@@ -96,23 +101,39 @@ impl OidcRbacConnector {
             // avoiding heavy refactor for now, trusting use of spawn_blocking or similar if needed.
             // actually, let's use reqwest::get async
             let client = reqwest::Client::new();
-            let resp = client.get(&self.jwks_url).send().await
-                .map_err(|e| Error::SecurityViolation(format!("Failed to fetch JWKS: {}", e)))?;
-            let jwks: Jwks = resp.json().await
+            let resp =
+                client.get(&self.jwks_url).send().await.map_err(|e| {
+                    Error::SecurityViolation(format!("Failed to fetch JWKS: {}", e))
+                })?;
+            let jwks: Jwks = resp
+                .json()
+                .await
                 .map_err(|e| Error::SecurityViolation(format!("Failed to parse JWKS: {}", e)))?;
-            
+
             let mut cache = self.cached_keys.write().unwrap();
-            *cache = Some((jwks.keys.iter().map(|k| Jwk { 
-                kid: k.kid.clone(), n: k.n.clone(), e: k.e.clone() 
-            }).collect(), SystemTime::now()));
-            
+            *cache = Some((
+                jwks.keys
+                    .iter()
+                    .map(|k| Jwk {
+                        kid: k.kid.clone(),
+                        n: k.n.clone(),
+                        e: k.e.clone(),
+                    })
+                    .collect(),
+                SystemTime::now(),
+            ));
+
             if let Some(jwk) = cache.as_ref().unwrap().0.iter().find(|k| k.kid == kid) {
-                return DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
-                    .map_err(|e| Error::SecurityViolation(format!("Invalid RSA components: {}", e)));
+                return DecodingKey::from_rsa_components(&jwk.n, &jwk.e).map_err(|e| {
+                    Error::SecurityViolation(format!("Invalid RSA components: {}", e))
+                });
             }
         }
 
-        Err(Error::SecurityViolation(format!("Key ID {} not found in JWKS", kid)))
+        Err(Error::SecurityViolation(format!(
+            "Key ID {} not found in JWKS",
+            kid
+        )))
     }
 }
 
@@ -122,7 +143,9 @@ impl RbacConnector for OidcRbacConnector {
         // 1. Decode header to get kid
         let header = decode_header(token)
             .map_err(|e| Error::SecurityViolation(format!("Invalid token header: {}", e)))?;
-        let kid = header.kid.ok_or_else(|| Error::SecurityViolation("Missing kid in token header".into()))?;
+        let kid = header
+            .kid
+            .ok_or_else(|| Error::SecurityViolation("Missing kid in token header".into()))?;
 
         // 2. Get verification key (fetch JWKS if needed)
         let decoding_key = self.get_decoding_key(&kid).await?;
@@ -130,15 +153,18 @@ impl RbacConnector for OidcRbacConnector {
         // 3. Validate signature and claims
         let mut validation = Validation::new(Algorithm::RS256);
         validation.set_issuer(&[&self.issuer]);
-        
+
         let token_data = decode::<Claims>(token, &decoding_key, &validation)
             .map_err(|e| Error::SecurityViolation(format!("Invalid token: {}", e)))?;
 
-        let roles = token_data.claims.realm_access
+        let roles = token_data
+            .claims
+            .realm_access
             .map(|ra| ra.roles)
             .unwrap_or_default();
-            
-        let is_admin = roles.contains(&"admin".to_string()) || roles.contains(&"superuser".to_string());
+
+        let is_admin =
+            roles.contains(&"admin".to_string()) || roles.contains(&"superuser".to_string());
 
         Ok(UserRoles {
             user_id: token_data.claims.sub,
@@ -164,11 +190,15 @@ impl RbacConnector for NoOpRbacConnector {
         let is_admin = token == "admin";
         Ok(UserRoles {
             user_id: if is_admin { "admin" } else { "anonymous" }.to_string(),
-            roles: if is_admin { vec!["admin".to_string()] } else { vec!["user".to_string()] },
+            roles: if is_admin {
+                vec!["admin".to_string()]
+            } else {
+                vec!["user".to_string()]
+            },
             is_admin,
         })
     }
-    
+
     async fn check_permission(&self, _token: &str, _resource: &str, _action: &str) -> Result<bool> {
         Ok(true)
     }
@@ -181,7 +211,9 @@ pub struct StaticTokenRbacConnector {
 
 impl StaticTokenRbacConnector {
     pub fn new(token: impl Into<String>) -> Self {
-        Self { token: token.into() }
+        Self {
+            token: token.into(),
+        }
     }
 }
 
@@ -195,10 +227,12 @@ impl RbacConnector for StaticTokenRbacConnector {
                 is_admin: true,
             })
         } else {
-            Err(multi_agent_core::Error::SecurityViolation("Invalid admin token".into()))
+            Err(multi_agent_core::Error::SecurityViolation(
+                "Invalid admin token".into(),
+            ))
         }
     }
-    
+
     async fn check_permission(&self, token: &str, _resource: &str, _action: &str) -> Result<bool> {
         Ok(token == self.token)
     }

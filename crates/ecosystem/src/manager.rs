@@ -1,5 +1,5 @@
 use crate::manifest::PluginManifest;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -40,7 +40,10 @@ impl PluginManager {
     }
 
     /// Set the event emitter.
-    pub fn with_event_emitter(mut self, emitter: Arc<dyn multi_agent_core::traits::EventEmitter>) -> Self {
+    pub fn with_event_emitter(
+        mut self,
+        emitter: Arc<dyn multi_agent_core::traits::EventEmitter>,
+    ) -> Self {
         self.event_emitter = Some(emitter);
         self
     }
@@ -49,12 +52,14 @@ impl PluginManager {
     pub async fn initialize(&self) -> Result<()> {
         // 1. Ensure directories exist
         if !self.plugins_dir.exists() {
-            fs::create_dir_all(&self.plugins_dir).await
+            fs::create_dir_all(&self.plugins_dir)
+                .await
                 .context("Failed to create plugins directory")?;
         }
         if let Some(parent) = self.state_file.parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent).await
+                fs::create_dir_all(parent)
+                    .await
                     .context("Failed to create state file directory")?;
             }
         }
@@ -79,22 +84,27 @@ impl PluginManager {
             fs::remove_dir_all(&target_dir).await?;
         }
 
-        // Copy directory using a recursive helper or external command? 
+        // Copy directory using a recursive helper or external command?
         // For simplicity in MVP, let's assume flat structure or use a crate if needed.
-        // But standard fs doesn't have recursive copy. 
+        // But standard fs doesn't have recursive copy.
         // We'll implement a simple recursive copy.
         copy_dir_recursive(source_path.as_ref(), &target_dir).await?;
 
         // Update in-memory
         self.manifests.insert(manifest.id.clone(), manifest.clone());
-        
+
         // Default to disabled on install? Or enabled? Let's say disabled.
         self.enabled_state.insert(manifest.id.clone(), false);
         self.save_state().await?;
 
-        self.emit_event("PLUGIN_INSTALLED", &manifest.id, serde_json::json!({
-            "version": manifest.version
-        })).await;
+        self.emit_event(
+            "PLUGIN_INSTALLED",
+            &manifest.id,
+            serde_json::json!({
+                "version": manifest.version
+            }),
+        )
+        .await;
 
         Ok(manifest.id)
     }
@@ -108,7 +118,8 @@ impl PluginManager {
         self.enabled_state.insert(plugin_id.to_string(), true);
         self.save_state().await?;
 
-        self.emit_event("PLUGIN_ENABLED", plugin_id, serde_json::json!({})).await;
+        self.emit_event("PLUGIN_ENABLED", plugin_id, serde_json::json!({}))
+            .await;
         Ok(())
     }
 
@@ -121,7 +132,8 @@ impl PluginManager {
         self.enabled_state.insert(plugin_id.to_string(), false);
         self.save_state().await?;
 
-        self.emit_event("PLUGIN_DISABLED", plugin_id, serde_json::json!({})).await;
+        self.emit_event("PLUGIN_DISABLED", plugin_id, serde_json::json!({}))
+            .await;
         Ok(())
     }
 
@@ -129,7 +141,11 @@ impl PluginManager {
     pub fn list(&self) -> Vec<(PluginManifest, bool)> {
         let mut result = Vec::new();
         for entry in &self.manifests {
-            let enabled = self.enabled_state.get(entry.key()).map(|r| *r.value()).unwrap_or(false);
+            let enabled = self
+                .enabled_state
+                .get(entry.key())
+                .map(|r| *r.value())
+                .unwrap_or(false);
             result.push((entry.value().clone(), enabled));
         }
         result
@@ -137,63 +153,77 @@ impl PluginManager {
 
     /// Get a specific plugin manifest.
     pub fn get(&self, plugin_id: &str) -> Option<PluginManifest> {
-        if let Some(m) = self.manifests.get(plugin_id) {
-            Some(m.value().clone())
-        } else {
-            None
-        }
+        self.manifests.get(plugin_id).map(|m| m.value().clone())
     }
-    
+
     /// Check if a plugin is enabled.
     pub fn is_enabled(&self, plugin_id: &str) -> bool {
-        self.enabled_state.get(plugin_id).map(|r| *r.value()).unwrap_or(false)
+        self.enabled_state
+            .get(plugin_id)
+            .map(|r| *r.value())
+            .unwrap_or(false)
     }
 
     /// Sync enabled plugins with the McpRegistry.
     pub async fn sync_registry(&self, registry: &multi_agent_skills::McpRegistry) {
         for entry in &self.manifests {
             let manifest = entry.value();
-            let enabled = self.enabled_state.get(&manifest.id).map(|r| *r.value()).unwrap_or(false);
-            
+            let enabled = self
+                .enabled_state
+                .get(&manifest.id)
+                .map(|r| *r.value())
+                .unwrap_or(false);
+
             if enabled {
                 if !registry.contains(&manifest.id) {
                     // Convert manifest to McpServerInfo
-                    let mut server_info = multi_agent_skills::mcp_registry::McpServerInfo::new(&manifest.id, &manifest.name)
-                        .with_description(&manifest.description)
-                        .with_transport(&manifest.transport.r#type);
+                    let mut server_info = multi_agent_skills::mcp_registry::McpServerInfo::new(
+                        &manifest.id,
+                        &manifest.name,
+                    )
+                    .with_description(&manifest.description)
+                    .with_transport(&manifest.transport.r#type);
 
                     if let Some(cmd) = &manifest.transport.command {
                         server_info = server_info.with_uri(cmd);
                     } else if let Some(url) = &manifest.transport.url {
-                         server_info = server_info.with_uri(url);
+                        server_info = server_info.with_uri(url);
                     }
-                    
+
                     if !manifest.transport.args.is_empty() {
-                         server_info = server_info.with_args(manifest.transport.args.iter().map(|s| s.as_str()).collect());
+                        server_info = server_info.with_args(
+                            manifest.transport.args.iter().map(|s| s.as_str()).collect(),
+                        );
                     }
 
                     // Map capabilities string to enum (simplified for now)
-                     let caps = manifest.capabilities.iter().map(|c| {
-                        match c.as_str() {
-                            "filesystem" => multi_agent_skills::mcp_registry::McpCapability::FileSystem,
-                             "database" => multi_agent_skills::mcp_registry::McpCapability::Database,
-                             "web" => multi_agent_skills::mcp_registry::McpCapability::Web,
-                             "code_execution" => multi_agent_skills::mcp_registry::McpCapability::CodeExecution,
-                             "search" => multi_agent_skills::mcp_registry::McpCapability::Search,
-                             "memory" => multi_agent_skills::mcp_registry::McpCapability::Memory,
-                             "git" => multi_agent_skills::mcp_registry::McpCapability::Git,
-                             "communication" => multi_agent_skills::mcp_registry::McpCapability::Communication,
-                             _ => multi_agent_skills::mcp_registry::McpCapability::Custom(c.clone()),
-                        }
-                    }).collect();
+                    let caps = manifest
+                        .capabilities
+                        .iter()
+                        .map(|c| match c.as_str() {
+                            "filesystem" => {
+                                multi_agent_skills::mcp_registry::McpCapability::FileSystem
+                            }
+                            "database" => multi_agent_skills::mcp_registry::McpCapability::Database,
+                            "web" => multi_agent_skills::mcp_registry::McpCapability::Web,
+                            "code_execution" => {
+                                multi_agent_skills::mcp_registry::McpCapability::CodeExecution
+                            }
+                            "search" => multi_agent_skills::mcp_registry::McpCapability::Search,
+                            "memory" => multi_agent_skills::mcp_registry::McpCapability::Memory,
+                            "git" => multi_agent_skills::mcp_registry::McpCapability::Git,
+                            "communication" => {
+                                multi_agent_skills::mcp_registry::McpCapability::Communication
+                            }
+                            _ => multi_agent_skills::mcp_registry::McpCapability::Custom(c.clone()),
+                        })
+                        .collect();
                     server_info = server_info.with_capabilities(caps);
-                    
+
                     registry.register(server_info);
                 }
-            } else {
-                if registry.contains(&manifest.id) {
-                    registry.unregister(&manifest.id);
-                }
+            } else if registry.contains(&manifest.id) {
+                registry.unregister(&manifest.id);
             }
         }
     }
@@ -203,9 +233,8 @@ impl PluginManager {
     async fn load_state(&self) -> Result<()> {
         if self.state_file.exists() {
             let content = fs::read_to_string(&self.state_file).await?;
-            let state: PluginStateStore = serde_json::from_str(&content)
-                .unwrap_or_default(); // Fallback to empty on error for resilience
-            
+            let state: PluginStateStore = serde_json::from_str(&content).unwrap_or_default(); // Fallback to empty on error for resilience
+
             for (id, enabled) in state.enabled_plugins {
                 self.enabled_state.insert(id, enabled);
             }
@@ -222,7 +251,8 @@ impl PluginManager {
             enabled_plugins: enabled_map,
         };
         let content = serde_json::to_string_pretty(&state)?;
-        fs::write(&self.state_file, content).await
+        fs::write(&self.state_file, content)
+            .await
             .context("Failed to save plugin state")?;
         Ok(())
     }
@@ -236,7 +266,7 @@ impl PluginManager {
                     match PluginManifest::load(&manifest_path) {
                         Ok(manifest) => {
                             self.manifests.insert(manifest.id.clone(), manifest);
-                        },
+                        }
                         Err(e) => {
                             tracing::warn!("Failed to load manifest in {:?}: {}", entry.path(), e);
                         }
@@ -250,10 +280,13 @@ impl PluginManager {
     async fn emit_event(&self, event_type: &str, plugin_id: &str, mut payload: serde_json::Value) {
         if let Some(emitter) = &self.event_emitter {
             use multi_agent_core::events::{EventEnvelope, EventType};
-            
+
             // Inject plugin_id into payload
             if let Some(obj) = payload.as_object_mut() {
-                obj.insert("plugin_id".to_string(), serde_json::Value::String(plugin_id.to_string()));
+                obj.insert(
+                    "plugin_id".to_string(),
+                    serde_json::Value::String(plugin_id.to_string()),
+                );
             }
 
             // Map string to EventType (assuming we add PLUGIN_* types later or use Other)
@@ -266,7 +299,7 @@ impl PluginManager {
 
             let mut event = EventEnvelope::new(et, payload);
             event.actor = "system".to_string(); // or admin
-            
+
             emitter.emit(event).await;
         }
     }
@@ -281,7 +314,7 @@ async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         let ty = entry.file_type().await?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        
+
         if ty.is_dir() {
             Box::pin(copy_dir_recursive(&src_path, &dst_path)).await?;
         } else {

@@ -5,11 +5,7 @@
 
 use std::sync::Arc;
 
-use multi_agent_core::{
-    traits::ArtifactStore,
-    types::RefId,
-    Error, Result,
-};
+use multi_agent_core::{traits::ArtifactStore, types::RefId, Error, Result};
 
 /// Supported audio formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,10 +86,10 @@ pub struct AudioProcessor {
 
 impl AudioProcessor {
     /// Create a new audio processor.
-    pub fn new(store: Arc<dyn ArtifactStore>) -> Self {
+    pub fn new(store: Arc<dyn ArtifactStore>, openai_api_key: Option<String>) -> Self {
         Self {
             store,
-            openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
+            openai_api_key,
         }
     }
 
@@ -104,10 +100,8 @@ impl AudioProcessor {
             .unwrap_or_else(|| "unknown".to_string());
 
         // Encode as base64 for storage
-        let content = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            audio_data,
-        );
+        let content =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, audio_data);
 
         // Save returns the generated RefId
         let ref_id = self.store.save(content.into()).await?;

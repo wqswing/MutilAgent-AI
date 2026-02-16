@@ -3,13 +3,13 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use multi_agent_core::{
     traits::{ChatMessage, LlmClient, LlmResponse, LlmUsage},
     types::ProviderHealth,
-    Result, Error,
+    Error, Result,
 };
 
 /// Provider status tracking.
@@ -61,7 +61,7 @@ impl ProviderStatus {
         // Check if circuit should open
         let failures = self.failed_requests.load(Ordering::Relaxed);
         let total = self.total_requests.load(Ordering::Relaxed);
-        
+
         // Simple heuristic: > 50% failure rate after 10 requests
         if total >= 10 && (failures as f64 / total as f64) > 0.5 {
             self.health = ProviderHealth::CircuitOpen;
@@ -131,7 +131,7 @@ impl ProviderRegistry {
     /// Check if a specific provider is healthy (circuit closed).
     pub fn is_healthy(&self, key: &str) -> bool {
         if let Some(entry) = self.providers.get(key) {
-           !entry.value().1.is_circuit_open()
+            !entry.value().1.is_circuit_open()
         } else {
             false
         }
@@ -141,7 +141,7 @@ impl ProviderRegistry {
     pub fn get_raw(&self, key: &str) -> Option<Arc<dyn LlmClient>> {
         self.providers.get(key).map(|entry| entry.value().0.clone())
     }
-    
+
     /// Get a proxy client that handles circuit breaking.
     /// This is the preferred way to get a client.
     pub fn get_client(&self, _key: &str) -> Option<Arc<dyn LlmClient>> {
@@ -153,11 +153,15 @@ impl ProviderRegistry {
         // Instead, let's expose `get_raw` and helper methods for record success/failure, which we already have.
         // The Pattern suggests `AdaptiveModelSelector` holds `Arc<ProviderRegistry>`, so IT should construct the client.
         // Let's assume the caller passes the registry Arc to the Wrapper constructor.
-        None 
+        None
     }
 
     /// Get a specific provider.
-    pub fn get(&self, key: &str) -> Option<dashmap::mapref::one::Ref<'_, String, (Arc<dyn LlmClient>, ProviderStatus)>> {
+    #[allow(clippy::type_complexity)]
+    pub fn get(
+        &self,
+        key: &str,
+    ) -> Option<dashmap::mapref::one::Ref<'_, String, (Arc<dyn LlmClient>, ProviderStatus)>> {
         self.providers.get(key)
     }
 
@@ -197,10 +201,13 @@ impl CircuitBreakerClient {
             key,
         }
     }
-    
+
     fn check_health(&self) -> Result<()> {
         if !self.registry.is_healthy(&self.key) {
-            return Err(Error::ModelProvider(format!("Circuit breaker open for {}", self.key)));
+            return Err(Error::ModelProvider(format!(
+                "Circuit breaker open for {}",
+                self.key
+            )));
         }
         Ok(())
     }
@@ -210,7 +217,7 @@ impl CircuitBreakerClient {
 impl LlmClient for CircuitBreakerClient {
     async fn complete(&self, prompt: &str) -> Result<LlmResponse> {
         self.check_health()?;
-        
+
         match self.inner.complete(prompt).await {
             Ok(res) => {
                 self.registry.record_success(&self.key);
@@ -288,7 +295,9 @@ impl MockLlmClient {
 impl LlmClient for MockLlmClient {
     async fn complete(&self, prompt: &str) -> Result<LlmResponse> {
         if self.should_fail {
-            return Err(multi_agent_core::Error::ModelProvider("Mock failure".to_string()));
+            return Err(multi_agent_core::Error::ModelProvider(
+                "Mock failure".to_string(),
+            ));
         }
 
         Ok(LlmResponse {
@@ -305,7 +314,9 @@ impl LlmClient for MockLlmClient {
 
     async fn chat(&self, messages: &[ChatMessage]) -> Result<LlmResponse> {
         if self.should_fail {
-            return Err(multi_agent_core::Error::ModelProvider("Mock failure".to_string()));
+            return Err(multi_agent_core::Error::ModelProvider(
+                "Mock failure".to_string(),
+            ));
         }
 
         let last_message = messages.last().map(|m| m.content.as_str()).unwrap_or("");
@@ -323,9 +334,11 @@ impl LlmClient for MockLlmClient {
     }
 
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-         if self.should_fail {
-             return Err(multi_agent_core::Error::ModelProvider("Mock failure".to_string()));
-         }
+        if self.should_fail {
+            return Err(multi_agent_core::Error::ModelProvider(
+                "Mock failure".to_string(),
+            ));
+        }
         // Return a simple mock embedding
         let len = 128;
         let hash = text.bytes().fold(0u64, |acc, b| acc.wrapping_add(b as u64));
@@ -381,26 +394,28 @@ mod tests {
         let healthy = registry.get_healthy();
         assert_eq!(healthy.len(), 1);
     }
-    
+
     #[tokio::test]
     async fn test_circuit_breaker() {
         let registry = Arc::new(ProviderRegistry::new());
         let mock = Arc::new(MockLlmClient::failing());
         registry.register("test", "fail", mock);
-        
+
         let client = CircuitBreakerClient::new(
             registry.get_raw("test:fail").unwrap(),
             registry.clone(),
-            "test:fail".to_string()
+            "test:fail".to_string(),
         );
-        
+
         // Trigger failures
         for _ in 0..15 {
             let _ = client.complete("trigger").await;
         }
-        
+
         // Circuit should be open now
         let result = client.complete("should fail fast").await;
-        assert!(matches!(result, Err(Error::ModelProvider(msg)) if msg.contains("Circuit breaker open")));
+        assert!(
+            matches!(result, Err(Error::ModelProvider(msg)) if msg.contains("Circuit breaker open"))
+        );
     }
 }

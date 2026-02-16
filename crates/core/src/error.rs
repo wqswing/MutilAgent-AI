@@ -103,8 +103,6 @@ pub enum Error {
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
-
-
 }
 
 impl Error {
@@ -152,5 +150,4 @@ impl Error {
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::Internal(msg.into())
     }
-
 }

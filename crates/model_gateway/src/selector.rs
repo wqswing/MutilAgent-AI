@@ -12,20 +12,15 @@ use multi_agent_core::{
 use crate::providers::ProviderRegistry;
 
 /// Selection strategy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectionStrategy {
     /// Prefer cheapest model.
     CostOptimized,
     /// Prefer fastest model.
     PerformanceOptimized,
     /// Balance cost and performance.
+    #[default]
     Balanced,
-}
-
-impl Default for SelectionStrategy {
-    fn default() -> Self {
-        Self::Balanced
-    }
 }
 
 /// Mapping from tier to provider priorities.
@@ -98,8 +93,6 @@ impl AdaptiveModelSelector {
             ModelTier::Premium => &self.tier_mapping.premium,
         }
     }
-
-
 }
 
 #[async_trait]
@@ -112,15 +105,15 @@ impl ModelSelector for AdaptiveModelSelector {
         for model_key in tier_models {
             if healthy.contains(model_key) {
                 if let Some(entry) = self.registry.get_raw(model_key) {
-                     // Create a CircuitBreakerClient wrapper
-                     let client = crate::providers::CircuitBreakerClient::new(
-                         entry,
-                         self.registry.clone(),
-                         model_key.clone()
-                     );
-                     
-                     tracing::info!(model = %model_key, "Selected model with CB");
-                     return Ok(Box::new(client));
+                    // Create a CircuitBreakerClient wrapper
+                    let client = crate::providers::CircuitBreakerClient::new(
+                        entry,
+                        self.registry.clone(),
+                        model_key.clone(),
+                    );
+
+                    tracing::info!(model = %model_key, "Selected model with CB");
+                    return Ok(Box::new(client));
                 }
             }
         }
@@ -128,18 +121,18 @@ impl ModelSelector for AdaptiveModelSelector {
         // Try fallback to any healthy model
         if let Some(fallback_key) = healthy.first() {
             if let Some(entry) = self.registry.get_raw(fallback_key) {
-                 tracing::warn!(
+                tracing::warn!(
                     tier = ?tier,
                     fallback = %fallback_key,
                     "No tier model available, using fallback"
                 );
-                
+
                 let client = crate::providers::CircuitBreakerClient::new(
-                     entry,
-                     self.registry.clone(),
-                     fallback_key.clone()
-                 );
-                 return Ok(Box::new(client));
+                    entry,
+                    self.registry.clone(),
+                    fallback_key.clone(),
+                );
+                return Ok(Box::new(client));
             }
         }
 

@@ -32,6 +32,12 @@ opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
 tracing-opentelemetry.workspace = true
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+sha2.workspace = true
+hex = "0.4.3"
+bytes.workspace = true
 
 [dev-dependencies]
+multi_agent_store.workspace = true
+tempfile = "3.25.0"
 tokio = { workspace = true, features = ["test-util", "macros"] }

@@ -1,6 +1,6 @@
+use axum::{extract::State, http::StatusCode, Json};
 use serde::Serialize;
 use std::sync::Arc;
-use axum::{extract::State, Json, http::StatusCode};
 // Traits are brought in scope via AdminState if needed, or keeping them for trait bounds
 use crate::AdminState;
 use std::time::Instant;
@@ -42,16 +42,14 @@ impl CheckResult {
     }
 }
 
-pub async fn check_all(
-    State(state): State<Arc<AdminState>>,
-) -> Json<DoctorReport> {
+pub async fn check_all(State(state): State<Arc<AdminState>>) -> Json<DoctorReport> {
     let mut checks = Vec::new();
 
     // 1. Check LLM Connectivity
     // Retrieve providers via read lock
     let providers = state.providers.read().await;
     if providers.is_empty() {
-         checks.push(CheckResult {
+        checks.push(CheckResult {
             category: "LLM".to_string(),
             name: "Configuration".to_string(),
             status: "warn".to_string(),
@@ -64,12 +62,16 @@ pub async fn check_all(
         for provider in providers.iter().take(3) {
             let start = Instant::now();
             let client = reqwest::Client::new();
-            
+
             // Decrypt key
             let api_key = match state.secrets.retrieve(&provider.api_key_id).await {
                 Ok(Some(k)) => k,
                 _ => {
-                    checks.push(CheckResult::fail("LLM", &provider.id, "Failed to retrieve API key".to_string()));
+                    checks.push(CheckResult::fail(
+                        "LLM",
+                        &provider.id,
+                        "Failed to retrieve API key".to_string(),
+                    ));
                     continue;
                 }
             };
@@ -78,8 +80,9 @@ pub async fn check_all(
             // Heuristic: append /models if not present?
             // Providers usually store base_url like "https://api.openai.com/v1"
             let url = format!("{}/models", provider.base_url.trim_end_matches('/'));
-            
-            let res = client.get(&url)
+
+            let res = client
+                .get(&url)
                 .bearer_auth(api_key)
                 .timeout(std::time::Duration::from_secs(3))
                 .send()
@@ -88,17 +91,25 @@ pub async fn check_all(
             let latency = start.elapsed().as_millis() as u64;
             match res {
                 Ok(r) if r.status().is_success() || r.status() == StatusCode::UNAUTHORIZED => {
-                    // 401 is technically "reachable" so let's call it a pass for connectivity, 
-                    // but maybe warn? No, doctor should be strict. 
-                    // But test_provider allows 401? 
+                    // 401 is technically "reachable" so let's call it a pass for connectivity,
+                    // but maybe warn? No, doctor should be strict.
+                    // But test_provider allows 401?
                     // Let's stick to success for "pass".
                     if r.status().is_success() {
                         checks.push(CheckResult::pass("LLM", &provider.vendor, Some(latency)));
                     } else {
-                         checks.push(CheckResult::fail("LLM", &provider.vendor, format!("Status: {}", r.status())));
+                        checks.push(CheckResult::fail(
+                            "LLM",
+                            &provider.vendor,
+                            format!("Status: {}", r.status()),
+                        ));
                     }
                 }
-                Ok(r) => checks.push(CheckResult::fail("LLM", &provider.vendor, format!("Status: {}", r.status()))),
+                Ok(r) => checks.push(CheckResult::fail(
+                    "LLM",
+                    &provider.vendor,
+                    format!("Status: {}", r.status()),
+                )),
                 Err(e) => checks.push(CheckResult::fail("LLM", &provider.vendor, e.to_string())),
             }
         }
@@ -110,15 +121,27 @@ pub async fn check_all(
         let test_data = axum::body::Bytes::from("doctor_check");
         match store.save(test_data).await {
             Ok(id) => {
-                 // Try to delete immediately to clean up
-                 let _ = store.delete(&id).await;
-                 let latency = start.elapsed().as_millis() as u64;
-                 checks.push(CheckResult::pass("Storage", "Artifact Store", Some(latency)));
+                // Try to delete immediately to clean up
+                let _ = store.delete(&id).await;
+                let latency = start.elapsed().as_millis() as u64;
+                checks.push(CheckResult::pass(
+                    "Storage",
+                    "Artifact Store",
+                    Some(latency),
+                ));
             }
-            Err(e) => checks.push(CheckResult::fail("Storage", "Artifact Store", e.to_string())),
+            Err(e) => checks.push(CheckResult::fail(
+                "Storage",
+                "Artifact Store",
+                e.to_string(),
+            )),
         }
     } else {
-        checks.push(CheckResult::fail("Storage", "Artifact Store", "Not initialized".to_string()));
+        checks.push(CheckResult::fail(
+            "Storage",
+            "Artifact Store",
+            "Not initialized".to_string(),
+        ));
     }
 
     if let Some(store) = &state.session_store {
@@ -134,7 +157,11 @@ pub async fn check_all(
             }
         }
     } else {
-        checks.push(CheckResult::fail("Storage", "Session Store", "Not initialized".to_string()));
+        checks.push(CheckResult::fail(
+            "Storage",
+            "Session Store",
+            "Not initialized".to_string(),
+        ));
     }
 
     // 4. Check Sandbox (Docker)
@@ -142,14 +169,14 @@ pub async fn check_all(
     let docker = bollard::Docker::connect_with_socket_defaults();
     match docker {
         Ok(d) => {
-             let start = Instant::now();
-             match d.ping().await {
-                 Ok(_) => {
-                     let latency = start.elapsed().as_millis() as u64;
-                     checks.push(CheckResult::pass("Infrastructure", "Docker", Some(latency)));
-                 }
-                 Err(e) => checks.push(CheckResult::fail("Infrastructure", "Docker", e.to_string())),
-             }
+            let start = Instant::now();
+            match d.ping().await {
+                Ok(_) => {
+                    let latency = start.elapsed().as_millis() as u64;
+                    checks.push(CheckResult::pass("Infrastructure", "Docker", Some(latency)));
+                }
+                Err(e) => checks.push(CheckResult::fail("Infrastructure", "Docker", e.to_string())),
+            }
         }
         Err(e) => checks.push(CheckResult::fail("Infrastructure", "Docker", e.to_string())),
     }
@@ -159,18 +186,32 @@ pub async fn check_all(
     let start = Instant::now();
     let test_key = "doctor_secret_test";
     match state.secrets.store(test_key, "test_value").await {
-        Ok(_) => {
-            match state.secrets.retrieve(test_key).await {
-                Ok(Some(val)) if val == "test_value" => {
-                    let _ = state.secrets.delete(test_key).await;
-                    let latency = start.elapsed().as_millis() as u64;
-                    checks.push(CheckResult::pass("Security", "Secrets Manager", Some(latency)));
-                }
-                Ok(_) => checks.push(CheckResult::fail("Security", "Secrets Manager", "Value mismatch".to_string())),
-                Err(e) => checks.push(CheckResult::fail("Security", "Secrets Manager", e.to_string())),
+        Ok(_) => match state.secrets.retrieve(test_key).await {
+            Ok(Some(val)) if val == "test_value" => {
+                let _ = state.secrets.delete(test_key).await;
+                let latency = start.elapsed().as_millis() as u64;
+                checks.push(CheckResult::pass(
+                    "Security",
+                    "Secrets Manager",
+                    Some(latency),
+                ));
             }
-        }
-        Err(e) => checks.push(CheckResult::fail("Security", "Secrets Manager", e.to_string())),
+            Ok(_) => checks.push(CheckResult::fail(
+                "Security",
+                "Secrets Manager",
+                "Value mismatch".to_string(),
+            )),
+            Err(e) => checks.push(CheckResult::fail(
+                "Security",
+                "Secrets Manager",
+                e.to_string(),
+            )),
+        },
+        Err(e) => checks.push(CheckResult::fail(
+            "Security",
+            "Secrets Manager",
+            e.to_string(),
+        )),
     }
 
     let overall_status = if checks.iter().any(|c| c.status == "fail") {

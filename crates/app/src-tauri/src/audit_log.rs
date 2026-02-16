@@ -1,10 +1,10 @@
-use sha2::{Sha256, Digest};
-use serde::{Serialize, Deserialize};
-use std::fs::{OpenOptions, File};
-use std::io::{Write, BufReader, BufRead};
-use std::path::PathBuf;
+use anyhow::{Context, Result};
 use multi_agent_core::events::EventEnvelope;
-use anyhow::{Result, Context};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 
 /// An entry in the tamper-evident audit log.
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,8 +35,8 @@ impl AuditLog {
             let reader = BufReader::new(file);
             if let Some(last_line) = reader.lines().last() {
                 let line = last_line?;
-                let entry: AuditEntry = serde_json::from_str(&line)
-                    .context("Failed to parse last audit entry")?;
+                let entry: AuditEntry =
+                    serde_json::from_str(&line).context("Failed to parse last audit entry")?;
                 last_hash = entry.hash;
             }
         }
@@ -50,7 +50,7 @@ impl AuditLog {
     /// Append a new event to the audit log.
     pub fn append(&mut self, envelope: EventEnvelope) -> Result<()> {
         let prev_hash = self.last_hash.clone();
-        
+
         // Calculate new hash
         let mut hasher = Sha256::new();
         hasher.update(prev_hash.as_bytes());
@@ -69,7 +69,7 @@ impl AuditLog {
             .create(true)
             .append(true)
             .open(&self.file_path)?;
-        
+
         let line = serde_json::to_string(&entry)?;
         writeln!(file, "{}", line)?;
 
@@ -99,7 +99,11 @@ impl multi_agent_core::traits::EventEmitter for AuditSubscriber {
         use multi_agent_core::events::EventType;
         let should_audit = matches!(
             event.event_type,
-            EventType::ToolExecFinished | EventType::ApprovalDecided | EventType::PolicyEvaluated | EventType::FsWrite | EventType::FsRead
+            EventType::ToolExecFinished
+                | EventType::ApprovalDecided
+                | EventType::PolicyEvaluated
+                | EventType::FsWrite
+                | EventType::FsRead
         );
 
         if should_audit {

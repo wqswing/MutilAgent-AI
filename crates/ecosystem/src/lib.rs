@@ -1,5 +1,5 @@
-pub mod manifest;
 pub mod manager;
+pub mod manifest;
 
-pub use manifest::{PluginManifest, PluginPermission, RiskDeclaration, RiskRule};
 pub use manager::PluginManager;
+pub use manifest::{PluginManifest, PluginPermission, RiskDeclaration, RiskRule};

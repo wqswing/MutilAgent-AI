@@ -4,15 +4,15 @@
 //! This crate provides tiered storage (Hot/Warm/Cold) for artifacts,
 //! implementing the pass-by-reference pattern to prevent context explosion.
 
-pub mod memory;
-pub mod redis;
-pub mod s3;
-pub mod vector;
-pub mod qdrant;
-pub mod knowledge;
 pub mod file_provider;
 pub mod isolation;
+pub mod knowledge;
+pub mod memory;
+pub mod qdrant;
+pub mod redis;
 pub mod retention;
+pub mod s3;
+pub mod vector;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -24,15 +24,14 @@ use multi_agent_core::{
     Result,
 };
 
-pub use memory::{InMemoryStore, InMemorySessionStore};
-pub use redis::{RedisSessionStore, RedisStateStore, RedisRateLimiter, RedisProviderStore};
+pub use memory::{InMemorySessionStore, InMemoryStore};
+pub use redis::{RedisProviderStore, RedisRateLimiter, RedisSessionStore, RedisStateStore};
 
+pub use file_provider::FileProviderStore;
+pub use knowledge::InMemoryKnowledgeStore;
+pub use qdrant::{QdrantConfig, QdrantMemoryStore};
 pub use s3::S3ArtifactStore;
 pub use vector::SimpleVectorStore;
-pub use qdrant::{QdrantMemoryStore, QdrantConfig};
-pub use knowledge::InMemoryKnowledgeStore;
-pub use file_provider::FileProviderStore;
-
 
 /// Default threshold in bytes for pass-by-reference.
 /// Content larger than this will be stored in L3 and referenced by ID.
@@ -59,7 +58,7 @@ impl TieredStore {
             hot,
             warm: None,
             cold: None,
-            hot_threshold: 10 * 1024 * 1024,  // 10MB
+            hot_threshold: 10 * 1024 * 1024,   // 10MB
             warm_threshold: 100 * 1024 * 1024, // 100MB
         }
     }
@@ -141,7 +140,9 @@ impl ArtifactStore for TieredStore {
             content_type = content_type,
             "Saving artifact with type to tier"
         );
-        self.get_store(tier).save_with_type(data, content_type).await
+        self.get_store(tier)
+            .save_with_type(data, content_type)
+            .await
     }
 
     async fn load(&self, id: &RefId) -> Result<Option<Bytes>> {
@@ -200,6 +201,17 @@ impl ArtifactStore for TieredStore {
             return cold.metadata(id).await;
         }
         Ok(None)
+    }
+
+    async fn health_check(&self) -> Result<()> {
+        self.hot.health_check().await?;
+        if let Some(ref warm) = self.warm {
+            warm.health_check().await?;
+        }
+        if let Some(ref cold) = self.cold {
+            cold.health_check().await?;
+        }
+        Ok(())
     }
 }
 

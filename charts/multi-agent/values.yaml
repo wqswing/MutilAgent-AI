@@ -1,0 +1,57 @@
+image:
+  repository: multi-agent
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Application Configuration
+config:
+  host: "0.0.0.0"
+  port: 3000
+  logLevel: "info"
+  # S3 / MinIO
+  s3Bucket: "multiagent-artifacts"
+  s3Endpoint: "http://minio:9000"
+  # Redis
+  redisUrl: "redis://redis:6379"
+  # LLM Keys (Using Secrets recommended in prod)
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  # Governance
+  auditLogPath: "/app/data/audit.db"
+  auditStoragePath: "/app/data/audit_storage"
+  # Features
+  encryption:
+    enabled: false
+    masterKey: ""
+  tls:
+    enabled: false
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""

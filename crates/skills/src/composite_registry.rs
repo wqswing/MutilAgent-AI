@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use serde_json::Value;
-use std::sync::Arc;
-use multi_agent_core::{Result, Error};
 use multi_agent_core::traits::{Tool, ToolRegistry};
 use multi_agent_core::types::{ToolDefinition, ToolOutput};
+use multi_agent_core::{Error, Result};
+use serde_json::Value;
+use std::sync::Arc;
 
 /// A registry that aggregates multiple other registries.
 pub struct CompositeToolRegistry {
@@ -21,6 +21,12 @@ impl CompositeToolRegistry {
     /// Add a registry to the composite.
     pub fn add_registry(&mut self, registry: Arc<dyn ToolRegistry>) {
         self.registries.push(registry);
+    }
+}
+
+impl Default for CompositeToolRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -53,11 +59,11 @@ impl ToolRegistry for CompositeToolRegistry {
         for registry in &self.registries {
             // Check if registry has the tool first to avoid blind execution attempts if possible,
             // or just try execute and catch specific "not found" errors?
-            // Most registries might error if tool not found. 
+            // Most registries might error if tool not found.
             // Better to check `get` or rely on `list`.
             // However, `get` returns a Tool, which we can then use?
             // But `ToolRegistry::execute` is the standard way.
-            
+
             // Optimization: Try to find which registry has it.
             if let Ok(Some(_)) = registry.get(name).await {
                 return registry.execute(name, args).await;

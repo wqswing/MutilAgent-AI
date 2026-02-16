@@ -1,10 +1,6 @@
 use async_trait::async_trait;
+use multi_agent_core::{traits::ProviderEntry, traits::ProviderStore, Result};
 use std::path::PathBuf;
-use multi_agent_core::{
-    traits::ProviderStore,
-    traits::ProviderEntry,
-    Result,
-};
 
 /// Persistent storage for LLM provider configurations using a JSON file.
 pub struct FileProviderStore {
@@ -24,10 +20,12 @@ impl ProviderStore for FileProviderStore {
         if !self.path.exists() {
             return Ok(Vec::new());
         }
-        let content = std::fs::read_to_string(&self.path)
-            .map_err(|e| multi_agent_core::Error::storage(format!("Failed to read provider file: {}", e)))?;
-        let providers: Vec<ProviderEntry> = serde_json::from_str(&content)
-            .map_err(|e| multi_agent_core::Error::storage(format!("Failed to parse provider file: {}", e)))?;
+        let content = std::fs::read_to_string(&self.path).map_err(|e| {
+            multi_agent_core::Error::storage(format!("Failed to read provider file: {}", e))
+        })?;
+        let providers: Vec<ProviderEntry> = serde_json::from_str(&content).map_err(|e| {
+            multi_agent_core::Error::storage(format!("Failed to parse provider file: {}", e))
+        })?;
         Ok(providers)
     }
 
@@ -43,14 +41,20 @@ impl ProviderStore for FileProviderStore {
         } else {
             providers.push(provider.clone());
         }
-        let content = serde_json::to_string_pretty(&providers)
-            .map_err(|e| multi_agent_core::Error::storage(format!("Failed to serialize providers: {}", e)))?;
+        let content = serde_json::to_string_pretty(&providers).map_err(|e| {
+            multi_agent_core::Error::storage(format!("Failed to serialize providers: {}", e))
+        })?;
         if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| multi_agent_core::Error::storage(format!("Failed to create provider directory: {}", e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                multi_agent_core::Error::storage(format!(
+                    "Failed to create provider directory: {}",
+                    e
+                ))
+            })?;
         }
-        std::fs::write(&self.path, content)
-            .map_err(|e| multi_agent_core::Error::storage(format!("Failed to write provider file: {}", e)))?;
+        std::fs::write(&self.path, content).map_err(|e| {
+            multi_agent_core::Error::storage(format!("Failed to write provider file: {}", e))
+        })?;
         Ok(())
     }
 
@@ -61,10 +65,12 @@ impl ProviderStore for FileProviderStore {
         if providers.len() == len_before {
             return Ok(false);
         }
-        let content = serde_json::to_string_pretty(&providers)
-            .map_err(|e| multi_agent_core::Error::storage(format!("Failed to serialize providers: {}", e)))?;
-        std::fs::write(&self.path, content)
-            .map_err(|e| multi_agent_core::Error::storage(format!("Failed to write provider file: {}", e)))?;
+        let content = serde_json::to_string_pretty(&providers).map_err(|e| {
+            multi_agent_core::Error::storage(format!("Failed to serialize providers: {}", e))
+        })?;
+        std::fs::write(&self.path, content).map_err(|e| {
+            multi_agent_core::Error::storage(format!("Failed to write provider file: {}", e))
+        })?;
         Ok(true)
     }
 }

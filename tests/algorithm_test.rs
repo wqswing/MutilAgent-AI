@@ -1,14 +1,14 @@
+use async_trait::async_trait;
+use multi_agent_controller::react::{ReActConfig, ReActController};
 use multi_agent_core::{
-    traits::{IntentRouter, LlmClient, Tool, ToolRegistry, SessionStore, Controller},
-    types::{NormalizedRequest, UserIntent, AgentResult, ToolOutput, RefId},
-    mocks::{MockLlm, MockToolRegistry, MockSessionStore},
+    mocks::{MockLlm, MockSessionStore, MockToolRegistry},
+    traits::{Controller, IntentRouter, SessionStore, Tool},
+    types::{AgentResult, NormalizedRequest, RefId, ToolOutput, UserIntent},
     Result,
 };
 use multi_agent_gateway::router::DefaultRouter;
-use multi_agent_controller::react::{ReActController, ReActConfig};
-use std::sync::{Arc, Mutex};
-use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
 
 // ============================================================================
 // Helper: Closure Tool for Testing
@@ -30,9 +30,15 @@ impl ClosureTool {
 
 #[async_trait]
 impl Tool for ClosureTool {
-    fn name(&self) -> &str { &self.name }
-    fn description(&self) -> &str { "Test tool" }
-    fn parameters(&self) -> Value { serde_json::json!({}) }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> &str {
+        "Test tool"
+    }
+    fn parameters(&self) -> Value {
+        serde_json::json!({})
+    }
     async fn execute(&self, args: Value) -> Result<ToolOutput> {
         let content = (self.func)(args)?;
         Ok(ToolOutput {
@@ -103,7 +109,8 @@ async fn test_react_perfect_execution() {
         // Step 1
         r#"THOUGHT: Check weather.
 ACTION: weather
-ARGS: {"city": "Paris"}"#.to_string(),
+ARGS: {"city": "Paris"}"#
+            .to_string(),
         // Step 2
         r#"FINAL ANSWER: It is sunny in Paris."#.to_string(),
     ]);
@@ -112,22 +119,29 @@ ARGS: {"city": "Paris"}"#.to_string(),
     let weather_tool = ClosureTool::new("weather", |_: Value| {
         Ok("Weather in Paris is Sunny".to_string())
     });
-    
+
     let registry = MockToolRegistry::with_tools(vec![Arc::new(weather_tool)]);
 
     let config = ReActConfig::default();
-    
+
     let controller = ReActController::builder()
         .with_config(config)
         .with_llm(Arc::new(llm))
         .with_tools(Arc::new(registry))
         .build();
 
-    let result: AgentResult = controller.execute(UserIntent::ComplexMission { 
-        goal: "Check weather in Paris".to_string(), 
-        context_summary: "".to_string(), 
-        visual_refs: vec![] 
-    }).await.unwrap();
+    let result: AgentResult = controller
+        .execute(
+            UserIntent::ComplexMission {
+                goal: "Check weather in Paris".to_string(),
+                context_summary: "".to_string(),
+                visual_refs: vec![],
+                user_id: None,
+            },
+            "test-trace".to_string(),
+        )
+        .await
+        .unwrap();
 
     match result {
         AgentResult::Text(ans) => assert_eq!(ans, "It is sunny in Paris."),
@@ -140,27 +154,37 @@ async fn test_react_max_iterations() {
     let llm = MockLlm::new(vec![
         "THOUGHT: Thinking...".to_string(),
         "THOUGHT: Still thinking...".to_string(),
-        "THOUGHT: More thinking...".to_string(), 
+        "THOUGHT: More thinking...".to_string(),
         "THOUGHT: Is this working?".to_string(),
     ]);
 
     let mut config = ReActConfig::default();
-    config.max_iterations = 3; 
+    config.max_iterations = 3;
 
     let controller = ReActController::builder()
         .with_config(config)
         .with_llm(Arc::new(llm))
         .build();
 
-    let result: Result<AgentResult> = controller.execute(UserIntent::ComplexMission { 
-        goal: "Hard problem".to_string(), 
-        context_summary: "".to_string(), 
-        visual_refs: vec![] 
-    }).await;
+    let result: Result<AgentResult> = controller
+        .execute(
+            UserIntent::ComplexMission {
+                goal: "Hard problem".to_string(),
+                context_summary: "".to_string(),
+                visual_refs: vec![],
+                user_id: None,
+            },
+            "test-trace".to_string(),
+        )
+        .await;
 
     assert!(result.is_err());
     let err = result.err().unwrap().to_string();
-    assert!(err.contains("exceeded max iterations") || err.contains("budget"), "Unexpected error: {}", err);
+    assert!(
+        err.contains("exceeded max iterations") || err.contains("budget"),
+        "Unexpected error: {}",
+        err
+    );
 }
 
 // ============================================================================
@@ -170,39 +194,63 @@ async fn test_react_max_iterations() {
 #[tokio::test]
 async fn test_react_persistence_trigger() {
     // A simplified test to verify saving happens.
-    
+
     struct CapturingStore {
         last_id: Arc<Mutex<Option<String>>>,
     }
-    
+
     #[async_trait]
     impl SessionStore for CapturingStore {
         async fn save(&self, session: &multi_agent_core::types::Session) -> Result<()> {
             *self.last_id.lock().unwrap() = Some(session.id.clone());
             Ok(())
         }
-        async fn load(&self, _: &str) -> Result<Option<multi_agent_core::types::Session>> { Ok(None) }
-        async fn delete(&self, _: &str) -> Result<()> { Ok(()) }
-        async fn list_running(&self) -> Result<Vec<String>> { Ok(vec![]) }
+        async fn load(&self, _: &str) -> Result<Option<multi_agent_core::types::Session>> {
+            Ok(None)
+        }
+        async fn delete(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn list_running(&self) -> Result<Vec<String>> {
+            Ok(vec![])
+        }
+        async fn list_sessions(
+            &self,
+            _status: Option<multi_agent_core::types::SessionStatus>,
+            _last_id: Option<&str>,
+        ) -> Result<Vec<multi_agent_core::types::Session>> {
+            Ok(vec![])
+        }
     }
-    
+
     let last_id = Arc::new(Mutex::new(None));
-    let store = Arc::new(CapturingStore { last_id: last_id.clone() });
-    
+    let store = Arc::new(CapturingStore {
+        last_id: last_id.clone(),
+    });
+
     let llm = MockLlm::new(vec!["FINAL ANSWER: Done".to_string()]);
-    
+
     let controller = ReActController::builder()
         .with_config(ReActConfig::default())
         .with_llm(Arc::new(llm))
         // Correct method name from builder.rs
         .with_session_store(store)
         .build();
-        
-    let _ = controller.execute(UserIntent::ComplexMission { 
-        goal: "Save me".to_string(), 
-        context_summary: "".to_string(), 
-        visual_refs: vec![] 
-    }).await;
-    
-    assert!(last_id.lock().unwrap().is_some(), "Session should have been saved");
+
+    let _ = controller
+        .execute(
+            UserIntent::ComplexMission {
+                goal: "Save me".to_string(),
+                context_summary: "".to_string(),
+                visual_refs: vec![],
+                user_id: None,
+            },
+            "test-trace".to_string(),
+        )
+        .await;
+
+    assert!(
+        last_id.lock().unwrap().is_some(),
+        "Session should have been saved"
+    );
 }

@@ -1,16 +1,11 @@
 //! governed network tools.
 
-use std::sync::Arc;
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use multi_agent_core::{
-    traits::Tool,
-    types::ToolOutput,
-    Error,
-    Result,
-};
+use multi_agent_core::{traits::Tool, types::ToolOutput, Error, Result};
 use multi_agent_governance::network::NetworkPolicy;
 
 /// Tool for fetching text/json content from a URL (GET/POST).
@@ -66,13 +61,19 @@ impl Tool for FetchTool {
         match self.policy.check(&args.url) {
             Ok(multi_agent_governance::network::NetworkDecision::Allowed) => {}
             Ok(multi_agent_governance::network::NetworkDecision::Denied(reason)) => {
-                return Err(Error::tool_execution(format!("Network policy denied access: {}", reason)).into());
+                return Err(Error::tool_execution(format!(
+                    "Network policy denied access: {}",
+                    reason
+                )));
             }
-            Err(e) => return Err(Error::tool_execution(format!("Policy check failed: {}", e)).into()),
+            Err(e) => return Err(Error::tool_execution(format!("Policy check failed: {}", e))),
         }
 
         // 2. Prepare Request
-        let method = args.method.to_uppercase().parse::<reqwest::Method>()
+        let method = args
+            .method
+            .to_uppercase()
+            .parse::<reqwest::Method>()
             .map_err(|_| Error::tool_execution(format!("Invalid HTTP method: {}", args.method)))?;
 
         let mut req = self.client.request(method, &args.url);
@@ -86,21 +87,27 @@ impl Tool for FetchTool {
         }
 
         // 3. Execute
-        let resp = req.send().await
+        let resp = req
+            .send()
+            .await
             .map_err(|e| Error::tool_execution(format!("Request failed: {}", e)))?;
 
         let status = resp.status();
-        let content = resp.text().await
+        let content = resp
+            .text()
+            .await
             .map_err(|e| Error::tool_execution(format!("Failed to read response body: {}", e)))?;
 
         if !status.is_success() {
-             return Ok(ToolOutput::text(format!("HTTP Error {}: {}", status, content)));
+            return Ok(ToolOutput::text(format!(
+                "HTTP Error {}: {}",
+                status, content
+            )));
         }
 
         Ok(ToolOutput::text(content))
     }
 }
-
 
 /// Tool for downloading files to the sandbox.
 #[derive(Clone)]
@@ -111,7 +118,10 @@ pub struct DownloadTool {
 }
 
 impl DownloadTool {
-    pub fn new(policy: Arc<NetworkPolicy>, sandbox_manager: Arc<multi_agent_sandbox::SandboxManager>) -> Self {
+    pub fn new(
+        policy: Arc<NetworkPolicy>,
+        sandbox_manager: Arc<multi_agent_sandbox::SandboxManager>,
+    ) -> Self {
         Self {
             policy,
             client: reqwest::Client::new(),
@@ -141,37 +151,59 @@ impl Tool for DownloadTool {
     }
 
     async fn execute(&self, args: serde_json::Value) -> Result<ToolOutput> {
-         let args: DownloadArgs = serde_json::from_value(args)
+        let args: DownloadArgs = serde_json::from_value(args)
             .map_err(|e| Error::tool_execution(format!("Invalid arguments: {}", e)))?;
 
         // 1. Check Policy
         match self.policy.check(&args.url) {
             Ok(multi_agent_governance::network::NetworkDecision::Allowed) => {}
             Ok(multi_agent_governance::network::NetworkDecision::Denied(reason)) => {
-                return Err(Error::tool_execution(format!("Network policy denied access: {}", reason)).into());
+                return Err(Error::tool_execution(format!(
+                    "Network policy denied access: {}",
+                    reason
+                )));
             }
-            Err(e) => return Err(Error::tool_execution(format!("Policy check failed: {}", e)).into()),
+            Err(e) => return Err(Error::tool_execution(format!("Policy check failed: {}", e))),
         }
 
         // 2. Download
-        let resp = self.client.get(&args.url).send().await
+        let resp = self
+            .client
+            .get(&args.url)
+            .send()
+            .await
             .map_err(|e| Error::tool_execution(format!("Request failed: {}", e)))?;
 
         if !resp.status().is_success() {
-             return Err(Error::tool_execution(format!("HTTP Error {}", resp.status())).into());
+            return Err(Error::tool_execution(format!(
+                "HTTP Error {}",
+                resp.status()
+            )));
         }
 
-        let content = resp.bytes().await
+        let content = resp
+            .bytes()
+            .await
             .map_err(|e| Error::tool_execution(format!("Failed to download content: {}", e)))?;
 
         // 3. Write to Sandbox
-        let sandbox_id = self.sandbox_manager.get_or_create().await
-             .map_err(|e| Error::tool_execution(format!("Failed to get sandbox: {}", e)))?;
+        let sandbox_id = self
+            .sandbox_manager
+            .get_or_create()
+            .await
+            .map_err(|e| Error::tool_execution(format!("Failed to get sandbox: {}", e)))?;
 
-        self.sandbox_manager.engine().write_file(&sandbox_id, &args.destination_path, &content).await
+        self.sandbox_manager
+            .engine()
+            .write_file(&sandbox_id, &args.destination_path, &content)
+            .await
             .map_err(|e| Error::tool_execution(format!("Failed to write to sandbox: {}", e)))?;
 
-        Ok(ToolOutput::text(format!("Successfully downloaded {} bytes to {}", content.len(), args.destination_path)))
+        Ok(ToolOutput::text(format!(
+            "Successfully downloaded {} bytes to {}",
+            content.len(),
+            args.destination_path
+        )))
     }
 }
 
@@ -184,14 +216,17 @@ mod tests {
     async fn test_fetch_tool_policy_deny() {
         let policy = Arc::new(NetworkPolicy::default()); // Defaults deny everything
         let tool = FetchTool::new(policy);
-        
+
         let args = serde_json::json!({
             "url": "https://google.com"
         });
-        
+
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Network policy denied access"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Network policy denied access"));
     }
 
     #[tokio::test]
@@ -199,21 +234,25 @@ mod tests {
         let policy = Arc::new(NetworkPolicy::new(
             vec!["google.com".to_string()],
             vec![],
-            vec![80, 443]
+            vec![80, 443],
         ));
         let tool = FetchTool::new(policy);
-        
-        // We expect a network error (since we have no internet or it might fail), 
+
+        // We expect a network error (since we have no internet or it might fail),
         // but NOT a policy error.
         let args = serde_json::json!({
             "url": "https://google.com"
         });
-        
+
         let result = tool.execute(args).await;
         // It might succeed if we have net access, or fail with connection error.
         // We just check it didn't fail with "Network policy denied access".
         if let Err(e) = result {
-            assert!(!e.to_string().contains("Network policy denied access"), "Should have passed policy check. Error was: {}", e);
+            assert!(
+                !e.to_string().contains("Network policy denied access"),
+                "Should have passed policy check. Error was: {}",
+                e
+            );
         }
     }
 }

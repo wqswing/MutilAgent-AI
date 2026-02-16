@@ -45,7 +45,11 @@ pub enum NetworkError {
 
 impl NetworkPolicy {
     /// Create a new network policy.
-    pub fn new(allow_domains: Vec<String>, deny_domains: Vec<String>, allow_ports: Vec<u16>) -> Self {
+    pub fn new(
+        allow_domains: Vec<String>,
+        deny_domains: Vec<String>,
+        allow_ports: Vec<u16>,
+    ) -> Self {
         Self {
             allow_domains,
             deny_domains,
@@ -66,7 +70,10 @@ impl NetworkPolicy {
         // 1. Check Port
         let port = url.port_or_known_default().unwrap_or(80);
         if !self.allow_ports.contains(&port) {
-            return Ok(NetworkDecision::Denied(format!("Port {} is not allowed", port)));
+            return Ok(NetworkDecision::Denied(format!(
+                "Port {} is not allowed",
+                port
+            )));
         }
 
         // 2. Check Host
@@ -77,13 +84,18 @@ impl NetworkPolicy {
 
         // Block IP addresses (simple check: if it parses as IP, block it)
         if host.parse::<std::net::IpAddr>().is_ok() {
-            return Ok(NetworkDecision::Denied("Direct IP access is prohibited. Use domain names.".to_string()));
+            return Ok(NetworkDecision::Denied(
+                "Direct IP access is prohibited. Use domain names.".to_string(),
+            ));
         }
 
         // 3. Check Deny List
         for rule in &self.deny_domains {
             if self.matches(host, rule) {
-                return Ok(NetworkDecision::Denied(format!("Domain '{}' is explicitly denied by rule '{}'", host, rule)));
+                return Ok(NetworkDecision::Denied(format!(
+                    "Domain '{}' is explicitly denied by rule '{}'",
+                    host, rule
+                )));
             }
         }
 
@@ -94,7 +106,10 @@ impl NetworkPolicy {
             }
         }
 
-        Ok(NetworkDecision::Denied(format!("Domain '{}' is not in the allowlist", host)))
+        Ok(NetworkDecision::Denied(format!(
+            "Domain '{}' is not in the allowlist",
+            host
+        )))
     }
 
     /// Helper to match domains with wildcards.
@@ -104,8 +119,7 @@ impl NetworkPolicy {
             return true;
         }
 
-        if rule.starts_with("*.") {
-            let suffix = &rule[2..];
+        if let Some(suffix) = rule.strip_prefix("*.") {
             return domain.ends_with(suffix) || domain == suffix;
         }
 
@@ -126,25 +140,26 @@ mod tests {
 
     #[test]
     fn test_allow_domain() {
-        let policy = NetworkPolicy::new(
-            vec!["google.com".to_string()],
-            vec![],
-            vec![443],
-        );
+        let policy = NetworkPolicy::new(vec!["google.com".to_string()], vec![], vec![443]);
         let result = policy.check("https://google.com").unwrap();
         assert_eq!(result, NetworkDecision::Allowed);
     }
 
     #[test]
     fn test_wildcard_allow() {
-        let policy = NetworkPolicy::new(
-            vec!["*.google.com".to_string()],
-            vec![],
-            vec![443],
+        let policy = NetworkPolicy::new(vec!["*.google.com".to_string()], vec![], vec![443]);
+        assert_eq!(
+            policy.check("https://mail.google.com").unwrap(),
+            NetworkDecision::Allowed
         );
-        assert_eq!(policy.check("https://mail.google.com").unwrap(), NetworkDecision::Allowed);
-        assert_eq!(policy.check("https://google.com").unwrap(), NetworkDecision::Allowed);
-        assert!(matches!(policy.check("https://yahoo.com").unwrap(), NetworkDecision::Denied(_)));
+        assert_eq!(
+            policy.check("https://google.com").unwrap(),
+            NetworkDecision::Allowed
+        );
+        assert!(matches!(
+            policy.check("https://yahoo.com").unwrap(),
+            NetworkDecision::Denied(_)
+        ));
     }
 
     #[test]
@@ -156,19 +171,20 @@ mod tests {
         );
         // Explicitly denied
         let result = policy.check("https://mail.google.com").unwrap();
-        assert!(matches!(result, NetworkDecision::Denied(reason) if reason.contains("explicitly denied")));
+        assert!(
+            matches!(result, NetworkDecision::Denied(reason) if reason.contains("explicitly denied"))
+        );
 
         // Allowed by wildcard
-        assert_eq!(policy.check("https://maps.google.com").unwrap(), NetworkDecision::Allowed);
+        assert_eq!(
+            policy.check("https://maps.google.com").unwrap(),
+            NetworkDecision::Allowed
+        );
     }
 
     #[test]
     fn test_port_restriction() {
-        let policy = NetworkPolicy::new(
-            vec!["google.com".to_string()],
-            vec![],
-            vec![443],
-        );
+        let policy = NetworkPolicy::new(vec!["google.com".to_string()], vec![], vec![443]);
         // Port 80 not allowed
         let result = policy.check("http://google.com").unwrap(); // http implies 80
         assert!(matches!(result, NetworkDecision::Denied(reason) if reason.contains("Port 80")));
@@ -176,12 +192,10 @@ mod tests {
 
     #[test]
     fn test_ip_block() {
-        let policy = NetworkPolicy::new(
-            vec!["*".to_string()],
-            vec![],
-            vec![443],
-        );
+        let policy = NetworkPolicy::new(vec!["*".to_string()], vec![], vec![443]);
         let result = policy.check("https://1.1.1.1").unwrap();
-        assert!(matches!(result, NetworkDecision::Denied(reason) if reason.contains("Direct IP access")));
+        assert!(
+            matches!(result, NetworkDecision::Denied(reason) if reason.contains("Direct IP access"))
+        );
     }
 }

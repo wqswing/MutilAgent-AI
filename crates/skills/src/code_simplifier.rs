@@ -88,7 +88,7 @@ fn simplify_fn(f: &ItemFn) -> String {
     let attrs = format_attrs(&f.attrs);
     let vis = format_visibility(&f.vis);
     let sig = format_signature(&f.sig);
-    
+
     format!("{}{}{} {{ ... }}", attrs, vis, sig)
 }
 
@@ -97,22 +97,15 @@ fn simplify_struct(s: &ItemStruct) -> String {
     let attrs = format_attrs(&s.attrs);
     let vis = format_visibility(&s.vis);
     let generics = s.generics.to_token_stream().to_string();
-    
+
     let fields = match &s.fields {
         Fields::Named(named) => {
-            let field_strs: Vec<String> = named
-                .named
-                .iter()
-                .map(|f| format_field(f))
-                .collect();
+            let field_strs: Vec<String> = named.named.iter().map(format_field).collect();
             format!(" {{\n    {}\n}}", field_strs.join(",\n    "))
         }
         Fields::Unnamed(unnamed) => {
-            let field_strs: Vec<String> = unnamed
-                .unnamed
-                .iter()
-                .map(|f| format_type(&f.ty))
-                .collect();
+            let field_strs: Vec<String> =
+                unnamed.unnamed.iter().map(|f| format_type(&f.ty)).collect();
             format!("({});", field_strs.join(", "))
         }
         Fields::Unit => ";".to_string(),
@@ -142,11 +135,8 @@ fn simplify_enum(e: &ItemEnum) -> String {
                     format!("{} {{ {} }}", name, fields.join(", "))
                 }
                 Fields::Unnamed(unnamed) => {
-                    let fields: Vec<String> = unnamed
-                        .unnamed
-                        .iter()
-                        .map(|f| format_type(&f.ty))
-                        .collect();
+                    let fields: Vec<String> =
+                        unnamed.unnamed.iter().map(|f| format_type(&f.ty)).collect();
                     format!("{}({})", name, fields.join(", "))
                 }
                 Fields::Unit => name.to_string(),
@@ -176,7 +166,11 @@ fn simplify_trait(t: &ItemTrait) -> String {
         .filter_map(|item| match item {
             TraitItem::Fn(m) => Some(format!("    {};", format_signature(&m.sig))),
             TraitItem::Type(t) => Some(format!("    type {};", t.ident)),
-            TraitItem::Const(c) => Some(format!("    const {}: {};", c.ident, c.ty.to_token_stream())),
+            TraitItem::Const(c) => Some(format!(
+                "    const {}: {};",
+                c.ident,
+                c.ty.to_token_stream()
+            )),
             _ => None,
         })
         .collect();
@@ -210,8 +204,16 @@ fn simplify_impl(i: &ItemImpl) -> String {
                 let vis = format_visibility(&m.vis);
                 Some(format!("    {}{} {{ ... }}", vis, format_signature(&m.sig)))
             }
-            ImplItem::Type(t) => Some(format!("    type {} = {};", t.ident, t.ty.to_token_stream())),
-            ImplItem::Const(c) => Some(format!("    const {}: {} = ...;", c.ident, c.ty.to_token_stream())),
+            ImplItem::Type(t) => Some(format!(
+                "    type {} = {};",
+                t.ident,
+                t.ty.to_token_stream()
+            )),
+            ImplItem::Const(c) => Some(format!(
+                "    const {}: {} = ...;",
+                c.ident,
+                c.ty.to_token_stream()
+            )),
             _ => None,
         })
         .collect();
@@ -228,7 +230,7 @@ fn simplify_impl(i: &ItemImpl) -> String {
 /// Simplify a module.
 fn simplify_mod(m: &ItemMod) -> Option<String> {
     let vis = format_visibility(&m.vis);
-    
+
     if let Some((_, items)) = &m.content {
         let inner: Vec<String> = items
             .iter()
@@ -239,7 +241,12 @@ fn simplify_mod(m: &ItemMod) -> Option<String> {
         if inner.is_empty() {
             Some(format!("{}mod {};", vis, m.ident))
         } else {
-            Some(format!("{}mod {} {{\n{}\n}}", vis, m.ident, inner.join("\n\n")))
+            Some(format!(
+                "{}mod {} {{\n{}\n}}",
+                vis,
+                m.ident,
+                inner.join("\n\n")
+            ))
         }
     } else {
         Some(format!("{}mod {};", vis, m.ident))
@@ -257,8 +264,16 @@ fn format_visibility(vis: &Visibility) -> String {
 
 /// Format a function signature.
 fn format_signature(sig: &Signature) -> String {
-    let asyncness = if sig.asyncness.is_some() { "async " } else { "" };
-    let unsafety = if sig.unsafety.is_some() { "unsafe " } else { "" };
+    let asyncness = if sig.asyncness.is_some() {
+        "async "
+    } else {
+        ""
+    };
+    let unsafety = if sig.unsafety.is_some() {
+        "unsafe "
+    } else {
+        ""
+    };
     let name = &sig.ident;
     let generics = sig.generics.to_token_stream().to_string();
 

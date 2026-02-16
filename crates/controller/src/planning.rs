@@ -4,16 +4,16 @@
 //! and keeps the agent focused on the current step.
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
+use crate::capability::AgentCapability;
 use multi_agent_core::{
     traits::LlmClient,
-    types::{Session, HistoryEntry},
-    Result, Error,
+    types::{HistoryEntry, Session},
+    Error, Result,
 };
-use crate::capability::AgentCapability;
 
 /// A step in the execution plan.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,14 +57,19 @@ impl PlanningCapability {
             goal
         );
 
-        let response = self.llm.complete(&prompt).await
+        let response = self
+            .llm
+            .complete(&prompt)
+            .await
             .map_err(|e| Error::controller(format!("Failed to generate plan: {}", e)))?;
 
         let mut steps = Vec::new();
         for (i, line) in response.content.lines().enumerate() {
             let line = line.trim();
-            if line.is_empty() { continue; }
-            
+            if line.is_empty() {
+                continue;
+            }
+
             // Simple parsing: just take the line content
             // Remove "1. " prefix if present
             let description = if let Some((_, rest)) = line.split_once('.') {
@@ -81,12 +86,12 @@ impl PlanningCapability {
         }
 
         if steps.is_empty() {
-             // Fallback if parsing fails or LLM is weird
-             steps.push(PlanStep {
-                 id: 1,
-                 description: format!("Execute goal: {}", goal),
-                 status: StepStatus::Pending,
-             });
+            // Fallback if parsing fails or LLM is weird
+            steps.push(PlanStep {
+                id: 1,
+                description: format!("Execute goal: {}", goal),
+                status: StepStatus::Pending,
+            });
         }
 
         // Set first step to InProgress
@@ -127,7 +132,7 @@ impl AgentCapability for PlanningCapability {
 
         tracing::info!("Generating plan for goal: {}", goal);
         let steps = self.generate_plan(goal).await?;
-        
+
         let plan_str = Self::format_plan(&steps);
         tracing::info!("Generated Plan:\n{}", plan_str);
 
@@ -137,7 +142,10 @@ impl AgentCapability for PlanningCapability {
         // Inject initial plan into history
         session.history.push(HistoryEntry {
             role: "system".to_string(),
-            content: Arc::new(format!("I have generated a plan for your goal. Follow this plan:\n\n{}", plan_str)),
+            content: Arc::new(format!(
+                "I have generated a plan for your goal. Follow this plan:\n\n{}",
+                plan_str
+            )),
             tool_call: None,
             timestamp: chrono::Utc::now().timestamp(),
         });
@@ -149,32 +157,32 @@ impl AgentCapability for PlanningCapability {
         // Inject current plan status just to remind the LLM
         let plan_guard = self.plan.lock().await;
         if let Some(steps) = &*plan_guard {
-             // Find current step
-             if let Some(current) = steps.iter().find(|s| s.status == StepStatus::InProgress) {
-                 let reminder = format!(
+            // Find current step
+            if let Some(current) = steps.iter().find(|s| s.status == StepStatus::InProgress) {
+                let reminder = format!(
                      "SYSTEM REMINDER: You are currently working on Step {}: \"{}\". Focus ONLY on this step.",
                      current.id, current.description
                  );
-                 
-                 // We don't want to pollute history permanently with reminders in every loop? 
-                 // Actually, in ReAct history is appended. 
-                 // Let's perform ephemeral injection? 
-                 // "on_pre_reasoning" modifies session before LLM call.
-                 // Ideally we should inject a system message at the END of history so it's fresh?
-                 // Or we instruct the specific prompt builder to include it.
-                 // For compatibility, we append a user/system message.
-                 session.history.push(HistoryEntry {
-                     role: "system".to_string(), // or user
-                     content: Arc::new(reminder),
-                     tool_call: None,
-                     timestamp: chrono::Utc::now().timestamp(),
-                 });
-             }
+
+                // We don't want to pollute history permanently with reminders in every loop?
+                // Actually, in ReAct history is appended.
+                // Let's perform ephemeral injection?
+                // "on_pre_reasoning" modifies session before LLM call.
+                // Ideally we should inject a system message at the END of history so it's fresh?
+                // Or we instruct the specific prompt builder to include it.
+                // For compatibility, we append a user/system message.
+                session.history.push(HistoryEntry {
+                    role: "system".to_string(), // or user
+                    content: Arc::new(reminder),
+                    tool_call: None,
+                    timestamp: chrono::Utc::now().timestamp(),
+                });
+            }
         }
         Ok(())
     }
 
     // TODO: Implement parsing logic to detect when a step is done (e.g., "STEP_COMPLETE")
-    // For now, we rely on the LLM to follow the plan implicitly, 
+    // For now, we rely on the LLM to follow the plan implicitly,
     // or we can add a tool `complete_step(id)`?
 }

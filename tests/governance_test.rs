@@ -1,13 +1,15 @@
-use std::sync::Arc;
 use async_trait::async_trait;
+use multi_agent_controller::{ReActConfig, ReActController};
 use multi_agent_core::{
-    traits::{LlmClient, LlmResponse, ChatMessage, LlmUsage, ApprovalGate, ToolRegistry, Controller},
+    traits::{
+        ApprovalGate, ChatMessage, Controller, LlmClient, LlmResponse, LlmUsage, ToolRegistry,
+    },
     types::{ApprovalRequest, ApprovalResponse, ToolRiskLevel},
     Error,
 };
-use multi_agent_controller::{ReActController, ReActConfig};
 use multi_agent_skills::DefaultToolRegistry;
 use multi_agent_store::InMemorySessionStore;
+use std::sync::Arc;
 
 // =============================================================================
 // Mocks
@@ -34,7 +36,7 @@ impl LlmClient for MockLlm {
         } else {
             "FINAL ANSWER: Done".to_string()
         };
-        
+
         Ok(LlmResponse {
             content,
             finish_reason: "stop".to_string(),
@@ -60,10 +62,16 @@ struct DenyGate;
 
 #[async_trait]
 impl ApprovalGate for DenyGate {
-    async fn request_approval(&self, _req: &ApprovalRequest) -> multi_agent_core::Result<ApprovalResponse> {
-        Ok(ApprovalResponse::Denied("Computer says no".to_string()))
+    async fn request_approval(
+        &self,
+        _req: &ApprovalRequest,
+    ) -> multi_agent_core::Result<ApprovalResponse> {
+        Ok(ApprovalResponse::Denied {
+            reason: "Computer says no".to_string(),
+            reason_code: "TEST_DENIED".to_string(),
+        })
     }
-    
+
     fn threshold(&self) -> ToolRiskLevel {
         ToolRiskLevel::Medium
     }
@@ -79,33 +87,36 @@ async fn test_budget_exceeded() -> anyhow::Result<()> {
     // Each mock LLM call uses 20 tokens.
     // Call 1: 20 tokens (OK)
     // Call 2: 20 tokens (+ 20 = 40, Exceeded)
-    
+
     let config = ReActConfig {
         default_budget: 30,
         max_iterations: 5,
         ..Default::default()
     };
 
-    let responses = vec![
-        "THOUGHT: Step 1".to_string(),
-        "THOUGHT: Step 2".to_string(),
-    ];
+    let responses = vec!["THOUGHT: Step 1".to_string(), "THOUGHT: Step 2".to_string()];
     let llm = Arc::new(MockLlm::new(responses));
-    
+
     let controller = Arc::new(
         ReActController::builder()
             .with_config(config)
             .with_llm(llm)
             .with_session_store(Arc::new(InMemorySessionStore::new()))
-            .build()
+            .build(),
     );
 
     // 2. Execute
-    let result = controller.execute(multi_agent_core::types::UserIntent::ComplexMission {
-        goal: "Do work".to_string(),
-        context_summary: "".to_string(),
-        visual_refs: vec![],
-    }).await;
+    let result = controller
+        .execute(
+            multi_agent_core::types::UserIntent::ComplexMission {
+                goal: "Do work".to_string(),
+                context_summary: "".to_string(),
+                visual_refs: vec![],
+                user_id: None,
+            },
+            "test-trace".to_string(),
+        )
+        .await;
 
     // 3. Verify Error
     match result {
@@ -121,13 +132,26 @@ async fn test_budget_exceeded() -> anyhow::Result<()> {
 struct HighRiskTool;
 #[async_trait]
 impl multi_agent_core::traits::Tool for HighRiskTool {
-    fn name(&self) -> &str { "high_risk_tool" }
-    fn description(&self) -> &str { "Dangerous" }
-    fn parameters(&self) -> serde_json::Value { serde_json::json!({}) }
-    async fn execute(&self, _args: serde_json::Value) -> multi_agent_core::Result<multi_agent_core::types::ToolOutput> {
-         Ok(multi_agent_core::types::ToolOutput::text("Done".to_string()))
+    fn name(&self) -> &str {
+        "high_risk_tool"
     }
-    fn risk_level(&self) -> ToolRiskLevel { ToolRiskLevel::High }
+    fn description(&self) -> &str {
+        "Dangerous"
+    }
+    fn parameters(&self) -> serde_json::Value {
+        serde_json::json!({})
+    }
+    async fn execute(
+        &self,
+        _args: serde_json::Value,
+    ) -> multi_agent_core::Result<multi_agent_core::types::ToolOutput> {
+        Ok(multi_agent_core::types::ToolOutput::text(
+            "Done".to_string(),
+        ))
+    }
+    fn risk_level(&self) -> ToolRiskLevel {
+        ToolRiskLevel::High
+    }
 }
 
 #[tokio::test]
@@ -142,7 +166,7 @@ async fn test_deadlock_breaker() -> anyhow::Result<()> {
         "ACTION: high_risk_tool\nARGS: {}".to_string(),
         "ACTION: high_risk_tool\nARGS: {}".to_string(), // Should not be reached
     ];
-    
+
     let llm = Arc::new(MockLlm::new(responses));
     let tools = Arc::new(DefaultToolRegistry::new());
     tools.register(Box::new(HighRiskTool)).await?;
@@ -153,20 +177,30 @@ async fn test_deadlock_breaker() -> anyhow::Result<()> {
             .with_tools(tools)
             .with_approval_gate(Arc::new(DenyGate))
             .with_session_store(Arc::new(InMemorySessionStore::new()))
-            .build()
+            .build(),
     );
 
     // 2. Execute
-    let result = controller.execute(multi_agent_core::types::UserIntent::ComplexMission {
-        goal: "Do dangerous work".to_string(),
-        context_summary: "".to_string(),
-        visual_refs: vec![],
-    }).await;
+    let result = controller
+        .execute(
+            multi_agent_core::types::UserIntent::ComplexMission {
+                goal: "Do dangerous work".to_string(),
+                context_summary: "".to_string(),
+                visual_refs: vec![],
+                user_id: None,
+            },
+            "test-trace".to_string(),
+        )
+        .await;
 
     // 3. Verify Error
     match result {
         Err(Error::Controller(msg)) => {
-            assert!(msg.contains("Deadlock"), "Expected Deadlock error, got: {}", msg);
+            assert!(
+                msg.contains("Deadlock"),
+                "Expected Deadlock error, got: {}",
+                msg
+            );
         }
         _ => panic!("Expected Controller Deadlock error, got {:?}", result),
     }

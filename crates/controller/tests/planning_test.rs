@@ -1,12 +1,12 @@
-use std::sync::Arc;
 use async_trait::async_trait;
-use multi_agent_core::traits::{LlmClient, LlmResponse, ChatMessage};
+use chrono::Utc;
+use multi_agent_controller::capability::AgentCapability;
+use multi_agent_controller::planning::PlanningCapability;
+use multi_agent_core::traits::{ChatMessage, LlmClient, LlmResponse};
+use multi_agent_core::types::{Session, SessionStatus, TaskState};
 use multi_agent_core::LlmUsage;
 use multi_agent_core::Result;
-use multi_agent_controller::planning::PlanningCapability;
-use multi_agent_controller::capability::AgentCapability;
-use multi_agent_core::types::{Session, SessionStatus, TaskState};
-use chrono::Utc;
+use std::sync::Arc;
 use uuid::Uuid;
 
 // --- Mock LLM ---
@@ -36,7 +36,7 @@ impl LlmClient for MockPlannerLlm {
         unimplemented!()
     }
     async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
-       Ok(vec![])
+        Ok(vec![])
     }
 }
 
@@ -49,6 +49,8 @@ async fn test_planning_generation() -> Result<()> {
     // 2. Create Session
     let mut session = Session {
         id: Uuid::new_v4().to_string(),
+        trace_id: Uuid::new_v4().to_string(),
+        user_id: None,
         history: Vec::new(),
         created_at: Utc::now().timestamp(),
         updated_at: Utc::now().timestamp(),
@@ -75,7 +77,7 @@ async fn test_planning_generation() -> Result<()> {
 
     // 5. on_pre_reasoning (Should remind current step)
     planner.on_pre_reasoning(&mut session).await?;
-    
+
     // Check if reminder is added
     let last_msg = session.history.last().unwrap();
     assert!(last_msg.content.contains("Step 1"));

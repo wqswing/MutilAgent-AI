@@ -2,10 +2,10 @@
 //!
 //! Handles the parallel execution of tasks with dependencies.
 
+use multi_agent_core::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use multi_agent_core::{Error, Result};
 
 /// A unit of work in the DAG.
 #[async_trait::async_trait]
@@ -64,9 +64,10 @@ impl DagExecutor {
         let mut adj_list: HashMap<String, Vec<String>> = HashMap::new(); // dependent -> [dependencies]
         let mut rev_adj_list: HashMap<String, Vec<String>> = HashMap::new(); // dependency -> [dependents]
         let mut in_degree: HashMap<String, usize> = HashMap::new();
-        
+
         // Move tasks into Arcs
-        let task_map: HashMap<String, Arc<T>> = tasks.into_iter()
+        let task_map: HashMap<String, Arc<T>> = tasks
+            .into_iter()
             .map(|t| (t.name().to_string(), Arc::new(t)))
             .collect();
 
@@ -79,9 +80,12 @@ impl DagExecutor {
                 if !task_map.contains_key(dep) {
                     return Err(Error::SopExecution(format!("Unknown dependency: {}", dep)));
                 }
-                
+
                 // dep -> name (dep is a dependency of name)
-                rev_adj_list.entry(dep.clone()).or_default().push(name.clone());
+                rev_adj_list
+                    .entry(dep.clone())
+                    .or_default()
+                    .push(name.clone());
                 adj_list.entry(name.clone()).or_default().push(dep.clone());
                 *in_degree.entry(name.clone()).or_insert(0) += 1;
             }
@@ -89,14 +93,14 @@ impl DagExecutor {
 
         // Check for cycles
         if self.detect_cycle(&task_map) {
-             return Err(Error::SopExecution("Cycle detected in DAG".to_string()));
+            return Err(Error::SopExecution("Cycle detected in DAG".to_string()));
         }
 
         // 2. Execution Loop
         let results = Arc::new(Mutex::new(HashMap::new()));
         let in_degree = Arc::new(Mutex::new(in_degree));
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<(String, String)>>(100);
-        
+
         // Initial set of tasks (in-degree 0)
         let mut running_count = 0;
         let mut pending_count = task_map.len();
@@ -108,14 +112,12 @@ impl DagExecutor {
                     let task = task_map[name].clone();
                     let tx = tx.clone();
                     let results = results.clone();
-                    
+
                     running_count += 1;
                     tokio::spawn(async move {
                         // Get dependeny results
-                        let context = {
-                            results.lock().await.clone()
-                        };
-                        
+                        let context = { results.lock().await.clone() };
+
                         match task.execute(&context).await {
                             Ok(output) => {
                                 let _ = tx.send(Ok((task.name().to_string(), output))).await;
@@ -131,9 +133,11 @@ impl DagExecutor {
 
         while pending_count > 0 {
             if running_count == 0 {
-                // This shouldn't happen if graph is valid and no cycles (checked), 
+                // This shouldn't happen if graph is valid and no cycles (checked),
                 // unless tasks panic or logic error.
-                 return Err(Error::SopExecution("Deadlock detected in DAG execution".to_string())); 
+                return Err(Error::SopExecution(
+                    "Deadlock detected in DAG execution".to_string(),
+                ));
             }
 
             match rx.recv().await {
@@ -157,12 +161,14 @@ impl DagExecutor {
                                 let tx = tx.clone();
                                 let results = results.clone();
                                 running_count += 1;
-                                
+
                                 tokio::spawn(async move {
                                     let context = results.lock().await.clone();
                                     match task.execute(&context).await {
                                         Ok(output) => {
-                                            let _ = tx.send(Ok((task.name().to_string(), output))).await;
+                                            let _ = tx
+                                                .send(Ok((task.name().to_string(), output)))
+                                                .await;
                                         }
                                         Err(e) => {
                                             let _ = tx.send(Err(e)).await;
@@ -174,14 +180,18 @@ impl DagExecutor {
                     }
                 }
                 Some(Err(e)) => return Err(e),
-                None => return Err(Error::SopExecution("Channel closed unexpectedly".to_string())),
+                None => {
+                    return Err(Error::SopExecution(
+                        "Channel closed unexpectedly".to_string(),
+                    ))
+                }
             }
         }
 
         let final_results = Arc::try_unwrap(results)
             .map_err(|_| Error::Internal("Failed to unwrap results lock".to_string()))?
             .into_inner();
-            
+
         Ok(final_results)
     }
 
@@ -191,11 +201,11 @@ impl DagExecutor {
     {
         // Simple Kahn's algorithm or DFS
         // Since we need to return T objects, we need to move them.
-        
+
         let mut task_map: HashMap<String, T> = HashMap::new();
         let mut adj_list: HashMap<String, Vec<String>> = HashMap::new();
         let mut in_degree: HashMap<String, usize> = HashMap::new();
-        
+
         for task in tasks {
             let name = task.name().to_string();
             in_degree.insert(name.clone(), 0);
@@ -219,31 +229,31 @@ impl DagExecutor {
             .filter(|(_, &deg)| deg == 0)
             .map(|(name, _)| name.clone())
             .collect();
-            
+
         // For deterministic sequential execution, sort the queue?
         // Typically queue is a FIFO or standard vector.
-        
+
         let mut sorted = Vec::new();
         while let Some(u) = queue.pop() {
             // Move task to sorted
-             if let Some(t) = task_map.remove(&u) {
-                 sorted.push(t);
-             }
+            if let Some(t) = task_map.remove(&u) {
+                sorted.push(t);
+            }
 
-             if let Some(neighbors) = adj_list.get(&u) {
-                 for v in neighbors {
-                     if let Some(d) = in_degree.get_mut(v) {
-                         *d -= 1;
-                         if *d == 0 {
-                             queue.push(v.clone());
-                         }
-                     }
-                 }
-             }
+            if let Some(neighbors) = adj_list.get(&u) {
+                for v in neighbors {
+                    if let Some(d) = in_degree.get_mut(v) {
+                        *d -= 1;
+                        if *d == 0 {
+                            queue.push(v.clone());
+                        }
+                    }
+                }
+            }
         }
 
         if !task_map.is_empty() {
-             return Err(Error::SopExecution("Cycle detected in DAG".to_string()));
+            return Err(Error::SopExecution("Cycle detected in DAG".to_string()));
         }
 
         Ok(sorted)

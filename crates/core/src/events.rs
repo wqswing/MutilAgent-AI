@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// Structured Event Envelope
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,10 +26,7 @@ pub struct EventEnvelope {
 }
 
 impl EventEnvelope {
-    pub fn new(
-        event_type: EventType,
-        payload: serde_json::Value,
-    ) -> Self {
+    pub fn new(event_type: EventType, payload: serde_json::Value) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             trace_id: Uuid::new_v4().to_string(), // Default, should be overwritten by context
@@ -52,7 +49,7 @@ impl EventEnvelope {
         self.session_id = Some(session_id.to_string());
         self
     }
-    
+
     pub fn with_workspace(mut self, workspace_id: &str) -> Self {
         self.workspace_id = Some(workspace_id.to_string());
         self
@@ -62,7 +59,7 @@ impl EventEnvelope {
         self.actor = actor.to_string();
         self
     }
-    
+
     pub fn with_severity(mut self, severity: EventSeverity) -> Self {
         self.severity = severity;
         self

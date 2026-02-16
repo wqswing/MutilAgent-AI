@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::events::EventEnvelope;
+use async_trait::async_trait;
 
 /// Trait for emitting structured events.
 #[async_trait]

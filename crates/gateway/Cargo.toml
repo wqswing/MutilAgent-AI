@@ -38,6 +38,7 @@ governor = "0.6"
 
 # WebSocket + stream utilities
 futures.workspace = true
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

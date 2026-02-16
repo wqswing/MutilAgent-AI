@@ -1,12 +1,12 @@
-use std::sync::Arc;
 use async_trait::async_trait;
-use multi_agent_core::traits::{LlmClient, LlmResponse, ChatMessage, MemoryStore, MemoryEntry};
-use multi_agent_core::Result;
-use multi_agent_controller::memory::MemoryCapability;
-use multi_agent_controller::capability::AgentCapability;
-use multi_agent_core::types::{Session, SessionStatus, TaskState, AgentResult};
-use multi_agent_store::SimpleVectorStore;
 use chrono::Utc;
+use multi_agent_controller::capability::AgentCapability;
+use multi_agent_controller::memory::MemoryCapability;
+use multi_agent_core::traits::{ChatMessage, LlmClient, LlmResponse, MemoryEntry, MemoryStore};
+use multi_agent_core::types::{AgentResult, Session, SessionStatus, TaskState};
+use multi_agent_core::Result;
+use multi_agent_store::SimpleVectorStore;
+use std::sync::Arc;
 use uuid::Uuid;
 
 // --- Mock LLM ---
@@ -44,6 +44,8 @@ async fn test_memory_context_injection() -> Result<()> {
     // 3. Create Session with a goal
     let mut session = Session {
         id: Uuid::new_v4().to_string(),
+        trace_id: Uuid::new_v4().to_string(),
+        user_id: None,
         history: Vec::new(),
         created_at: Utc::now().timestamp(),
         updated_at: Utc::now().timestamp(),
@@ -65,7 +67,9 @@ async fn test_memory_context_injection() -> Result<()> {
     assert!(!session.history.is_empty());
     let system_msg = &session.history[0];
     assert_eq!(system_msg.role, "system");
-    assert!(system_msg.content.contains("Refactoring ReActController was hard"));
+    assert!(system_msg
+        .content
+        .contains("Refactoring ReActController was hard"));
 
     Ok(())
 }
@@ -80,16 +84,19 @@ async fn test_memory_archival() -> Result<()> {
     // 2. Create Session
     let mut session = Session {
         id: "sess1".to_string(),
+        trace_id: "trace-sess1".to_string(),
+        user_id: None,
         history: Vec::new(),
         created_at: Utc::now().timestamp(),
         updated_at: Utc::now().timestamp(),
         status: SessionStatus::Running,
         token_usage: Default::default(),
         task_state: Some(TaskState {
-            goal: "Fix the bug".to_string(), // This is cached in on_start
+            goal: "Fix the bug".to_string(),
             iteration: 0,
             observations: Vec::new(),
-            pending_actions: Vec::new(), consecutive_rejections: 0,
+            pending_actions: Vec::new(),
+            consecutive_rejections: 0,
         }),
     };
 
@@ -105,7 +112,9 @@ async fn test_memory_archival() -> Result<()> {
     let results = store.search(&[0.1, 0.2, 0.3], 1).await?;
     assert_eq!(results.len(), 1);
     assert!(results[0].content.contains("Goal: Fix the bug"));
-    assert!(results[0].content.contains("Result: Bug fixed successfully"));
+    assert!(results[0]
+        .content
+        .contains("Result: Bug fixed successfully"));
 
     Ok(())
 }

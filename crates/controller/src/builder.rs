@@ -1,16 +1,18 @@
 //! Builder for ReActController.
 
-use std::sync::Arc;
-use multi_agent_core::traits::{LlmClient, ToolRegistry, ArtifactStore, SessionStore, ApprovalGate};
-use multi_agent_governance::Guardrail;
-
-use crate::react::{ReActController, ReActConfig};
-use crate::context::{ContextCompressor, CompressionConfig};
-use crate::delegation::Delegator;
-use crate::capability::{
-    AgentCapability, CompressionCapability, DelegationCapability, McpCapability, SecurityCapability,
-    ReflectionCapability,
+use multi_agent_core::traits::{
+    ApprovalGate, ArtifactStore, LlmClient, SessionStore, ToolRegistry,
 };
+use multi_agent_governance::Guardrail;
+use std::sync::Arc;
+
+use crate::capability::{
+    AgentCapability, CompressionCapability, DelegationCapability, McpCapability,
+    ReflectionCapability, SecurityCapability,
+};
+use crate::context::{CompressionConfig, ContextCompressor};
+use crate::delegation::Delegator;
+use crate::react::{ReActConfig, ReActController};
 use crate::{MemoryCapability, PlanningCapability};
 
 /// Builder for constructing a ReActController.
@@ -89,41 +91,47 @@ impl ReActBuilder {
 
     /// Set the delegator for subagent spawning (compatibility mode).
     pub fn with_delegator(mut self, delegator: Arc<dyn Delegator>) -> Self {
-        self.capabilities.push(Arc::new(DelegationCapability::new(delegator)));
+        self.capabilities
+            .push(Arc::new(DelegationCapability::new(delegator)));
         self
     }
 
     /// Set the MCP registry for autonomous server selection (compatibility mode).
     pub fn with_mcp_registry(mut self, registry: Arc<multi_agent_skills::McpRegistry>) -> Self {
-        self.capabilities.push(Arc::new(McpCapability::new(registry)));
+        self.capabilities
+            .push(Arc::new(McpCapability::new(registry)));
         self
     }
 
     /// Set security guardrails for input/output validation (compatibility mode).
     pub fn with_security(mut self, security: Arc<dyn Guardrail>) -> Self {
-        self.capabilities.push(Arc::new(SecurityCapability::new(security)));
+        self.capabilities
+            .push(Arc::new(SecurityCapability::new(security)));
         self
     }
 
     /// Set reflection capability for self-correction (compatibility mode).
     pub fn with_reflection(mut self, threshold: usize) -> Self {
-        self.capabilities.push(Arc::new(ReflectionCapability::new(threshold)));
+        self.capabilities
+            .push(Arc::new(ReflectionCapability::new(threshold)));
         self
     }
 
     /// Set long-term memory for RAG (compatibility mode).
     pub fn with_memory(
-        mut self, 
-        store: Arc<dyn multi_agent_core::traits::MemoryStore>, 
-        llm: Arc<dyn multi_agent_core::traits::LlmClient>
+        mut self,
+        store: Arc<dyn multi_agent_core::traits::MemoryStore>,
+        llm: Arc<dyn multi_agent_core::traits::LlmClient>,
     ) -> Self {
-        self.capabilities.push(Arc::new(MemoryCapability::new(store, llm, 5, 0.7)));
+        self.capabilities
+            .push(Arc::new(MemoryCapability::new(store, llm, 5, 0.7)));
         self
     }
 
     /// Set plan-and-solve capability (compatibility mode).
     pub fn with_planning(mut self, llm: Arc<dyn multi_agent_core::traits::LlmClient>) -> Self {
-        self.capabilities.push(Arc::new(PlanningCapability::new(llm)));
+        self.capabilities
+            .push(Arc::new(PlanningCapability::new(llm)));
         self
     }
 
@@ -140,13 +148,19 @@ impl ReActBuilder {
     }
 
     /// Set the event emitter for structured events.
-    pub fn with_event_emitter(mut self, emitter: Arc<dyn multi_agent_core::traits::EventEmitter>) -> Self {
+    pub fn with_event_emitter(
+        mut self,
+        emitter: Arc<dyn multi_agent_core::traits::EventEmitter>,
+    ) -> Self {
         self.event_emitter = Some(emitter);
         self
     }
 
     /// Set the Policy Engine for rule-based risk assessment.
-    pub fn with_policy_engine(mut self, engine: Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>) -> Self {
+    pub fn with_policy_engine(
+        mut self,
+        engine: Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>,
+    ) -> Self {
         self.policy_engine = Some(engine);
         self
     }

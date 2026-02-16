@@ -2,10 +2,10 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use tower::ServiceExt;
-use std::sync::Arc;
-use multi_agent_gateway::{GatewayServer, GatewayConfig};
 use multi_agent_core::mocks::{MockRouter, MockSemanticCache};
+use multi_agent_gateway::{GatewayConfig, GatewayServer};
+use std::sync::Arc;
+use tower::ServiceExt;
 
 #[tokio::test]
 async fn test_rate_limiting() {
@@ -18,17 +18,26 @@ async fn test_rate_limiting() {
     // The rate limit is ~120/min (2/sec) with burst 30.
     // We send 30 requests quickly.
     for i in 0..30 {
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/health")
-                    .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
+                    .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                        [127, 0, 0, 1],
+                        12345,
+                    ))))
                     .body(Body::empty())
-                    .unwrap()
+                    .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "Request {} should have succeeded", i);
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "Request {} should have succeeded",
+            i
+        );
     }
 
     // The 31st request should be rate limited.
@@ -36,13 +45,15 @@ async fn test_rate_limiting() {
         .oneshot(
             Request::builder()
                 .uri("/health")
-                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
                 .body(Body::empty())
-                .unwrap()
+                .unwrap(),
         )
         .await
         .unwrap();
 
-    
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
 }

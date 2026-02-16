@@ -19,7 +19,7 @@ RUN cargo build --release --bin multiagent
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && apt-get install -y --no-install-recommends openssl ca-certificates curl \
     && apt-get autoremove -y \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
@@ -33,5 +33,8 @@ ENV PORT=3000
 ENV RUST_LOG=info
 
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
 
 ENTRYPOINT ["/usr/local/bin/multiagent"]

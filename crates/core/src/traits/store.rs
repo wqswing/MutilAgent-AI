@@ -1,11 +1,11 @@
 //! L3 Store traits.
 
+use crate::error::Result;
+use crate::types::RefId;
 use async_trait::async_trait;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::error::Result;
-use crate::types::RefId;
 
 /// Artifact store for managing large content.
 #[async_trait]
@@ -30,6 +30,11 @@ pub trait ArtifactStore: Send + Sync {
 
     /// Get metadata about an artifact.
     async fn metadata(&self, id: &RefId) -> Result<Option<ArtifactMetadata>>;
+
+    /// Perform a health check on the store.
+    async fn health_check(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Metadata for stored artifacts.

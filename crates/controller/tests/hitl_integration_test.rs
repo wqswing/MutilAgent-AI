@@ -3,14 +3,16 @@
 //! Tests the approval gate integration with the ReActController,
 //! verifying that high-risk tools are blocked/approved correctly.
 
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 
+use multi_agent_controller::{ReActConfig, ReActController};
 use multi_agent_core::{
-    traits::{LlmClient, LlmResponse, ChatMessage, LlmUsage, ApprovalGate, Controller, ToolRegistry},
+    traits::{
+        ApprovalGate, ChatMessage, Controller, LlmClient, LlmResponse, LlmUsage, ToolRegistry,
+    },
     types::{ApprovalRequest, ApprovalResponse, ToolRiskLevel},
 };
-use multi_agent_controller::{ReActController, ReActConfig};
 use multi_agent_skills::DefaultToolRegistry;
 use multi_agent_store::InMemorySessionStore;
 
@@ -47,8 +49,14 @@ struct DenyGate;
 
 #[async_trait]
 impl ApprovalGate for DenyGate {
-    async fn request_approval(&self, _req: &ApprovalRequest) -> multi_agent_core::Result<ApprovalResponse> {
-        Ok(ApprovalResponse::Denied("Denied by policy".to_string()))
+    async fn request_approval(
+        &self,
+        _req: &ApprovalRequest,
+    ) -> multi_agent_core::Result<ApprovalResponse> {
+        Ok(ApprovalResponse::Denied {
+            reason: "Denied by policy".to_string(),
+            reason_code: "TEST_DENIED".to_string(),
+        })
     }
     fn threshold(&self) -> ToolRiskLevel {
         ToolRiskLevel::High
@@ -60,8 +68,14 @@ struct ApproveGate;
 
 #[async_trait]
 impl ApprovalGate for ApproveGate {
-    async fn request_approval(&self, _req: &ApprovalRequest) -> multi_agent_core::Result<ApprovalResponse> {
-        Ok(ApprovalResponse::Approved)
+    async fn request_approval(
+        &self,
+        _req: &ApprovalRequest,
+    ) -> multi_agent_core::Result<ApprovalResponse> {
+        Ok(ApprovalResponse::Approved {
+            reason: None,
+            reason_code: "TEST_APPROVED".to_string(),
+        })
     }
     fn threshold(&self) -> ToolRiskLevel {
         ToolRiskLevel::High
@@ -69,12 +83,19 @@ impl ApprovalGate for ApproveGate {
 }
 
 /// Modifies the arguments of the tool call.
-struct ModifyGate;
+struct _ModifyGate;
 
 #[async_trait]
-impl ApprovalGate for ModifyGate {
-    async fn request_approval(&self, _req: &ApprovalRequest) -> multi_agent_core::Result<ApprovalResponse> {
-        Ok(ApprovalResponse::Modified(serde_json::json!({"command": "echo 'modified by gate'"})))
+impl ApprovalGate for _ModifyGate {
+    async fn request_approval(
+        &self,
+        _req: &ApprovalRequest,
+    ) -> multi_agent_core::Result<ApprovalResponse> {
+        Ok(ApprovalResponse::Modified {
+            args: serde_json::json!({"command": "echo 'modified by gate'"}),
+            reason: None,
+            reason_code: "TEST_MODIFIED".to_string(),
+        })
     }
     fn threshold(&self) -> ToolRiskLevel {
         ToolRiskLevel::High
@@ -114,9 +135,10 @@ async fn test_deny_gate_triggers_deadlock_breaker() {
         goal: "List files in workspace".into(),
         context_summary: "test".into(),
         visual_refs: vec![],
+        user_id: None,
     };
 
-    let result = controller.execute(intent).await;
+    let result = controller.execute(intent, "test-trace".to_string()).await;
 
     // Agent should terminate — via deadlock breaker, budget, or max iterations
     // (depending on whether mock LLM output format triggers the ReAct tool call parser)
@@ -124,15 +146,21 @@ async fn test_deny_gate_triggers_deadlock_breaker() {
         Err(e) => {
             let msg = e.to_string().to_lowercase();
             assert!(
-                msg.contains("deadlock") || msg.contains("budget") || msg.contains("max iterations"),
-                "Expected termination error, got: {}", msg
+                msg.contains("deadlock")
+                    || msg.contains("budget")
+                    || msg.contains("max iterations"),
+                "Expected termination error, got: {}",
+                msg
             );
         }
         Ok(multi_agent_core::types::AgentResult::Error { message, .. }) => {
             let msg = message.to_lowercase();
             assert!(
-                msg.contains("deadlock") || msg.contains("budget") || msg.contains("max iterations"),
-                "Expected termination error in AgentResult, got: {}", message
+                msg.contains("deadlock")
+                    || msg.contains("budget")
+                    || msg.contains("max iterations"),
+                "Expected termination error in AgentResult, got: {}",
+                message
             );
         }
         Ok(_) => {
@@ -150,7 +178,7 @@ async fn test_approve_gate_allows_execution() {
     // This test verifies no panic/error. The mock LLM loops, so we
     // rely on max_iterations to end. The key point is: no Denied errors.
     let registry = DefaultToolRegistry::new();
-    use multi_agent_sandbox::engine::{MockSandbox, SandboxConfig, ExecResult};
+    use multi_agent_sandbox::engine::{ExecResult, MockSandbox, SandboxConfig};
     use multi_agent_sandbox::tools::{SandboxManager, SandboxShellTool};
 
     let engine = Arc::new(MockSandbox::new(vec![ExecResult {
@@ -160,7 +188,10 @@ async fn test_approve_gate_allows_execution() {
         timed_out: false,
     }]));
     let sandbox_mgr = Arc::new(SandboxManager::new(engine, SandboxConfig::default()));
-    registry.register(Box::new(SandboxShellTool::new(sandbox_mgr))).await.unwrap();
+    registry
+        .register(Box::new(SandboxShellTool::new(sandbox_mgr)))
+        .await
+        .unwrap();
 
     let config = ReActConfig {
         max_iterations: 2, // Short loop
@@ -179,16 +210,18 @@ async fn test_approve_gate_allows_execution() {
         goal: "List files in workspace".into(),
         context_summary: "test".into(),
         visual_refs: vec![],
+        user_id: None,
     };
 
     // Should NOT fail with Denied
-    let result = controller.execute(intent).await;
+    let result = controller.execute(intent, "test-trace".to_string()).await;
     match &result {
         Err(e) => {
             let msg = e.to_string();
             assert!(
                 !msg.contains("Denied"),
-                "ApproveGate should not deny: {}", msg
+                "ApproveGate should not deny: {}",
+                msg
             );
         }
         _ => { /* ok */ }
@@ -201,8 +234,8 @@ async fn test_approve_gate_allows_execution() {
 
 #[tokio::test]
 async fn test_channel_gate_timeout_auto_deny() {
-    use multi_agent_governance::approval::ChannelApprovalGate;
     use multi_agent_core::traits::ApprovalGate;
+    use multi_agent_governance::approval::ChannelApprovalGate;
 
     let gate = ChannelApprovalGate::new(ToolRiskLevel::High)
         .with_timeout(std::time::Duration::from_millis(100));
@@ -214,13 +247,18 @@ async fn test_channel_gate_timeout_auto_deny() {
         args: serde_json::json!({"command": "rm -rf /"}),
         risk_level: ToolRiskLevel::High,
         context: "test".into(),
+        timeout_secs: None,
     };
 
     // No response submitted → should timeout and auto-deny
     let response = gate.request_approval(&req).await.unwrap();
     match response {
-        ApprovalResponse::Denied(reason) => {
-            assert!(reason.contains("timed out"), "Should mention timeout: {}", reason);
+        ApprovalResponse::Denied { reason, .. } => {
+            assert!(
+                reason.contains("timed out"),
+                "Should mention timeout: {}",
+                reason
+            );
         }
         other => panic!("Expected Denied, got: {:?}", other),
     }
@@ -232,12 +270,12 @@ async fn test_channel_gate_timeout_auto_deny() {
 
 #[tokio::test]
 async fn test_channel_gate_async_approve() {
-    use multi_agent_governance::approval::ChannelApprovalGate;
     use multi_agent_core::traits::ApprovalGate;
+    use multi_agent_governance::approval::ChannelApprovalGate;
 
     let gate = Arc::new(
         ChannelApprovalGate::new(ToolRiskLevel::High)
-            .with_timeout(std::time::Duration::from_secs(5))
+            .with_timeout(std::time::Duration::from_secs(5)),
     );
 
     let req = ApprovalRequest {
@@ -247,21 +285,26 @@ async fn test_channel_gate_async_approve() {
         args: serde_json::json!({"command": "ls"}),
         risk_level: ToolRiskLevel::High,
         context: "test".into(),
+        timeout_secs: None,
     };
 
     // Spawn the approval request
     let gate_clone = gate.clone();
     let req_clone = req.clone();
-    let handle = tokio::spawn(async move {
-        gate_clone.request_approval(&req_clone).await
-    });
+    let handle = tokio::spawn(async move { gate_clone.request_approval(&req_clone).await });
 
     // Wait a moment for request to register, then submit
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    gate.submit_response("async-test", ApprovalResponse::Approved)
-        .await
-        .unwrap();
+    gate.submit_response(
+        "async-test",
+        ApprovalResponse::Approved {
+            reason: None,
+            reason_code: "TEST_APPROVED".to_string(),
+        },
+    )
+    .await
+    .unwrap();
 
     let response = handle.await.unwrap().unwrap();
-    assert!(matches!(response, ApprovalResponse::Approved));
+    assert!(matches!(response, ApprovalResponse::Approved { .. }));
 }

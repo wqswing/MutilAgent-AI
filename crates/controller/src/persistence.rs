@@ -2,11 +2,7 @@
 
 use dashmap::DashMap;
 
-use multi_agent_core::{
-    traits::SessionStore,
-    types::Session,
-    Result,
-};
+use multi_agent_core::{traits::SessionStore, types::Session, Result};
 
 /// In-memory session store.
 pub struct InMemorySessionStore {
@@ -58,12 +54,29 @@ impl SessionStore for InMemorySessionStore {
 
     async fn list_running(&self) -> Result<Vec<String>> {
         use multi_agent_core::types::SessionStatus;
-        
+
         Ok(self
             .sessions
             .iter()
             .filter(|r| r.status == SessionStatus::Running)
             .map(|r| r.key().clone())
+            .collect())
+    }
+
+    async fn list_sessions(
+        &self,
+        status: Option<multi_agent_core::types::SessionStatus>,
+        user_id: Option<&str>,
+    ) -> Result<Vec<Session>> {
+        Ok(self
+            .sessions
+            .iter()
+            .filter(|r| {
+                let status_match = status.is_none_or(|s| r.status == s);
+                let user_match = user_id.is_none_or(|u| r.user_id.as_deref() == Some(u));
+                status_match && user_match
+            })
+            .map(|r| r.value().clone())
             .collect())
     }
 }
@@ -76,6 +89,8 @@ mod tests {
     fn create_test_session(id: &str) -> Session {
         Session {
             id: id.to_string(),
+            trace_id: format!("trace-{}", id),
+            user_id: None,
             status: SessionStatus::Running,
             history: vec![],
             task_state: None,
@@ -91,7 +106,7 @@ mod tests {
         let session = create_test_session("test-1");
 
         store.save(&session).await.unwrap();
-        
+
         let loaded = store.load("test-1").await.unwrap();
         assert!(loaded.is_some());
         assert_eq!(loaded.unwrap().id, "test-1");
@@ -100,10 +115,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_running() {
         let store = InMemorySessionStore::new();
-        
+
         let running = create_test_session("s1");
         store.save(&running).await.unwrap();
-        
+
         let mut completed = create_test_session("s2");
         completed.status = SessionStatus::Completed;
         store.save(&completed).await.unwrap();

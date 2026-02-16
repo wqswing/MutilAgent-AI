@@ -7,11 +7,10 @@ use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Configure distributed tracing with OpenTelemetry and stdout logging.
-pub fn configure_tracing() -> Result<()> {
+pub fn configure_tracing(rust_log: Option<&str>, otel_endpoint: Option<&str>) -> Result<()> {
     // Basic EnvFilter
-    let env_filter = tracing_subscriber::EnvFilter::new(
-        std::env::var("RUST_LOG").unwrap_or_else(|_| "info,multiagent=debug".into()),
-    );
+    let env_filter =
+        tracing_subscriber::EnvFilter::new(rust_log.unwrap_or("info,multiagent=debug"));
 
     // Stdout formatting layer
     let fmt_layer = tracing_subscriber::fmt::layer();
@@ -22,7 +21,7 @@ pub fn configure_tracing() -> Result<()> {
         .with(fmt_layer);
 
     // Check OTLP endpoint
-    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+    if let Some(endpoint) = otel_endpoint {
         tracing::info!(endpoint = %endpoint, "Initializing OpenTelemetry tracing");
 
         let exporter = opentelemetry_otlp::new_exporter()
@@ -31,10 +30,7 @@ pub fn configure_tracing() -> Result<()> {
             .build_span_exporter()
             .map_err(|e| Error::governance(format!("Failed to create OTLP exporter: {}", e)))?;
 
-        let resource = Resource::new(vec![KeyValue::new(
-            "service.name",
-            "multiagent-gateway",
-        )]);
+        let resource = Resource::new(vec![KeyValue::new("service.name", "multiagent-gateway")]);
 
         let provider = sdktrace::TracerProvider::builder()
             .with_batch_exporter(exporter, runtime::Tokio)

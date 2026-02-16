@@ -5,10 +5,9 @@
 
 use async_trait::async_trait;
 use qdrant_client::qdrant::{
-    CreateCollectionBuilder, Distance, PointStruct, SearchPointsBuilder,
-    UpsertPointsBuilder, VectorParamsBuilder, PointId, DeletePointsBuilder,
-    PointsIdsList, Value as QdrantValue,
-    vectors_config::Config as VectorsConfigEnum, VectorsConfig,
+    vectors_config::Config as VectorsConfigEnum, CreateCollectionBuilder, DeletePointsBuilder,
+    Distance, PointId, PointStruct, PointsIdsList, SearchPointsBuilder, UpsertPointsBuilder,
+    Value as QdrantValue, VectorParamsBuilder, VectorsConfig,
 };
 use qdrant_client::Qdrant;
 use std::collections::HashMap;
@@ -51,7 +50,8 @@ impl QdrantMemoryStore {
 
     /// Ensure the collection exists, creating it if necessary.
     async fn ensure_collection(&self) -> Result<()> {
-        let collections = self.client
+        let collections = self
+            .client
             .list_collections()
             .await
             .map_err(|e| Error::storage(format!("Failed to list collections: {}", e)))?;
@@ -63,17 +63,17 @@ impl QdrantMemoryStore {
 
         if !exists {
             tracing::info!(collection = %self.collection_name, "Creating Qdrant collection");
-            
+
             let vectors_config = VectorsConfig {
                 config: Some(VectorsConfigEnum::Params(
-                    VectorParamsBuilder::new(self.vector_size, Distance::Cosine).build()
+                    VectorParamsBuilder::new(self.vector_size, Distance::Cosine).build(),
                 )),
             };
 
             self.client
                 .create_collection(
                     CreateCollectionBuilder::new(&self.collection_name)
-                        .vectors_config(vectors_config)
+                        .vectors_config(vectors_config),
                 )
                 .await
                 .map_err(|e| Error::storage(format!("Failed to create collection: {}", e)))?;
@@ -83,14 +83,19 @@ impl QdrantMemoryStore {
     }
 
     /// Convert a HashMap<String, String> to Qdrant payload format.
-    fn to_qdrant_payload(metadata: &HashMap<String, String>, content: &str) -> HashMap<String, QdrantValue> {
+    fn to_qdrant_payload(
+        metadata: &HashMap<String, String>,
+        content: &str,
+    ) -> HashMap<String, QdrantValue> {
         let mut payload = HashMap::new();
-        
+
         // Add content as a field
         payload.insert(
             "content".to_string(),
             QdrantValue {
-                kind: Some(qdrant_client::qdrant::value::Kind::StringValue(content.to_string())),
+                kind: Some(qdrant_client::qdrant::value::Kind::StringValue(
+                    content.to_string(),
+                )),
             },
         );
 
@@ -99,7 +104,9 @@ impl QdrantMemoryStore {
             payload.insert(
                 key.clone(),
                 QdrantValue {
-                    kind: Some(qdrant_client::qdrant::value::Kind::StringValue(value.clone())),
+                    kind: Some(qdrant_client::qdrant::value::Kind::StringValue(
+                        value.clone(),
+                    )),
                 },
             );
         }
@@ -108,7 +115,9 @@ impl QdrantMemoryStore {
     }
 
     /// Extract content and metadata from Qdrant payload.
-    fn from_qdrant_payload(payload: &HashMap<String, QdrantValue>) -> (String, HashMap<String, String>) {
+    fn from_qdrant_payload(
+        payload: &HashMap<String, QdrantValue>,
+    ) -> (String, HashMap<String, String>) {
         let mut metadata = HashMap::new();
         let mut content = String::new();
 
@@ -145,11 +154,16 @@ impl MemoryStore for QdrantMemoryStore {
     }
 
     async fn search(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<MemoryEntry>> {
-        let search_result = self.client
+        let search_result = self
+            .client
             .search_points(
-                SearchPointsBuilder::new(&self.collection_name, query_embedding.to_vec(), limit as u64)
-                    .with_payload(true)
-                    .with_vectors(true)
+                SearchPointsBuilder::new(
+                    &self.collection_name,
+                    query_embedding.to_vec(),
+                    limit as u64,
+                )
+                .with_payload(true)
+                .with_vectors(true),
             )
             .await
             .map_err(|e| Error::storage(format!("Failed to search: {}", e)))?;
@@ -159,15 +173,21 @@ impl MemoryStore for QdrantMemoryStore {
             .into_iter()
             .filter_map(|point| {
                 let id = match point.id? {
-                    PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(uuid)) } => uuid,
-                    PointId { point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Num(num)) } => num.to_string(),
+                    PointId {
+                        point_id_options:
+                            Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(uuid)),
+                    } => uuid,
+                    PointId {
+                        point_id_options:
+                            Some(qdrant_client::qdrant::point_id::PointIdOptions::Num(num)),
+                    } => num.to_string(),
                     _ => return None,
                 };
 
                 // Extract embedding from VectorsOutput
                 let embedding = point.vectors.and_then(|vo| {
-                    use qdrant_client::qdrant::vectors_output::VectorsOptions;
                     use qdrant_client::qdrant::vector_output::Vector;
+                    use qdrant_client::qdrant::vectors_output::VectorsOptions;
                     match vo.vectors_options? {
                         VectorsOptions::Vector(v) => {
                             // The VectorOutput has a .vector field which is Option<Vector enum>
@@ -175,7 +195,7 @@ impl MemoryStore for QdrantMemoryStore {
                                 Vector::Dense(dense) => Some(dense.data),
                                 _ => None,
                             }
-                        },
+                        }
                         _ => None,
                     }
                 })?;
@@ -197,12 +217,13 @@ impl MemoryStore for QdrantMemoryStore {
     async fn delete(&self, id: &str) -> Result<()> {
         self.client
             .delete_points(
-                DeletePointsBuilder::new(&self.collection_name)
-                    .points(PointsIdsList {
-                        ids: vec![PointId {
-                            point_id_options: Some(qdrant_client::qdrant::point_id::PointIdOptions::Uuid(id.to_string())),
-                        }],
-                    })
+                DeletePointsBuilder::new(&self.collection_name).points(PointsIdsList {
+                    ids: vec![PointId {
+                        point_id_options: Some(
+                            qdrant_client::qdrant::point_id::PointIdOptions::Uuid(id.to_string()),
+                        ),
+                    }],
+                }),
             )
             .await
             .map_err(|e| Error::storage(format!("Failed to delete point: {}", e)))?;

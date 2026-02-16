@@ -5,7 +5,9 @@ import { LogViewer } from "./components/LogViewer";
 import { ChatInterface } from "./components/ChatInterface";
 import { SystemHealth } from "./components/SystemHealth";
 
-type View = 'logs' | 'health';
+import { AuditViewer } from "./components/AuditViewer";
+
+type View = 'logs' | 'health' | 'audit';
 
 function App() {
   const [appInfo, setAppInfo] = useState<{ version: string, backend_url: string } | null>(null);
@@ -39,6 +41,12 @@ function App() {
             System Logs
           </button>
           <button
+            onClick={() => setCurrentView('audit')}
+            className={`px-3 py-1 text-sm rounded ${currentView === 'audit' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+          >
+            Audit Trail
+          </button>
+          <button
             onClick={() => setCurrentView('health')}
             className={`px-3 py-1 text-sm rounded ${currentView === 'health' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
           >
@@ -49,6 +57,8 @@ function App() {
         <div className="flex-1 overflow-hidden relative">
           {currentView === 'logs' ? (
             <LogViewer />
+          ) : currentView === 'audit' ? (
+            <AuditViewer />
           ) : (
             <SystemHealth />
           )}

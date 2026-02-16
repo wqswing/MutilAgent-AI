@@ -1,15 +1,19 @@
 //! L1 Controller traits.
 
-use async_trait::async_trait;
-use serde_json::Value;
 use crate::error::Result;
 use crate::types::AgentResult;
+use async_trait::async_trait;
+use serde_json::Value;
 
 /// Controller for orchestrating complex tasks.
 #[async_trait]
 pub trait Controller: Send + Sync {
     /// Execute a complex mission through the ReAct loop.
-    async fn execute(&self, intent: crate::types::UserIntent, trace_id: String) -> Result<AgentResult>;
+    async fn execute(
+        &self,
+        intent: crate::types::UserIntent,
+        trace_id: String,
+    ) -> Result<AgentResult>;
 
     /// Resume a previously interrupted task.
     async fn resume(&self, session_id: &str, user_id: Option<&str>) -> Result<AgentResult>;
@@ -33,15 +37,27 @@ pub trait SopEngine: Send + Sync {
 pub trait SessionStore: Send + Sync {
     /// Save a session.
     async fn save(&self, session: &crate::types::Session) -> Result<()>;
-    
+
     /// Load a session by ID.
     async fn load(&self, session_id: &str) -> Result<Option<crate::types::Session>>;
-    
+
     /// Delete a session.
     async fn delete(&self, session_id: &str) -> Result<()>;
-    
-    /// List all running sessions.
+
+    /// List all running sessions IDs.
     async fn list_running(&self) -> Result<Vec<String>>;
+
+    /// List sessions with filtering.
+    async fn list_sessions(
+        &self,
+        status: Option<crate::types::SessionStatus>,
+        user_id: Option<&str>,
+    ) -> Result<Vec<crate::types::Session>>;
+
+    /// Perform a health check on the session store.
+    async fn health_check(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// SOP definition structure.

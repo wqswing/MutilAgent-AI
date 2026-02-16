@@ -9,12 +9,12 @@
 //! - `on_instruction`: Called to parse custom instructions from the LLM response.
 //! - `on_execute`: Called to execute custom actions.
 
-use async_trait::async_trait;
-use std::sync::Arc;
-use multi_agent_core::{Result, Error};
-use multi_agent_core::types::{Session, AgentResult, HistoryEntry};
 use crate::parser::ReActAction;
-use chrono::Utc; // Ensure chrono is available or use via core if re-exported
+use async_trait::async_trait;
+use chrono::Utc;
+use multi_agent_core::types::{AgentResult, HistoryEntry, Session};
+use multi_agent_core::{Error, Result};
+use std::sync::Arc; // Ensure chrono is available or use via core if re-exported
 
 /// A pluggable capability for the agent.
 #[async_trait]
@@ -92,11 +92,11 @@ impl AgentCapability for CompressionCapability {
         if self.compressor.needs_compression(&messages, &self.config) {
             tracing::info!("Capability triggering context compression");
             let _result = self.compressor.compress(messages, &self.config).await?;
-            
+
             // Reconstruct history from compressed messages
             // This is complex because we need to map back to HistoryEntry
-            // For now, simpler approach: just log it happened, as true integration 
-            // requires deep controller changes. 
+            // For now, simpler approach: just log it happened, as true integration
+            // requires deep controller changes.
             // BETTER: The compressor should modify the session directly in v0.3 refactor.
             // For now, we'll keep the logic in the controller until we refactor build_messages.
         }
@@ -124,13 +124,13 @@ impl AgentCapability for SecurityCapability {
     async fn on_start(&self, session: &mut Session) -> Result<()> {
         // Check goal (initial input) for security violations
         if let Some(ref task_state) = session.task_state {
-             let check = self.guardrail.check_input(&task_state.goal).await?;
-             if !check.passed {
-                 return Err(Error::controller(format!(
-                     "Security violation: {}",
-                     check.reason.unwrap_or_default()
-                 )));
-             }
+            let check = self.guardrail.check_input(&task_state.goal).await?;
+            if !check.passed {
+                return Err(Error::controller(format!(
+                    "Security violation: {}",
+                    check.reason.unwrap_or_default()
+                )));
+            }
         }
         Ok(())
     }
@@ -189,7 +189,12 @@ impl AgentCapability for DelegationCapability {
             if let Some((_, rest)) = response.split_once("DELEGATE:") {
                 let objective = rest.lines().next().unwrap_or("").trim().to_string();
                 let context = if let Some(ctx_pos) = rest.find("CONTEXT:") {
-                    rest[ctx_pos + 8..].lines().next().unwrap_or("").trim().to_string()
+                    rest[ctx_pos + 8..]
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string()
                 } else {
                     String::new()
                 };
@@ -205,14 +210,20 @@ impl AgentCapability for DelegationCapability {
         _session: &mut Session,
     ) -> Result<Option<AgentResult>> {
         if let ReActAction::Delegate { objective, context } = action {
-             let request = crate::delegation::DelegationRequest::new(objective)
-                .with_context(context);
-            
+            let request =
+                crate::delegation::DelegationRequest::new(objective).with_context(context);
+
             let result = self.delegator.delegate(request).await?;
             if result.success {
-                Ok(Some(AgentResult::Text(format!("Subagent completed: {}", result.result))))
+                Ok(Some(AgentResult::Text(format!(
+                    "Subagent completed: {}",
+                    result.result
+                ))))
             } else {
-                Ok(Some(AgentResult::Text(format!("Subagent failed: {}", result.error.unwrap_or_default()))))
+                Ok(Some(AgentResult::Text(format!(
+                    "Subagent failed: {}",
+                    result.error.unwrap_or_default()
+                ))))
             }
         } else {
             Ok(None)
@@ -254,7 +265,7 @@ impl AgentCapability for McpCapability {
     ) -> Result<Option<AgentResult>> {
         if let ReActAction::McpSelect { task_description } = action {
             tracing::info!(task = %task_description, "Selecting MCP server via capability");
-            
+
             let observation = match self.registry.select_for_task(task_description) {
                 Some(server) => {
                     match self.registry.connect_server(&server.id).await {
@@ -271,7 +282,7 @@ impl AgentCapability for McpCapability {
                     self.registry.list_all().iter().map(|s| &s.name).collect::<Vec<_>>()
                 ),
             };
-            
+
             Ok(Some(AgentResult::Text(observation)))
         } else {
             Ok(None)

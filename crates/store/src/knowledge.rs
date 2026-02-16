@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use multi_agent_core::{
-    traits::{KnowledgeStore, KnowledgeEntry},
+    traits::{KnowledgeEntry, KnowledgeStore},
     Result,
 };
 
@@ -123,10 +123,26 @@ mod tests {
         let store = InMemoryKnowledgeStore::new();
         assert_eq!(store.count().await.unwrap(), 0);
 
-        store.store(make_entry("k1", "Rust is fast", vec![1.0, 0.0, 0.0], vec!["lang"])).await.unwrap();
+        store
+            .store(make_entry(
+                "k1",
+                "Rust is fast",
+                vec![1.0, 0.0, 0.0],
+                vec!["lang"],
+            ))
+            .await
+            .unwrap();
         assert_eq!(store.count().await.unwrap(), 1);
 
-        store.store(make_entry("k2", "Python is flexible", vec![0.0, 1.0, 0.0], vec!["lang"])).await.unwrap();
+        store
+            .store(make_entry(
+                "k2",
+                "Python is flexible",
+                vec![0.0, 1.0, 0.0],
+                vec!["lang"],
+            ))
+            .await
+            .unwrap();
         assert_eq!(store.count().await.unwrap(), 2);
     }
 
@@ -134,8 +150,14 @@ mod tests {
     async fn test_upsert() {
         let store = InMemoryKnowledgeStore::new();
 
-        store.store(make_entry("k1", "v1", vec![1.0], vec![])).await.unwrap();
-        store.store(make_entry("k1", "v2", vec![1.0], vec![])).await.unwrap();
+        store
+            .store(make_entry("k1", "v1", vec![1.0], vec![]))
+            .await
+            .unwrap();
+        store
+            .store(make_entry("k1", "v2", vec![1.0], vec![]))
+            .await
+            .unwrap();
         assert_eq!(store.count().await.unwrap(), 1);
 
         // The updated entry should have v2
@@ -148,9 +170,18 @@ mod tests {
         let store = InMemoryKnowledgeStore::new();
 
         // Create entries with orthogonal embeddings
-        store.store(make_entry("k1", "Rust", vec![1.0, 0.0, 0.0], vec![])).await.unwrap();
-        store.store(make_entry("k2", "Python", vec![0.0, 1.0, 0.0], vec![])).await.unwrap();
-        store.store(make_entry("k3", "Go", vec![0.0, 0.0, 1.0], vec![])).await.unwrap();
+        store
+            .store(make_entry("k1", "Rust", vec![1.0, 0.0, 0.0], vec![]))
+            .await
+            .unwrap();
+        store
+            .store(make_entry("k2", "Python", vec![0.0, 1.0, 0.0], vec![]))
+            .await
+            .unwrap();
+        store
+            .store(make_entry("k3", "Go", vec![0.0, 0.0, 1.0], vec![]))
+            .await
+            .unwrap();
 
         let results = store.search(&[1.0, 0.0, 0.0], 2).await.unwrap();
         assert_eq!(results.len(), 1); // Only k1 should match (others have 0 similarity)
@@ -166,14 +197,34 @@ mod tests {
     async fn test_tag_search() {
         let store = InMemoryKnowledgeStore::new();
 
-        store.store(make_entry("k1", "Rust", vec![1.0], vec!["systems", "fast"])).await.unwrap();
-        store.store(make_entry("k2", "Python", vec![0.0], vec!["scripting", "fast"])).await.unwrap();
-        store.store(make_entry("k3", "SQL", vec![0.0], vec!["database"])).await.unwrap();
+        store
+            .store(make_entry("k1", "Rust", vec![1.0], vec!["systems", "fast"]))
+            .await
+            .unwrap();
+        store
+            .store(make_entry(
+                "k2",
+                "Python",
+                vec![0.0],
+                vec!["scripting", "fast"],
+            ))
+            .await
+            .unwrap();
+        store
+            .store(make_entry("k3", "SQL", vec![0.0], vec!["database"]))
+            .await
+            .unwrap();
 
-        let results = store.search_by_tags(&["fast".to_string()], 10).await.unwrap();
+        let results = store
+            .search_by_tags(&["fast".to_string()], 10)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 2);
 
-        let results = store.search_by_tags(&["database".to_string()], 10).await.unwrap();
+        let results = store
+            .search_by_tags(&["database".to_string()], 10)
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "k3");
     }
@@ -182,8 +233,14 @@ mod tests {
     async fn test_delete() {
         let store = InMemoryKnowledgeStore::new();
 
-        store.store(make_entry("k1", "v1", vec![1.0], vec![])).await.unwrap();
-        store.store(make_entry("k2", "v2", vec![1.0], vec![])).await.unwrap();
+        store
+            .store(make_entry("k1", "v1", vec![1.0], vec![]))
+            .await
+            .unwrap();
+        store
+            .store(make_entry("k2", "v2", vec![1.0], vec![]))
+            .await
+            .unwrap();
 
         store.delete("k1").await.unwrap();
         assert_eq!(store.count().await.unwrap(), 1);

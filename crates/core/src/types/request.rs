@@ -1,6 +1,6 @@
+use super::refs::RefId;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use super::refs::RefId;
 
 // =============================================================================
 // Request Types

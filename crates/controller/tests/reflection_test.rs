@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use multi_agent_controller::react::{ReActConfig, ReActController};
 use multi_agent_core::types::{Session, SessionStatus};
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_reflection_loop_detection() -> anyhow::Result<()> {
@@ -11,14 +11,16 @@ async fn test_reflection_loop_detection() -> anyhow::Result<()> {
         .with_reflection(3)
         .build();
 
-    use multi_agent_controller::capability::{AgentCapability, ReflectionCapability};
     use chrono::Utc;
-    use uuid::Uuid;
+    use multi_agent_controller::capability::{AgentCapability, ReflectionCapability};
     use multi_agent_core::types::{HistoryEntry, ToolCallInfo};
+    use uuid::Uuid;
 
     let reflection = ReflectionCapability::new(3);
     let mut session = Session {
         id: Uuid::new_v4().to_string(),
+        trace_id: Uuid::new_v4().to_string(),
+        user_id: None,
         history: Vec::new(),
         created_at: Utc::now().timestamp(),
         updated_at: Utc::now().timestamp(),
@@ -32,7 +34,7 @@ async fn test_reflection_loop_detection() -> anyhow::Result<()> {
             consecutive_rejections: 0,
         }),
     };
-    
+
     // Fill history with 3 identical tool calls
     for _ in 0..3 {
         session.history.push(HistoryEntry {
@@ -46,17 +48,17 @@ async fn test_reflection_loop_detection() -> anyhow::Result<()> {
             timestamp: Utc::now().timestamp(),
         });
     }
-    
+
     // 3. Trigger check
     reflection.on_post_execute(&mut session).await?;
-    
+
     // 4. Verify warning injection
     let last_entry = session.history.last().unwrap();
     assert_eq!(last_entry.role, "user");
     assert!(last_entry.content.contains("CRITICAL WARNING"));
     assert!(last_entry.content.contains("3 times in a row"));
-    
+
     println!("Reflection test passed: Warning injected correctly.");
-    
+
     Ok(())
 }

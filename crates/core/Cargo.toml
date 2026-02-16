@@ -13,6 +13,7 @@ async-trait.workspace = true
 bytes.workspace = true
 uuid.workspace = true
 anyhow.workspace = true
+config.workspace = true
 tera = "1.19"
 sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }

@@ -12,8 +12,8 @@ fn get_app_info() -> serde_json::Value {
     })
 }
 
-mod backend;
 mod audit_log;
+mod backend;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

@@ -183,8 +183,10 @@ impl Tool for CalculatorTool {
             }
         };
 
-        Ok(ToolOutput::text(format!("{} {} {} = {}", a, operation, b, result))
-            .with_data(json!({ "result": result })))
+        Ok(
+            ToolOutput::text(format!("{} {} {} = {}", a, operation, b, result))
+                .with_data(json!({ "result": result })),
+        )
     }
 }
 

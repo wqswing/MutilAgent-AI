@@ -1,10 +1,10 @@
+use crate::mcp_registry::{McpRegistry, McpServerInfo};
+use multi_agent_core::{Error, Result};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use serde::Deserialize;
 use tokio::fs;
-use multi_agent_core::{Result, Error};
-use crate::mcp_registry::{McpRegistry, McpServerInfo};
 
 #[derive(Deserialize)]
 struct McpConfig {
@@ -25,22 +25,29 @@ pub async fn load_mcp_config(registry: Arc<McpRegistry>, path: &Path) -> Result<
         return Ok(());
     }
 
-    let content = fs::read_to_string(path).await
+    let content = fs::read_to_string(path)
+        .await
         .map_err(|e| Error::mcp_adapter(format!("Failed to read MCP config: {}", e)))?;
 
     // Try parsing as TOML first, then JSON (naive approach, or rely on extension)
-    let config: McpConfig = if path.extension().map_or(false, |ext| ext == "json") {
-         serde_json::from_str(&content)
+    let config: McpConfig = if path.extension().is_some_and(|ext| ext == "json") {
+        serde_json::from_str(&content)
             .map_err(|e| Error::mcp_adapter(format!("Failed to parse MCP config (JSON): {}", e)))?
     } else {
-         toml::from_str(&content)
+        toml::from_str(&content)
             .map_err(|e| Error::mcp_adapter(format!("Failed to parse MCP config (TOML): {}", e)))?
     };
 
     for (id, server_conf) in config.mcp_servers {
         let info = McpServerInfo::new(&id, &id)
             .with_uri(server_conf.command)
-            .with_args(server_conf.args.iter().map(|s| s.as_str()).collect::<Vec<&str>>())
+            .with_args(
+                server_conf
+                    .args
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>(),
+            )
             .with_transport("stdio");
 
         // TODO: Map capabilities from config if available (currently config doesn't have them)
@@ -53,6 +60,6 @@ pub async fn load_mcp_config(registry: Arc<McpRegistry>, path: &Path) -> Result<
         // But the previous implementation had comments about connecting.
         // Let's just register for now.
     }
-    
+
     Ok(())
 }

@@ -10,27 +10,27 @@
 
 use axum::{
     body::Body,
-    extract::{Path, Query, State, Request},
+    extract::{Path, Query, Request, State},
     http::{header, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Json, Router,
 };
+use multi_agent_governance::{AuditFilter, AuditStore, RbacConnector};
+use multi_agent_governance::{PrivacyController, SecretsManager};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use multi_agent_governance::{AuditStore, AuditFilter, RbacConnector};
-use multi_agent_governance::{PrivacyController, SecretsManager};
 
 /// Embedded static assets for the dashboard.
 #[derive(RustEmbed)]
 #[folder = "../../dashboard/static"]
 struct Asset;
 
+use multi_agent_core::traits::{ArtifactStore, ProviderStore, SessionStore};
 use multi_agent_skills::mcp_registry::{McpRegistry, McpServerInfo};
-use multi_agent_core::traits::{ProviderStore, ArtifactStore, SessionStore};
 
 pub mod doctor;
 
@@ -57,8 +57,9 @@ pub struct AdminState {
     pub artifact_store: Option<Arc<dyn ArtifactStore>>,
     /// Session Store for diagnostics.
     pub session_store: Option<Arc<dyn SessionStore>>,
+    /// Application configuration.
+    pub app_config: multi_agent_core::config::AppConfig,
 }
-
 
 /// LLM Provider entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +79,6 @@ pub struct ProviderEntry {
     pub capabilities: Vec<String>,
     pub status: String,
 }
-
 
 /// Request to add a provider.
 #[derive(Debug, Deserialize)]
@@ -146,7 +146,16 @@ pub struct LlmConfig {
 pub struct AuditQuery {
     pub user_id: Option<String>,
     pub action: Option<String>,
+    pub resource: Option<String>,
+    pub from_timestamp: Option<String>,
+    pub to_timestamp: Option<String>,
     pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+pub struct SessionFilter {
+    pub status: Option<multi_agent_core::types::SessionStatus>,
+    pub user_id: Option<String>,
 }
 
 // =========================================
@@ -159,24 +168,23 @@ async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Response {
-    let auth_header = req.headers()
+    let auth_header = req
+        .headers()
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "));
 
     match auth_header {
-        Some(token) => {
-            match state.rbac.validate(token).await {
-                Ok(roles) => {
-                    if roles.is_admin {
-                        next.run(req).await
-                    } else {
-                        StatusCode::FORBIDDEN.into_response()
-                    }
+        Some(token) => match state.rbac.validate(token).await {
+            Ok(roles) => {
+                if roles.is_admin {
+                    next.run(req).await
+                } else {
+                    StatusCode::FORBIDDEN.into_response()
                 }
-                Err(_) => StatusCode::UNAUTHORIZED.into_response(),
             }
-        }
+            Err(_) => StatusCode::UNAUTHORIZED.into_response(),
+        },
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
@@ -186,23 +194,24 @@ async fn auth_middleware(
 // =========================================
 
 /// List all providers.
-async fn list_providers(
-    State(state): State<Arc<AdminState>>,
-) -> Response {
+async fn list_providers(State(state): State<Arc<AdminState>>) -> Response {
     if let Some(store) = &state.provider_store {
         if let Ok(providers) = store.list().await {
             // Convert legacy core::ProviderEntry to admin::ProviderEntry
-            let admin_providers: Vec<ProviderEntry> = providers.into_iter().map(|p| ProviderEntry {
-                id: p.id,
-                vendor: p.vendor,
-                model_id: p.model_id,
-                description: p.description,
-                base_url: p.base_url,
-                version: p.version,
-                api_key_id: p.api_key_id,
-                capabilities: p.capabilities,
-                status: p.status,
-            }).collect();
+            let admin_providers: Vec<ProviderEntry> = providers
+                .into_iter()
+                .map(|p| ProviderEntry {
+                    id: p.id,
+                    vendor: p.vendor,
+                    model_id: p.model_id,
+                    description: p.description,
+                    base_url: p.base_url,
+                    version: p.version,
+                    api_key_id: p.api_key_id,
+                    capabilities: p.capabilities,
+                    status: p.status,
+                })
+                .collect();
             return Json(admin_providers).into_response();
         }
         tracing::error!("Failed to list providers from store");
@@ -218,13 +227,18 @@ async fn add_provider(
     Json(req): Json<AddProviderRequest>,
 ) -> Response {
     let provider_id = format!("prov-{}", chrono::Utc::now().timestamp_millis());
-    
+
     // Encrypt the API key and store it in the secrets manager
     let api_key_id = format!("api_key:{}", provider_id);
-    if let Err(_) = state.secrets.store(&api_key_id, &req.api_key).await {
+    if state
+        .secrets
+        .store(&api_key_id, &req.api_key)
+        .await
+        .is_err()
+    {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
-    
+
     let entry = ProviderEntry {
         id: provider_id,
         vendor: req.vendor,
@@ -250,42 +264,42 @@ async fn add_provider(
             capabilities: entry.capabilities.clone(),
             status: entry.status.clone(),
         };
-        if let Err(_) = store.upsert(&core_entry).await {
+        if store.upsert(&core_entry).await.is_err() {
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     } else {
         let mut providers = state.providers.write().await;
         providers.push(entry.clone());
     }
-    
-    // Log audit event
-    let _ = state.audit_store.log(multi_agent_governance::AuditEntry {
-        id: uuid::Uuid::new_v4().to_string(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        user_id: "admin".to_string(),
-        action: "ADD_PROVIDER".to_string(),
-        resource: entry.id.clone(),
-        outcome: multi_agent_governance::AuditOutcome::Success,
-        metadata: Some(serde_json::json!({
-            "vendor": entry.vendor,
-            "model_id": entry.model_id
-        })),
-    }).await;
 
+    // Log audit event
+    let _ = state
+        .audit_store
+        .log(multi_agent_governance::AuditEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_id: "admin".to_string(),
+            action: "ADD_PROVIDER".to_string(),
+            resource: entry.id.clone(),
+            outcome: multi_agent_governance::AuditOutcome::Success,
+            metadata: Some(serde_json::json!({
+                "model_id": entry.model_id
+            })),
+            previous_hash: None,
+            hash: None,
+        })
+        .await;
 
     Json(entry).into_response()
 }
 
-
 /// Test provider connection.
-async fn test_provider(
-    Json(req): Json<TestProviderRequest>,
-) -> Response {
+async fn test_provider(Json(req): Json<TestProviderRequest>) -> Response {
     // Simple connectivity check - try to reach the base URL
     let client = reqwest::Client::new();
-    
+
     let result = client
-        .get(&format!("{}/models", req.base_url))
+        .get(format!("{}/models", req.base_url))
         .header("Authorization", format!("Bearer {}", req.api_key))
         .timeout(std::time::Duration::from_secs(5))
         .send()
@@ -306,7 +320,7 @@ async fn test_provider_by_id(
     Path(id): Path<String>,
 ) -> Response {
     let mut providers = state.providers.write().await;
-    
+
     if let Some(provider) = providers.iter_mut().find(|p| p.id == id) {
         // Decrypt the API key from secrets manager
         let api_key = match state.secrets.retrieve(&provider.api_key_id).await {
@@ -314,11 +328,11 @@ async fn test_provider_by_id(
             Ok(None) => return StatusCode::NOT_FOUND.into_response(),
             Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
-        
+
         let client = reqwest::Client::new();
-        
+
         let result = client
-            .get(&format!("{}/models", provider.base_url))
+            .get(format!("{}/models", provider.base_url))
             .header("Authorization", format!("Bearer {}", api_key))
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -339,12 +353,8 @@ async fn test_provider_by_id(
     }
 }
 
-
 /// Delete a provider.
-async fn delete_provider(
-    State(state): State<Arc<AdminState>>,
-    Path(id): Path<String>,
-) -> Response {
+async fn delete_provider(State(state): State<Arc<AdminState>>, Path(id): Path<String>) -> Response {
     let mut deleted = false;
     let mut api_key_id = None;
 
@@ -370,16 +380,21 @@ async fn delete_provider(
         if let Some(key_id) = api_key_id {
             let _ = state.secrets.delete(&key_id).await;
         }
-        
-        let _ = state.audit_store.log(multi_agent_governance::AuditEntry {
-            id: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            user_id: "admin".to_string(),
-            action: "DELETE_PROVIDER".to_string(),
-            resource: id,
-            outcome: multi_agent_governance::AuditOutcome::Success,
-            metadata: None,
-        }).await;
+
+        let _ = state
+            .audit_store
+            .log(multi_agent_governance::AuditEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                user_id: "admin".to_string(),
+                action: "DELETE_PROVIDER".to_string(),
+                resource: id,
+                outcome: multi_agent_governance::AuditOutcome::Success,
+                metadata: None,
+                previous_hash: None,
+                hash: None,
+            })
+            .await;
 
         StatusCode::NO_CONTENT.into_response()
     } else {
@@ -387,29 +402,22 @@ async fn delete_provider(
     }
 }
 
-
 // =========================================
 // Persistence Endpoints
 // =========================================
 
 /// Test S3 connection.
-async fn test_s3_connection(
-    Json(req): Json<S3ConfigRequest>,
-) -> Response {
+async fn test_s3_connection(Json(req): Json<S3ConfigRequest>) -> Response {
     use aws_config::Region;
-    use aws_sdk_s3::config::{Credentials, Builder as S3ConfigBuilder};
+    use aws_sdk_s3::config::{Builder as S3ConfigBuilder, Credentials};
 
-    let creds = Credentials::new(
-        &req.access_key,
-        &req.secret_key,
-        None,
-        None,
-        "admin-test"
-    );
+    let creds = Credentials::new(&req.access_key, &req.secret_key, None, None, "admin-test");
 
     let mut config_builder = S3ConfigBuilder::new()
         .credentials_provider(creds)
-        .region(Region::new(req.region.unwrap_or_else(|| "us-east-1".to_string())))
+        .region(Region::new(
+            req.region.unwrap_or_else(|| "us-east-1".to_string()),
+        ))
         .behavior_version_latest();
 
     if let Some(endpoint) = req.endpoint {
@@ -436,7 +444,26 @@ async fn forget_user(
     Json(req): Json<ForgetUserRequest>,
 ) -> Response {
     if let Some(pc) = &state.privacy_controller {
-        let report = pc.forget_user(&req.user_id).await;
+        let user_id = req.user_id.clone();
+        let report = pc.forget_user(&user_id).await;
+
+        let _ = state
+            .audit_store
+            .log(multi_agent_governance::AuditEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                user_id: "admin".to_string(),
+                action: "FORGET_USER".to_string(),
+                resource: user_id,
+                outcome: multi_agent_governance::AuditOutcome::Success,
+                metadata: Some(serde_json::json!({
+                    "total_deleted": report.total_deleted
+                })),
+                previous_hash: None,
+                hash: None,
+            })
+            .await;
+
         Json(report).into_response()
     } else {
         StatusCode::SERVICE_UNAVAILABLE.into_response()
@@ -448,9 +475,7 @@ async fn forget_user(
 // =========================================
 
 /// Get MCP servers.
-async fn get_mcp_servers(
-    State(state): State<Arc<AdminState>>,
-) -> Response {
+async fn get_mcp_servers(State(state): State<Arc<AdminState>>) -> Response {
     Json(state.mcp_registry.list_all()).into_response()
 }
 
@@ -460,23 +485,24 @@ async fn register_mcp(
     Json(req): Json<RegisterMcpRequest>,
 ) -> Response {
     use multi_agent_skills::mcp_registry::McpCapability;
-    
-    // Map string capabilities to enum
-    let capabilities: Vec<McpCapability> = req.capabilities.iter().filter_map(|s| {
-        match s.to_lowercase().as_str() {
-            "tools" | "filesystem" => Some(McpCapability::FileSystem),
-            "resources" | "database" => Some(McpCapability::Database),
-            "prompts" | "web" => Some(McpCapability::Web),
-            "code" | "code_execution" => Some(McpCapability::CodeExecution),
-            "search" => Some(McpCapability::Search),
-            "memory" => Some(McpCapability::Memory),
-            "git" => Some(McpCapability::Git),
-            "communication" => Some(McpCapability::Communication),
-            other => Some(McpCapability::Custom(other.to_string())),
-        }
-    }).collect();
 
-    
+    // Map string capabilities to enum
+    let capabilities: Vec<McpCapability> = req
+        .capabilities
+        .iter()
+        .map(|s| match s.to_lowercase().as_str() {
+            "tools" | "filesystem" => McpCapability::FileSystem,
+            "resources" | "database" => McpCapability::Database,
+            "prompts" | "web" => McpCapability::Web,
+            "code" | "code_execution" => McpCapability::CodeExecution,
+            "search" => McpCapability::Search,
+            "memory" => McpCapability::Memory,
+            "git" => McpCapability::Git,
+            "communication" => McpCapability::Communication,
+            other => McpCapability::Custom(other.to_string()),
+        })
+        .collect();
+
     let info = McpServerInfo {
         id: format!("mcp-{}", chrono::Utc::now().timestamp_millis()),
         name: req.name.clone(),
@@ -491,17 +517,129 @@ async fn register_mcp(
     };
 
     state.mcp_registry.register(info.clone());
+
+    let _ = state
+        .audit_store
+        .log(multi_agent_governance::AuditEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_id: "admin".to_string(),
+            action: "REGISTER_MCP_SERVER".to_string(),
+            resource: info.id.clone(),
+            outcome: multi_agent_governance::AuditOutcome::Success,
+            metadata: Some(serde_json::json!({
+                "name": info.name,
+                "transport": info.transport_type
+            })),
+            previous_hash: None,
+            hash: None,
+        })
+        .await;
+
     Json(serde_json::json!({"id": info.id, "status": "registered"})).into_response()
 }
 
-
 /// Remove MCP server.
-async fn remove_mcp(
+async fn remove_mcp(State(state): State<Arc<AdminState>>, Path(id): Path<String>) -> Response {
+    state.mcp_registry.unregister(&id);
+
+    let _ = state
+        .audit_store
+        .log(multi_agent_governance::AuditEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_id: "admin".to_string(),
+            action: "REMOVE_MCP_SERVER".to_string(),
+            resource: id,
+            outcome: multi_agent_governance::AuditOutcome::Success,
+            metadata: None,
+            previous_hash: None,
+            hash: None,
+        })
+        .await;
+
+    StatusCode::NO_CONTENT.into_response()
+}
+
+// =========================================
+// Session Endpoints
+// =========================================
+
+/// List all sessions.
+async fn list_sessions_admin(
+    State(state): State<Arc<AdminState>>,
+    Query(filter): Query<SessionFilter>,
+) -> Response {
+    let store = match &state.session_store {
+        Some(s) => s,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    match store
+        .list_sessions(filter.status, filter.user_id.as_deref())
+        .await
+    {
+        Ok(sessions) => Json(sessions).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to list sessions: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// Get session details.
+async fn get_session_admin(
     State(state): State<Arc<AdminState>>,
     Path(id): Path<String>,
 ) -> Response {
-    state.mcp_registry.unregister(&id);
-    StatusCode::NO_CONTENT.into_response()
+    let store = match &state.session_store {
+        Some(s) => s,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    match store.load(&id).await {
+        Ok(Some(session)) => Json(session).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::error!("Failed to load session {}: {}", id, e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+/// Delete a session.
+async fn delete_session_admin(
+    State(state): State<Arc<AdminState>>,
+    Path(id): Path<String>,
+) -> Response {
+    let store = match &state.session_store {
+        Some(s) => s,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    match store.delete(&id).await {
+        Ok(()) => {
+            let _ = state
+                .audit_store
+                .log(multi_agent_governance::AuditEntry {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    user_id: "admin".to_string(),
+                    action: "DELETE_SESSION".to_string(),
+                    resource: id,
+                    outcome: multi_agent_governance::AuditOutcome::Success,
+                    metadata: None,
+                    previous_hash: None,
+                    hash: None,
+                })
+                .await;
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete session {}: {}", id, e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 // =========================================
@@ -514,16 +652,24 @@ async fn health() -> Response {
 }
 
 /// Get current configuration.
-async fn get_config() -> Response {
-    let (p_mode, p_bucket, p_endpoint) = if let Ok(bucket) = std::env::var("AWS_S3_BUCKET") {
-        ("S3 (Tiered)".to_string(), Some(bucket), std::env::var("AWS_ENDPOINT_URL").ok())
+async fn get_config(State(state): State<Arc<AdminState>>) -> Response {
+    let (p_mode, p_bucket, p_endpoint) = if let Some(bucket) = &state.app_config.store.s3_bucket {
+        (
+            "S3 (Tiered)".to_string(),
+            Some(bucket.clone()),
+            state.app_config.store.s3_endpoint.clone(),
+        )
     } else {
         ("In-Memory".to_string(), None, None)
     };
 
     let providers_path = std::path::Path::new("providers.json");
     let has_providers = providers_path.exists();
-    let source = if has_providers { "File (providers.json)" } else { "Environment Variables" };
+    let source = if has_providers {
+        "File (providers.json)"
+    } else {
+        "Environment Variables"
+    };
 
     Json(ConfigResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -543,7 +689,8 @@ async fn get_config() -> Response {
             provider_source: source.to_string(),
             providers_file_present: has_providers,
         },
-    }).into_response()
+    })
+    .into_response()
 }
 
 // =========================================
@@ -558,10 +705,12 @@ async fn get_audit(
     let filter = AuditFilter {
         user_id: query.user_id,
         action: query.action,
+        resource: query.resource,
+        from_timestamp: query.from_timestamp,
+        to_timestamp: query.to_timestamp,
         limit: query.limit,
-        ..Default::default()
     };
-    
+
     match state.audit_store.query(filter).await {
         Ok(entries) => Json(entries).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -569,37 +718,51 @@ async fn get_audit(
 }
 
 /// Get metrics.
-async fn get_metrics(
-    State(state): State<Arc<AdminState>>,
-) -> Response {
+async fn get_metrics(State(state): State<Arc<AdminState>>) -> Response {
     if let Some(handle) = &state.metrics {
         let output = handle.render();
-        
+
         let mut requests_total = 0;
         let mut tokens_used = 0;
         let mut latency_sum = 0.0;
         let mut latency_count = 0;
-        
+
         for line in output.lines() {
             if line.starts_with("http_requests_total") {
-                if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<u64>().ok()) {
+                if let Some(val) = line
+                    .split_whitespace()
+                    .last()
+                    .and_then(|v| v.parse::<u64>().ok())
+                {
                     requests_total += val;
                 }
             } else if line.starts_with("llm_token_usage_total") {
-                if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<u64>().ok()) {
+                if let Some(val) = line
+                    .split_whitespace()
+                    .last()
+                    .and_then(|v| v.parse::<u64>().ok())
+                {
                     tokens_used += val;
                 }
             } else if line.starts_with("http_request_duration_seconds_sum") {
-                if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<f64>().ok()) {
+                if let Some(val) = line
+                    .split_whitespace()
+                    .last()
+                    .and_then(|v| v.parse::<f64>().ok())
+                {
                     latency_sum += val;
                 }
             } else if line.starts_with("http_request_duration_seconds_count") {
-                if let Some(val) = line.split_whitespace().last().and_then(|v| v.parse::<u64>().ok()) {
+                if let Some(val) = line
+                    .split_whitespace()
+                    .last()
+                    .and_then(|v| v.parse::<u64>().ok())
+                {
                     latency_count += val;
                 }
             }
         }
-        
+
         let avg_latency = if latency_count > 0 {
             (latency_sum / latency_count as f64) * 1000.0
         } else {
@@ -611,13 +774,15 @@ async fn get_metrics(
             "tokens_used": tokens_used,
             "active_sessions": 0,
             "avg_latency_ms": avg_latency
-        })).into_response()
+        }))
+        .into_response()
     } else {
         Json(serde_json::json!({
             "requests_total": 0,
             "tokens_used": 0,
             "active_sessions": 0
-        })).into_response()
+        }))
+        .into_response()
     }
 }
 
@@ -627,8 +792,12 @@ async fn get_metrics(
 
 /// Serve static files from embedded assets.
 async fn static_handler(Path(path): Path<String>) -> Response {
-    let path = if path.is_empty() { "index.html".to_string() } else { path };
-    
+    let path = if path.is_empty() {
+        "index.html".to_string()
+    } else {
+        path
+    };
+
     match Asset::get(&path) {
         Some(content) => {
             let mime = mime_guess::from_path(&path).first_or_octet_stream();
@@ -663,9 +832,9 @@ async fn index_handler() -> Response {
 // =========================================
 
 /// Build the admin API router.
-pub fn admin_router(state: Arc<AdminState>) -> Router {
+pub fn admin_api_router(state: Arc<AdminState>) -> Router {
     Router::new()
-        // API Routes with state
+        .route("/health", get(health))
         .route("/config", get(get_config))
         .route("/metrics", get(get_metrics))
         .route("/audit", get(get_audit))
@@ -679,11 +848,26 @@ pub fn admin_router(state: Arc<AdminState>) -> Router {
         .route("/mcp/servers", get(get_mcp_servers))
         .route("/mcp/register", post(register_mcp))
         .route("/mcp/servers/:id", delete(remove_mcp))
+        .route("/sessions", get(list_sessions_admin))
+        .route("/sessions/:id", get(get_session_admin).delete(delete_session_admin))
         // Apply auth layer with state
-        .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware))
-        // Static and public routes
-        .route("/", get(index_handler))
-        .route("/health", get(health))
-        .route("/*path", get(static_handler))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .with_state(state)
+}
+
+/// Build the admin static asset router.
+pub fn admin_static_router() -> Router {
+    Router::new()
+        .route("/", get(index_handler))
+        .route("/*path", get(static_handler))
+}
+
+/// Build the consolidated admin router (backward compatibility).
+pub fn admin_router(state: Arc<AdminState>) -> Router {
+    Router::new()
+        .nest("/api", admin_api_router(state))
+        .merge(admin_static_router())
 }

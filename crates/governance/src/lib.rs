@@ -9,28 +9,34 @@
 //! - Audit logging
 //! - Encrypted secrets management
 
-pub mod budget;
-pub mod security;
-pub mod network;
-pub mod tracing_layer;
-pub mod metrics;
-pub mod guardrails;
-pub mod policy;
-pub mod rbac;
-pub mod audit;
-pub mod privacy;
-pub mod secrets;
 pub mod approval;
+pub mod audit;
+pub mod budget;
+pub mod guardrails;
+pub mod metrics;
+pub mod network;
+pub mod policy;
+pub mod privacy;
+pub mod rbac;
+pub mod secrets;
+pub mod security;
+pub mod storage_encryption;
+pub mod tracing_layer;
 
-pub use privacy::{PrivacyController, DeletionReport};
+pub use approval::{AutoApproveGate, ChannelApprovalGate};
+pub use audit::{
+    AuditEntry, AuditFilter, AuditOutcome, AuditStore, InMemoryAuditStore, SqliteAuditStore,
+};
 pub use budget::TokenBudgetController;
-pub use security::DefaultSecurityProxy;
-pub use tracing_layer::configure_tracing;
+pub use guardrails::{
+    CompositeGuardrail, Guardrail, GuardrailResult, PiiScanner, PromptInjectionDetector,
+    ViolationType,
+};
 pub use metrics::{setup_metrics_recorder, track_request, track_tokens};
-pub use guardrails::{Guardrail, GuardrailResult, ViolationType, PiiScanner, PromptInjectionDetector, CompositeGuardrail};
-pub use rbac::{RbacConnector, UserRoles, NoOpRbacConnector, StaticTokenRbacConnector};
-pub use audit::{AuditStore, AuditEntry, AuditOutcome, AuditFilter, InMemoryAuditStore, FileAuditStore};
-pub use policy::{PolicyEngine, PolicyFile, PolicyDecision, PolicyRule, RuleMatch, RuleAction};
-pub use secrets::{SecretsManager, EncryptedSecret, AesGcmSecretsManager};
-pub use approval::{ChannelApprovalGate, AutoApproveGate};
-
+pub use policy::{PolicyDecision, PolicyEngine, PolicyFile, PolicyRule, RuleAction, RuleMatch};
+pub use privacy::{DeletionReport, PrivacyController};
+pub use rbac::{NoOpRbacConnector, RbacConnector, StaticTokenRbacConnector, UserRoles};
+pub use secrets::{AesGcmSecretsManager, EncryptedSecret, SecretsManager};
+pub use security::DefaultSecurityProxy;
+pub use storage_encryption::EncryptedArtifactStore;
+pub use tracing_layer::configure_tracing;

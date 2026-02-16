@@ -93,21 +93,24 @@ impl crate::dag::DagTask for SopTask {
                 self.step.tool, self.step.name, self.step.allow_tools
             )));
         }
-        
+
         let mut args = self.step.args.clone();
-        
+
         // Inject context and previous results
         if let serde_json::Value::Object(ref mut map) = args {
-             // Convert context HashMap to Value
-             let ctx_json = serde_json::to_value(context)
-                 .map_err(|e| Error::SopExecution(format!("Context serialization error: {}", e)))?;
-                 
-             map.insert("_previous_results".to_string(), ctx_json);
+            // Convert context HashMap to Value
+            let ctx_json = serde_json::to_value(context)
+                .map_err(|e| Error::SopExecution(format!("Context serialization error: {}", e)))?;
+
+            map.insert("_previous_results".to_string(), ctx_json);
         }
 
-        let output = self.tools.execute(&self.step.tool, args).await
+        let output = self
+            .tools
+            .execute(&self.step.tool, args)
+            .await
             .map_err(|e| Error::SopExecution(format!("Step '{}' failed: {}", self.step.name, e)))?;
-            
+
         Ok(output.content)
     }
 }
@@ -135,17 +138,29 @@ impl SopEngine for DefaultSopEngine {
         })
     }
 
-    async fn execute(&self, sop: &SopDefinition, _context: serde_json::Value) -> Result<AgentResult> {
+    async fn execute(
+        &self,
+        sop: &SopDefinition,
+        _context: serde_json::Value,
+    ) -> Result<AgentResult> {
         tracing::info!(sop = %sop.name, parallel = sop.allow_parallel, "Executing SOP");
 
-        let tools = self.tools.as_ref().ok_or_else(|| {
-            Error::SopExecution("No tool registry configured for SOP engine".to_string())
-        })?.clone();
+        let tools = self
+            .tools
+            .as_ref()
+            .ok_or_else(|| {
+                Error::SopExecution("No tool registry configured for SOP engine".to_string())
+            })?
+            .clone();
 
-        let tasks: Vec<SopTask> = sop.steps.iter().map(|step| SopTask {
-            step: step.clone(),
-            tools: tools.clone(),
-        }).collect();
+        let tasks: Vec<SopTask> = sop
+            .steps
+            .iter()
+            .map(|step| SopTask {
+                step: step.clone(),
+                tools: tools.clone(),
+            })
+            .collect();
 
         let executor = crate::dag::DagExecutor::new(sop.allow_parallel);
         let results = executor.execute(tasks).await?;

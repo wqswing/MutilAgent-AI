@@ -4,29 +4,29 @@
 //! This crate provides the ReAct loop, DAG orchestration, and SOP engine
 //! for executing complex tasks.
 
+pub mod builder;
+pub mod capability;
+pub mod context;
 pub mod dag;
+pub mod delegation;
+pub mod executor;
+pub mod memory;
+pub mod parser;
 pub mod persistence;
+pub mod planning;
 pub mod react;
 pub mod sop;
-pub mod context;
-pub mod delegation;
-pub mod capability;
-pub mod memory;
-pub mod planning;
-pub mod builder;
-pub mod parser;
-pub mod executor;
 pub mod summarization;
 
-pub use persistence::InMemorySessionStore;
-pub use multi_agent_core::traits::SessionStore;
-pub use react::{ReActConfig, ReActController, chrono_timestamp};
-pub use parser::{ActionParser, ReActAction};
 pub use builder::ReActBuilder;
 pub use capability::{
-    AgentCapability, CompressionCapability, DelegationCapability, McpCapability, SecurityCapability,
-    ReflectionCapability,
+    AgentCapability, CompressionCapability, DelegationCapability, McpCapability,
+    ReflectionCapability, SecurityCapability,
 };
 pub use memory::MemoryCapability;
+pub use multi_agent_core::traits::SessionStore;
+pub use parser::{ActionParser, ReActAction};
+pub use persistence::InMemorySessionStore;
 pub use planning::PlanningCapability;
+pub use react::{chrono_timestamp, ReActConfig, ReActController};
 pub use summarization::SummarizationCapability;

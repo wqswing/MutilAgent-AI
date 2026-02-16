@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use multi_agent_core::types::ToolRiskLevel;
-use std::path::Path;
 use anyhow::{Context, Result};
+use multi_agent_core::types::ToolRiskLevel;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// A versioned policy document containing security rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,8 +73,8 @@ impl PolicyEngine {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read policy file: {:?}", path.as_ref()))?;
-        let policy: PolicyFile = serde_yaml::from_str(&content)
-            .with_context(|| "Failed to parse policy YAML")?;
+        let policy: PolicyFile =
+            serde_yaml::from_str(&content).with_context(|| "Failed to parse policy YAML")?;
         Ok(Self { policy })
     }
 
@@ -96,9 +96,11 @@ impl PolicyEngine {
                 if rule.action.risk > highest_risk || matched_rule_id.is_none() {
                     highest_risk = rule.action.risk;
                     matched_rule_id = Some(rule.id.clone());
-                    reason = rule.action.reason.clone().unwrap_or_else(|| {
-                        format!("Matched rule: {}", rule.id)
-                    });
+                    reason = rule
+                        .action
+                        .reason
+                        .clone()
+                        .unwrap_or_else(|| format!("Matched rule: {}", rule.id));
                 }
             }
         }
@@ -131,7 +133,9 @@ impl PolicyEngine {
 
         // 3. Match arguments
         if let Some(substrings) = &rule.match_rule.args_contain {
-            let args_str = serde_json::to_string(args).unwrap_or_default().to_lowercase();
+            let args_str = serde_json::to_string(args)
+                .unwrap_or_default()
+                .to_lowercase();
             for sub in substrings {
                 if !args_str.contains(&sub.to_lowercase()) {
                     return false;
@@ -147,16 +151,15 @@ impl PolicyEngine {
         if pattern == "*" {
             return true;
         }
-        if pattern.starts_with('*') && pattern.ends_with('*') {
-            let inner = &pattern[1..pattern.len() - 1];
-            return text.contains(inner);
+        if let (Some(stripped), true) = (pattern.strip_prefix('*'), pattern.ends_with('*')) {
+            if let Some(inner) = stripped.strip_suffix('*') {
+                return text.contains(inner);
+            }
         }
-        if pattern.starts_with('*') {
-            let suffix = &pattern[1..];
+        if let Some(suffix) = pattern.strip_prefix('*') {
             return text.ends_with(suffix);
         }
-        if pattern.ends_with('*') {
-            let prefix = &pattern[..pattern.len() - 1];
+        if let Some(prefix) = pattern.strip_suffix('*') {
             return text.starts_with(prefix);
         }
         pattern == text
@@ -231,11 +234,11 @@ mod tests {
     #[test]
     fn test_exact_match_and_args() {
         let engine = PolicyEngine::from_file(test_policy());
-        
+
         let decision = engine.evaluate("sandbox_shell", &json!({"command": "rm -rf /"}));
         assert_eq!(decision.risk_level, ToolRiskLevel::Critical);
         assert_eq!(decision.matched_rule, Some("block-rm-rf".to_string()));
-        
+
         // Should NOT match if args don't contain rm -rf
         let decision = engine.evaluate("sandbox_shell", &json!({"command": "ls"}));
         assert_eq!(decision.risk_level, ToolRiskLevel::Low);
@@ -245,7 +248,7 @@ mod tests {
     #[test]
     fn test_glob_match() {
         let engine = PolicyEngine::from_file(test_policy());
-        
+
         let decision = engine.evaluate("fs_read", &json!({}));
         assert_eq!(decision.risk_level, ToolRiskLevel::Low);
         assert_eq!(decision.matched_rule, Some("read-ops".to_string()));
@@ -257,21 +260,19 @@ mod tests {
         let override_policy = PolicyFile {
             version: "1.1".to_string(),
             name: "Override".to_string(),
-            rules: vec![
-                PolicyRule {
-                    id: "read-ops".to_string(), // Conflict ID
-                    description: None,
-                    match_rule: RuleMatch {
-                        tool: None,
-                        tool_glob: Some("*_read".to_string()),
-                        args_contain: None,
-                    },
-                    action: RuleAction {
-                        risk: ToolRiskLevel::Medium, // Changed risk
-                        reason: Some("Elevated read risk".to_string()),
-                    },
+            rules: vec![PolicyRule {
+                id: "read-ops".to_string(), // Conflict ID
+                description: None,
+                match_rule: RuleMatch {
+                    tool: None,
+                    tool_glob: Some("*_read".to_string()),
+                    args_contain: None,
                 },
-            ],
+                action: RuleAction {
+                    risk: ToolRiskLevel::Medium, // Changed risk
+                    reason: Some("Elevated read risk".to_string()),
+                },
+            }],
             thresholds: PolicyThresholds {
                 medium: 10,
                 ..Default::default()
@@ -279,7 +280,7 @@ mod tests {
         };
 
         engine.merge(override_policy);
-        
+
         let decision = engine.evaluate("fs_read", &json!({}));
         assert_eq!(decision.risk_level, ToolRiskLevel::Medium);
         assert_eq!(decision.risk_score, 10); // From overriden threshold

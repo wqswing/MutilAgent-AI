@@ -8,6 +8,7 @@ port = 3000
 # L0 Router settings
 routing_timeout_ms = 500
 semantic_cache_threshold = 0.95
+allowed_origins = ["*"]
 
 [controller]
 # L1 Controller settings
@@ -25,6 +26,9 @@ default_tier = "memory"
 # L4 Governance settings
 default_token_budget = 50000
 enable_tracing = true
+audit_log_path = ".sovereign_claw/audit.log"
+audit_log_storage_path = ".sovereign_claw/audit.log.jsonl"
+multiagent_env = "development"
 
 [model_gateway]
 # L-M Model Gateway settings

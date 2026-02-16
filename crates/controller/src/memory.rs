@@ -4,16 +4,16 @@
 //! and archives the execution result upon completion.
 
 use async_trait::async_trait;
+use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
 
-use multi_agent_core::{
-    traits::{MemoryStore, MemoryEntry, LlmClient},
-    types::{Session, AgentResult, HistoryEntry},
-    Result, Error,
-};
 use crate::capability::AgentCapability;
+use multi_agent_core::{
+    traits::{LlmClient, MemoryEntry, MemoryStore},
+    types::{AgentResult, HistoryEntry, Session},
+    Error, Result,
+};
 
 /// Capability for Long-Term Memory (RAG).
 pub struct MemoryCapability {
@@ -48,7 +48,10 @@ impl MemoryCapability {
 
     async fn retrieve_context(&self, goal: &str) -> Result<Vec<MemoryEntry>> {
         // 1. Generate embedding for the goal
-        let embedding = self.llm.embed(goal).await
+        let embedding = self
+            .llm
+            .embed(goal)
+            .await
             .map_err(|e| Error::controller(format!("Failed to embed goal: {}", e)))?;
 
         // 2. Search memory
@@ -76,11 +79,15 @@ impl AgentCapability for MemoryCapability {
         match self.retrieve_context(&goal).await {
             Ok(memories) => {
                 if !memories.is_empty() {
-                    let mut context_msg = "Here are some relevant past experiences found in long-term memory:\n\n".to_string();
+                    let mut context_msg =
+                        "Here are some relevant past experiences found in long-term memory:\n\n"
+                            .to_string();
                     for (i, mem) in memories.iter().enumerate() {
                         context_msg.push_str(&format!("{}. {}\n", i + 1, mem.content));
                     }
-                    context_msg.push_str("\n\nUse these insights to solve the current task more effectively.");
+                    context_msg.push_str(
+                        "\n\nUse these insights to solve the current task more effectively.",
+                    );
 
                     // Inject as system message (or pseudo-system user message)
                     session.history.push(HistoryEntry {
@@ -89,7 +96,7 @@ impl AgentCapability for MemoryCapability {
                         tool_call: None,
                         timestamp: Utc::now().timestamp(),
                     });
-                     tracing::info!("Injected {} memories into context", memories.len());
+                    tracing::info!("Injected {} memories into context", memories.len());
                 }
             }
             Err(e) => {
@@ -101,9 +108,9 @@ impl AgentCapability for MemoryCapability {
     }
 
     async fn on_finish(&self, session: &mut Session, result: &AgentResult) -> Result<()> {
-         // Only archive successful missions
-         // Note: result here is the final output. We might want to summarize the *whole* session.
-         // For now, simplistically archive: "Goal: [goal] -> Result: [output]"
+        // Only archive successful missions
+        // Note: result here is the final output. We might want to summarize the *whole* session.
+        // For now, simplistically archive: "Goal: [goal] -> Result: [output]"
 
         let goal = {
             let guard = self.current_goal.lock().await;
@@ -111,35 +118,40 @@ impl AgentCapability for MemoryCapability {
         };
 
         if let Some(goal_text) = goal {
-             // Create content to store
-             let content = match result {
-                 AgentResult::Text(text) => format!("Goal: {}\nResult: {}", goal_text, text),
-                 AgentResult::Data(val) => format!("Goal: {}\nResult Data: {}", goal_text, val),
-                 AgentResult::File { filename, .. } => format!("Goal: {}\nResult File: {}", goal_text, filename),
-                 _ => return Ok(()),
-             };
+            // Create content to store
+            let content = match result {
+                AgentResult::Text(text) => format!("Goal: {}\nResult: {}", goal_text, text),
+                AgentResult::Data(val) => format!("Goal: {}\nResult Data: {}", goal_text, val),
+                AgentResult::File { filename, .. } => {
+                    format!("Goal: {}\nResult File: {}", goal_text, filename)
+                }
+                _ => return Ok(()),
+            };
 
-             tracing::info!("Archiving experience to memory");
+            tracing::info!("Archiving experience to memory");
 
-             // Embed
-             let embedding = self.llm.embed(&content).await
-                 .map_err(|e| Error::controller(format!("Failed to embed experience: {}", e)))?;
+            // Embed
+            let embedding = self
+                .llm
+                .embed(&content)
+                .await
+                .map_err(|e| Error::controller(format!("Failed to embed experience: {}", e)))?;
 
-             // Store
-             let entry = MemoryEntry {
-                 id: uuid::Uuid::new_v4().to_string(),
-                 content,
-                 embedding,
-                 metadata: std::collections::HashMap::from([
-                     ("type".to_string(), "experience".to_string()),
-                     ("session_id".to_string(), session.id.clone()),
-                     ("timestamp".to_string(), Utc::now().to_rfc3339()),
-                 ]),
-             };
+            // Store
+            let entry = MemoryEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                content,
+                embedding,
+                metadata: std::collections::HashMap::from([
+                    ("type".to_string(), "experience".to_string()),
+                    ("session_id".to_string(), session.id.clone()),
+                    ("timestamp".to_string(), Utc::now().to_rfc3339()),
+                ]),
+            };
 
-             if let Err(e) = self.store.add(entry).await {
-                 tracing::warn!("Failed to save experience to memory: {}", e);
-             }
+            if let Err(e) = self.store.add(entry).await {
+                tracing::warn!("Failed to save experience to memory: {}", e);
+            }
         }
 
         Ok(())

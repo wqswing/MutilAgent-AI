@@ -5,7 +5,8 @@ use serde_json::json;
 
 use multi_agent_core::{
     traits::IntentRouter,
-    types::{NormalizedRequest, UserIntent}, Result,
+    types::{NormalizedRequest, UserIntent},
+    Result,
 };
 
 /// Keywords that suggest a fast action (direct tool call).
@@ -124,10 +125,7 @@ impl DefaultRouter {
     /// Extract a goal from the content.
     fn extract_goal(&self, content: &str) -> String {
         // Simple extraction: use the first sentence or first 200 chars
-        let goal = content
-            .split(['.', '!', '?'])
-            .next()
-            .unwrap_or(content);
+        let goal = content.split(['.', '!', '?']).next().unwrap_or(content);
 
         if goal.len() > 200 {
             format!("{}...", &goal[..200])
@@ -260,8 +258,8 @@ mod tests {
 
         let router = DefaultRouter::new();
 
-        let request = NormalizedRequest::text("What is this?")
-            .with_ref(RefId::from_string("image_123"));
+        let request =
+            NormalizedRequest::text("What is this?").with_ref(RefId::from_string("image_123"));
 
         let intent = router.classify(&request).await.unwrap();
 

@@ -5,12 +5,12 @@
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, oneshot, broadcast};
+use tokio::sync::{broadcast, oneshot, Mutex};
 
 use multi_agent_core::{
     traits::ApprovalGate,
     types::{ApprovalRequest, ApprovalResponse, ToolRiskLevel},
-    Result, Error,
+    Error, Result,
 };
 
 // =============================================================================
@@ -66,11 +66,9 @@ impl ChannelApprovalGate {
     ) -> std::result::Result<(), String> {
         let mut pending = self.pending.lock().await;
         match pending.remove(request_id) {
-            Some(sender) => {
-                sender.send(response).map_err(|_| {
-                    "Request channel closed (agent may have timed out)".to_string()
-                })
-            }
+            Some(sender) => sender
+                .send(response)
+                .map_err(|_| "Request channel closed (agent may have timed out)".to_string()),
             None => Err(format!("No pending request with ID: {}", request_id)),
         }
     }
@@ -83,10 +81,7 @@ impl ChannelApprovalGate {
 
 #[async_trait]
 impl ApprovalGate for ChannelApprovalGate {
-    async fn request_approval(
-        &self,
-        req: &ApprovalRequest,
-    ) -> Result<ApprovalResponse> {
+    async fn request_approval(&self, req: &ApprovalRequest) -> Result<ApprovalResponse> {
         let (tx, rx) = oneshot::channel();
 
         // Register the pending request
@@ -107,7 +102,10 @@ impl ApprovalGate for ChannelApprovalGate {
         );
 
         // Wait for response with timeout
-        let timeout = req.timeout_secs.map(std::time::Duration::from_secs).unwrap_or(self.timeout);
+        let timeout = req
+            .timeout_secs
+            .map(std::time::Duration::from_secs)
+            .unwrap_or(self.timeout);
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(_)) => {
@@ -146,10 +144,7 @@ pub struct AutoApproveGate;
 
 #[async_trait]
 impl ApprovalGate for AutoApproveGate {
-    async fn request_approval(
-        &self,
-        req: &ApprovalRequest,
-    ) -> Result<ApprovalResponse> {
+    async fn request_approval(&self, req: &ApprovalRequest) -> Result<ApprovalResponse> {
         tracing::warn!(
             tool = %req.tool_name,
             risk = ?req.risk_level,
@@ -211,19 +206,20 @@ mod tests {
         let gate_for_task = gate_clone.clone();
         let req_clone = req.clone();
 
-        let handle = tokio::spawn(async move {
-            gate_for_task.request_approval(&req_clone).await
-        });
+        let handle = tokio::spawn(async move { gate_for_task.request_approval(&req_clone).await });
 
         // Give the request time to register
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         // Submit approval
         gate_clone
-            .submit_response("test-2", ApprovalResponse::Approved {
-                reason: None,
-                reason_code: "USER_APPROVED".into(),
-            })
+            .submit_response(
+                "test-2",
+                ApprovalResponse::Approved {
+                    reason: None,
+                    reason_code: "USER_APPROVED".into(),
+                },
+            )
             .await
             .unwrap();
 
@@ -235,7 +231,7 @@ mod tests {
     async fn test_channel_gate_denial() {
         let gate = Arc::new(
             ChannelApprovalGate::new(ToolRiskLevel::High)
-                .with_timeout(std::time::Duration::from_secs(10))
+                .with_timeout(std::time::Duration::from_secs(10)),
         );
 
         let req = ApprovalRequest {
@@ -251,18 +247,19 @@ mod tests {
         let gate_for_task = gate.clone();
         let req_clone = req.clone();
 
-        let handle = tokio::spawn(async move {
-            gate_for_task.request_approval(&req_clone).await
-        });
+        let handle = tokio::spawn(async move { gate_for_task.request_approval(&req_clone).await });
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        gate.submit_response("test-3", ApprovalResponse::Denied {
-            reason: "too dangerous".into(),
-            reason_code: "USER_DENIED".into(),
-        })
-            .await
-            .unwrap();
+        gate.submit_response(
+            "test-3",
+            ApprovalResponse::Denied {
+                reason: "too dangerous".into(),
+                reason_code: "USER_DENIED".into(),
+            },
+        )
+        .await
+        .unwrap();
 
         let response = handle.await.unwrap().unwrap();
         match response {
@@ -289,7 +286,10 @@ mod tests {
         // Don't submit any response — should timeout
         let response = gate.request_approval(&req).await.unwrap();
         match response {
-            ApprovalResponse::Denied { reason, reason_code } => {
+            ApprovalResponse::Denied {
+                reason,
+                reason_code,
+            } => {
                 assert!(reason.contains("timed out"));
                 assert_eq!(reason_code, "TIMEOUT");
             }

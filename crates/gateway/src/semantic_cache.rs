@@ -108,7 +108,8 @@ impl InMemorySemanticCache {
 
     /// Clear expired entries.
     pub fn cleanup(&self) {
-        self.cache.retain(|_: &String, v: &mut CacheEntry| !v.is_expired());
+        self.cache
+            .retain(|_: &String, v: &mut CacheEntry| !v.is_expired());
     }
 
     fn cache_key(&self, workspace_id: &str, session_id: &str, query: &str) -> String {
@@ -128,14 +129,23 @@ pub struct CacheStats {
 
 #[async_trait]
 impl SemanticCache for InMemorySemanticCache {
-    async fn get(&self, workspace_id: &str, session_id: &str, query: &str) -> Result<Option<String>> {
+    async fn get(
+        &self,
+        workspace_id: &str,
+        session_id: &str,
+        query: &str,
+    ) -> Result<Option<String>> {
         let key = self.cache_key(workspace_id, session_id, query);
 
         // 1. Exact match (Fast path)
         if let Some(mut entry) = self.cache.get_mut(&key) {
             if !entry.is_expired() {
                 entry.hit_count += 1;
-                tracing::debug!(workspace = workspace_id, session = session_id, "Semantic cache exact hit");
+                tracing::debug!(
+                    workspace = workspace_id,
+                    session = session_id,
+                    "Semantic cache exact hit"
+                );
                 return Ok(Some(entry.response.clone()));
             }
         }
@@ -156,19 +166,19 @@ impl SemanticCache for InMemorySemanticCache {
         let mut max_similarity = 0.0;
 
         for entry in self.cache.iter() {
-             if entry.is_expired() || !entry.key().starts_with(&prefix) {
-                 continue;
-             }
-             
-             if let Some(ref stored_embedding) = entry.value().query_embedding {
-                 let sim = self.cosine_similarity(&query_embedding, stored_embedding);
-                 if sim > max_similarity {
-                     max_similarity = sim;
-                     if sim >= self.threshold {
-                         best_match = Some(entry.value().response.clone());
-                     }
-                 }
-             }
+            if entry.is_expired() || !entry.key().starts_with(&prefix) {
+                continue;
+            }
+
+            if let Some(ref stored_embedding) = entry.value().query_embedding {
+                let sim = self.cosine_similarity(&query_embedding, stored_embedding);
+                if sim > max_similarity {
+                    max_similarity = sim;
+                    if sim >= self.threshold {
+                        best_match = Some(entry.value().response.clone());
+                    }
+                }
+            }
         }
 
         if let Some(response) = best_match {
@@ -184,7 +194,13 @@ impl SemanticCache for InMemorySemanticCache {
         Ok(None)
     }
 
-    async fn set(&self, workspace_id: &str, session_id: &str, query: &str, response: &str) -> Result<()> {
+    async fn set(
+        &self,
+        workspace_id: &str,
+        session_id: &str,
+        query: &str,
+        response: &str,
+    ) -> Result<()> {
         let key = self.cache_key(workspace_id, session_id, query);
 
         let query_embedding = match self.llm_client.embed(query).await {
@@ -218,13 +234,18 @@ impl SemanticCache for InMemorySemanticCache {
         let prefix = format!("{}:{}:", workspace_id, session_id);
         let pattern_lower = pattern.to_lowercase();
         self.cache.retain(|key: &String, _: &mut CacheEntry| {
-             if key.starts_with(&prefix) {
-                 !key.contains(&pattern_lower)
-             } else {
-                 true
-             }
+            if key.starts_with(&prefix) {
+                !key.contains(&pattern_lower)
+            } else {
+                true
+            }
         });
-        tracing::debug!(workspace = workspace_id, session = session_id, pattern = pattern, "Invalidated cache entries");
+        tracing::debug!(
+            workspace = workspace_id,
+            session = session_id,
+            pattern = pattern,
+            "Invalidated cache entries"
+        );
         Ok(())
     }
 }
@@ -234,15 +255,19 @@ impl SemanticCache for InMemorySemanticCache {
 mod tests {
     use super::*;
     use multi_agent_core::traits::{ChatMessage, LlmResponse};
-    
+
     struct MockLlm;
     #[async_trait]
     impl LlmClient for MockLlm {
-        async fn complete(&self, _prompt: &str) -> Result<LlmResponse> { unimplemented!() }
-        async fn chat(&self, _messages: &[ChatMessage]) -> Result<LlmResponse> { unimplemented!() }
+        async fn complete(&self, _prompt: &str) -> Result<LlmResponse> {
+            unimplemented!()
+        }
+        async fn chat(&self, _messages: &[ChatMessage]) -> Result<LlmResponse> {
+            unimplemented!()
+        }
         async fn embed(&self, text: &str) -> Result<Vec<f32>> {
             // Simple mock: hash length to float vec
-             Ok(vec![text.len() as f32])
+            Ok(vec![text.len() as f32])
         }
     }
 
@@ -254,7 +279,7 @@ mod tests {
         cache.set("w1", "s1", "Rust", "Language").await.unwrap();
         let hit = cache.get("w1", "s1", "Rust").await.unwrap();
         assert_eq!(hit, Some("Language".to_string()));
-        
+
         // Different workspace should miss
         let miss = cache.get("w2", "s1", "Rust").await.unwrap();
         assert_eq!(miss, None);

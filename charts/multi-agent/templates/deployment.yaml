@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "multi-agent.fullname" . }}
+  labels:
+    {{- include "multi-agent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "multi-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "multi-agent.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.port }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.config.port | quote }}
+            - name: RUST_LOG
+              value: {{ .Values.config.logLevel | quote }}
+            - name: S3_BUCKET
+              value: {{ .Values.config.s3Bucket | quote }}
+            - name: S3_ENDPOINT
+              value: {{ .Values.config.s3Endpoint | quote }}
+            - name: REDIS_URL
+              value: {{ .Values.config.redisUrl | quote }}
+            - name: GOVERNANCE__AUDIT_LOG_PATH
+              value: {{ .Values.config.auditLogPath | quote }}
+            - name: GOVERNANCE__AUDIT_LOG_STORAGE_PATH
+              value: {{ .Values.config.auditStoragePath | quote }}
+            {{- if .Values.config.openaiApiKey }}
+            - name: MODEL_GATEWAY__OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "multi-agent.fullname" . }}
+                  key: openai-api-key
+            {{- end }}
+            {{- if .Values.config.anthropicApiKey }}
+            - name: MODEL_GATEWAY__ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "multi-agent.fullname" . }}
+                  key: anthropic-api-key
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /app/data
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "multi-agent.fullname" . }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

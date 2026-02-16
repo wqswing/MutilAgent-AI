@@ -98,10 +98,8 @@ impl McpToolAdapter {
         };
 
         // Store connection (actual MCP connection would happen here)
-        self.servers.insert(
-            name.to_string(),
-            Arc::new(RwLock::new(connection)),
-        );
+        self.servers
+            .insert(name.to_string(), Arc::new(RwLock::new(connection)));
 
         // In a full implementation, we would:
         // 1. Spawn the transport (subprocess, HTTP client, WebSocket client)
@@ -113,7 +111,7 @@ impl McpToolAdapter {
         if let Some(server) = self.servers.get(name) {
             let mut conn = server.write().await;
             conn.connected = true;
-            
+
             // Mock: Add some placeholder tools
             conn.tools.push(ToolDefinition {
                 name: format!("{}/list_files", name),
@@ -149,7 +147,7 @@ impl McpToolAdapter {
     }
 
     /// Helper to clone self reference if wrapped in Arc (trickier from &self inside impl)
-    /// Actually, usage inside McpRegistry usually holds the Arc. 
+    /// Actually, usage inside McpRegistry usually holds the Arc.
     /// But get_tool is called on &self.
     /// WE NEED TO CHANGE get_tool signature or usage? No, we can't change ToolRegistry trait easily.
     /// BUT McpRegistry struct holds `adapter: Arc<McpToolAdapter>`.
@@ -160,7 +158,7 @@ impl McpToolAdapter {
     /// It should return `Option<ToolDefinition>`.
     /// And `McpRegistry` (which HOLDS the Arc) constructs the `McpToolWrapper`.
     ///
-    /// Let's REVERT the logic in `get_tool` to return `Option<ToolDefinition>` 
+    /// Let's REVERT the logic in `get_tool` to return `Option<ToolDefinition>`
     /// and move the wrapper construction to `McpRegistry`!
     ///
     /// Wait, `get_tool` signature in `McpToolAdapter` I just added returns `Result<Option<Box<dyn Tool>>>`.
@@ -168,25 +166,29 @@ impl McpToolAdapter {
     pub async fn get_tool_definition(&self, name: &str) -> Result<Option<ToolDefinition>> {
         // 1. Try exact match (server/tool)
         if name.contains('/') {
-             let parts: Vec<&str> = name.splitn(2, '/').collect();
-             let server_name = parts[0];
-             
-             if let Some(server) = self.servers.get(server_name) {
-                 let conn = server.read().await;
-                 if conn.connected {
-                     if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
-                         return Ok(Some(def.clone()));
-                     }
-                 }
-             }
+            let parts: Vec<&str> = name.splitn(2, '/').collect();
+            let server_name = parts[0];
+
+            if let Some(server) = self.servers.get(server_name) {
+                let conn = server.read().await;
+                if conn.connected {
+                    if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
+                        return Ok(Some(def.clone()));
+                    }
+                }
+            }
         } else {
             // Search all servers
             for entry in self.servers.iter() {
                 let conn = entry.value().read().await;
                 if conn.connected {
-                     if let Some(def) = conn.tools.iter().find(|t| t.name.ends_with(name) || t.name == name) {
-                           return Ok(Some(def.clone()));
-                     }
+                    if let Some(def) = conn
+                        .tools
+                        .iter()
+                        .find(|t| t.name.ends_with(name) || t.name == name)
+                    {
+                        return Ok(Some(def.clone()));
+                    }
                 }
             }
         }
@@ -196,14 +198,14 @@ impl McpToolAdapter {
     /// List all tools from all connected servers.
     pub async fn list_tools(&self) -> Result<Vec<ToolDefinition>> {
         let mut all_tools = Vec::new();
-        
+
         for entry in self.servers.iter() {
             let conn = entry.value().read().await;
             if conn.connected {
                 all_tools.extend(conn.tools.clone());
             }
         }
-        
+
         Ok(all_tools)
     }
 
@@ -214,37 +216,41 @@ impl McpToolAdapter {
             if conn.connected {
                 return Ok(conn.tools.clone());
             } else {
-                return Err(Error::mcp_adapter(format!("Server '{}' is not connected", server_name)));
+                return Err(Error::mcp_adapter(format!(
+                    "Server '{}' is not connected",
+                    server_name
+                )));
             }
         }
-        Err(Error::mcp_adapter(format!("Server '{}' not found", server_name)))
+        Err(Error::mcp_adapter(format!(
+            "Server '{}' not found",
+            server_name
+        )))
     }
-
-
 
     /// Find a tool definition by name.
     pub async fn find_tool(&self, name: &str) -> Option<ToolDefinition> {
-         if name.contains('/') {
-             let parts: Vec<&str> = name.splitn(2, '/').collect();
-             let server_name = parts[0];
-             // let tool_name = parts[1]; // unused
-             
-             if let Some(server) = self.servers.get(server_name) {
-                 let conn = server.read().await;
-                 if conn.connected {
-                     if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
-                         return Some(def.clone());
-                     }
-                 }
-             }
+        if name.contains('/') {
+            let parts: Vec<&str> = name.splitn(2, '/').collect();
+            let server_name = parts[0];
+            // let tool_name = parts[1]; // unused
+
+            if let Some(server) = self.servers.get(server_name) {
+                let conn = server.read().await;
+                if conn.connected {
+                    if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
+                        return Some(def.clone());
+                    }
+                }
+            }
         }
         // Fallback: search all
         for entry in self.servers.iter() {
             let conn = entry.value().read().await;
             if conn.connected {
-                 if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
-                     return Some(def.clone());
-                 }
+                if let Some(def) = conn.tools.iter().find(|t| t.name == name) {
+                    return Some(def.clone());
+                }
             }
         }
         None
@@ -273,9 +279,10 @@ impl McpToolAdapter {
         tracing::info!(server = %server_name, tool = %tool_name, "Calling MCP tool");
 
         // Check if server exists and is connected
-        let server = self.servers.get(server_name).ok_or_else(|| {
-            Error::mcp_adapter(format!("MCP server '{}' not found", server_name))
-        })?;
+        let server = self
+            .servers
+            .get(server_name)
+            .ok_or_else(|| Error::mcp_adapter(format!("MCP server '{}' not found", server_name)))?;
 
         let conn = server.read().await;
         if !conn.connected {
@@ -384,16 +391,16 @@ impl multi_agent_core::traits::Tool for McpTool {
     }
 
     async fn execute(&self, args: serde_json::Value) -> Result<ToolOutput> {
-        let server = args["server"].as_str().ok_or_else(|| {
-            Error::mcp_adapter("Missing 'server' parameter".to_string())
-        })?;
-        
-        let tool = args["tool"].as_str().ok_or_else(|| {
-            Error::mcp_adapter("Missing 'tool' parameter".to_string())
-        })?;
-        
+        let server = args["server"]
+            .as_str()
+            .ok_or_else(|| Error::mcp_adapter("Missing 'server' parameter".to_string()))?;
+
+        let tool = args["tool"]
+            .as_str()
+            .ok_or_else(|| Error::mcp_adapter("Missing 'tool' parameter".to_string()))?;
+
         let tool_args = args.get("args").cloned().unwrap_or(serde_json::json!({}));
-        
+
         let full_name = format!("{}/{}", server, tool);
         self.adapter.call_tool(&full_name, tool_args).await
     }
@@ -406,11 +413,17 @@ mod tests {
     #[tokio::test]
     async fn test_connect_and_list() {
         let adapter = McpToolAdapter::new();
-        
-        adapter.connect("test-server", McpTransport::Stdio {
-            command: "echo".to_string(),
-            args: vec![],
-        }).await.unwrap();
+
+        adapter
+            .connect(
+                "test-server",
+                McpTransport::Stdio {
+                    command: "echo".to_string(),
+                    args: vec![],
+                },
+            )
+            .await
+            .unwrap();
 
         let servers = adapter.list_servers();
         assert!(servers.contains(&"test-server".to_string()));
@@ -422,15 +435,21 @@ mod tests {
     #[tokio::test]
     async fn test_call_tool() {
         let adapter = McpToolAdapter::new();
-        
-        adapter.connect("fs", McpTransport::Sse {
-            url: "http://localhost:8080".to_string(),
-        }).await.unwrap();
 
-        let result = adapter.call_tool(
-            "fs/list_files",
-            serde_json::json!({"path": "/tmp"}),
-        ).await.unwrap();
+        adapter
+            .connect(
+                "fs",
+                McpTransport::Sse {
+                    url: "http://localhost:8080".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let result = adapter
+            .call_tool("fs/list_files", serde_json::json!({"path": "/tmp"}))
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.content.contains("list_files"));

@@ -1,7 +1,7 @@
+use multi_agent_core::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::fs;
-use multi_agent_core::Result;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
@@ -27,12 +27,14 @@ pub struct ModelDefinition {
 
 impl ProviderConfig {
     pub async fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let content = fs::read_to_string(path).await
-            .map_err(|e| multi_agent_core::Error::gateway(format!("Failed to read provider config: {}", e)))?;
-        
-        let config: Self = serde_json::from_str(&content)
-            .map_err(|e| multi_agent_core::Error::gateway(format!("Failed to parse provider config: {}", e)))?;
-            
+        let content = fs::read_to_string(path).await.map_err(|e| {
+            multi_agent_core::Error::gateway(format!("Failed to read provider config: {}", e))
+        })?;
+
+        let config: Self = serde_json::from_str(&content).map_err(|e| {
+            multi_agent_core::Error::gateway(format!("Failed to parse provider config: {}", e))
+        })?;
+
         Ok(config)
     }
 }

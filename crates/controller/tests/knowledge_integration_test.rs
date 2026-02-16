@@ -2,16 +2,16 @@
 //!
 //! Tests the full pipeline: SummarizationCapability → InMemoryKnowledgeStore → Context Injection.
 
-use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::Utc;
+use std::sync::Arc;
 use uuid::Uuid;
 
-use multi_agent_core::traits::{LlmClient, LlmResponse, ChatMessage, LlmUsage, KnowledgeStore};
-use multi_agent_core::types::{Session, SessionStatus, TaskState, AgentResult, TokenUsage};
-use multi_agent_core::Result;
 use multi_agent_controller::capability::AgentCapability;
 use multi_agent_controller::summarization::SummarizationCapability;
+use multi_agent_core::traits::{ChatMessage, KnowledgeStore, LlmClient, LlmResponse, LlmUsage};
+use multi_agent_core::types::{AgentResult, Session, SessionStatus, TaskState, TokenUsage};
+use multi_agent_core::Result;
 use multi_agent_store::InMemoryKnowledgeStore;
 
 // =============================================================================
@@ -24,9 +24,15 @@ struct MockSummaryLlm;
 impl LlmClient for MockSummaryLlm {
     async fn complete(&self, _prompt: &str) -> Result<LlmResponse> {
         Ok(LlmResponse {
-            content: "Analyzed codebase security. Found 3 unsafe blocks. Recommended fixes applied.".to_string(),
+            content:
+                "Analyzed codebase security. Found 3 unsafe blocks. Recommended fixes applied."
+                    .to_string(),
             finish_reason: "stop".to_string(),
-            usage: LlmUsage { prompt_tokens: 50, completion_tokens: 20, total_tokens: 70 },
+            usage: LlmUsage {
+                prompt_tokens: 50,
+                completion_tokens: 20,
+                total_tokens: 70,
+            },
             tool_calls: None,
         })
     }
@@ -45,6 +51,8 @@ impl LlmClient for MockSummaryLlm {
 fn make_session(goal: &str) -> Session {
     Session {
         id: Uuid::new_v4().to_string(),
+        trace_id: Uuid::new_v4().to_string(),
+        user_id: None,
         status: SessionStatus::Running,
         history: Vec::new(),
         task_state: Some(TaskState {
@@ -131,8 +139,14 @@ async fn test_knowledge_searchable_by_tags() {
     cap.on_finish(&mut session, &result).await.unwrap();
 
     // Search by auto-summarized tag (always added)
-    let results = store.search_by_tags(&["auto-summarized".to_string()], 10).await.unwrap();
-    assert!(!results.is_empty(), "Should find entries with auto-summarized tag");
+    let results = store
+        .search_by_tags(&["auto-summarized".to_string()], 10)
+        .await
+        .unwrap();
+    assert!(
+        !results.is_empty(),
+        "Should find entries with auto-summarized tag"
+    );
 }
 
 // =============================================================================

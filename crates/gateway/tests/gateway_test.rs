@@ -1,24 +1,32 @@
+use async_trait::async_trait;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use tower::ServiceExt;
+use multi_agent_core::mocks::{MockRouter, MockSemanticCache};
+use multi_agent_core::traits::Controller;
+use multi_agent_core::types::{AgentResult, UserIntent};
+use multi_agent_gateway::{GatewayConfig, GatewayServer};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use multi_agent_gateway::{GatewayServer, GatewayConfig};
-use multi_agent_core::mocks::{MockRouter, MockSemanticCache};
-use multi_agent_core::types::{UserIntent, AgentResult};
-use multi_agent_core::traits::Controller;
-use async_trait::async_trait;
+use tower::ServiceExt;
 
 struct MockController;
 
 #[async_trait]
 impl Controller for MockController {
-    async fn execute(&self, _intent: UserIntent) -> multi_agent_core::Result<AgentResult> {
+    async fn execute(
+        &self,
+        _intent: UserIntent,
+        _trace_id: String,
+    ) -> multi_agent_core::Result<AgentResult> {
         Ok(AgentResult::Text("Mock response".to_string()))
     }
-    async fn resume(&self, _session_id: &str) -> multi_agent_core::Result<AgentResult> {
+    async fn resume(
+        &self,
+        _session_id: &str,
+        _user_id: Option<&str>,
+    ) -> multi_agent_core::Result<AgentResult> {
         Ok(AgentResult::Text("Resumed".to_string()))
     }
     async fn cancel(&self, _session_id: &str) -> multi_agent_core::Result<()> {
@@ -38,16 +46,21 @@ async fn test_health_endpoint() {
         .oneshot(
             Request::builder()
                 .uri("/health")
-                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
                 .body(Body::empty())
-                .unwrap()
+                .unwrap(),
         )
         .await
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "ok");
 }
@@ -66,7 +79,10 @@ async fn test_intent_endpoint() {
                 .method("POST")
                 .uri("/v1/intent")
                 .header("Content-Type", "application/json")
-                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
                 .body(Body::from(json!({"message": "test message"}).to_string()))
                 .unwrap(),
         )
@@ -74,8 +90,10 @@ async fn test_intent_endpoint() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["intent"]["type"], "complex_mission");
 }
@@ -86,9 +104,8 @@ async fn test_chat_endpoint_with_controller() {
     let router = Arc::new(MockRouter::complex_mission("test goal"));
     let cache = Arc::new(MockSemanticCache::new());
     let controller = Arc::new(MockController);
-    
-    let server = GatewayServer::new(config, router, cache)
-        .with_controller(controller);
+
+    let server = GatewayServer::new(config, router, cache).with_controller(controller);
     let app = server.build_router();
 
     let response = app
@@ -97,7 +114,10 @@ async fn test_chat_endpoint_with_controller() {
                 .method("POST")
                 .uri("/v1/chat")
                 .header("Content-Type", "application/json")
-                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))))
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
                 .body(Body::from(json!({"message": "hello"}).to_string()))
                 .unwrap(),
         )
@@ -105,10 +125,11 @@ async fn test_chat_endpoint_with_controller() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
-    
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["result"]["type"], "Text");
     assert_eq!(json["result"]["payload"], "Mock response");
 }
-

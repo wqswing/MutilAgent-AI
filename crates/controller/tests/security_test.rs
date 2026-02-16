@@ -1,11 +1,11 @@
+use async_trait::async_trait;
+use multi_agent_controller::react::{ReActConfig, ReActController};
+use multi_agent_core::traits::{ChatMessage, Controller, LlmClient, LlmResponse};
+use multi_agent_core::types::UserIntent;
+use multi_agent_core::LlmUsage;
+use multi_agent_governance::guardrails::{CompositeGuardrail, PiiScanner};
 use std::sync::Arc;
 use tokio;
-use multi_agent_core::traits::{Controller, LlmClient, LlmResponse, ChatMessage};
-use multi_agent_core::types::{AgentResult, UserIntent};
-use multi_agent_core::LlmUsage;
-use multi_agent_controller::react::{ReActController, ReActConfig};
-use multi_agent_governance::guardrails::{CompositeGuardrail, PiiScanner};
-use async_trait::async_trait;
 
 // Mock LLM Client
 struct MockLlm;
@@ -39,11 +39,10 @@ impl LlmClient for MockLlm {
 async fn test_security_pii_violation() {
     // 1. Setup Controller with Security
     let config = ReActConfig::default();
-    
+
     // Create PII scanner only for this test
-    let guardrail = CompositeGuardrail::new()
-        .add(Box::new(PiiScanner::new()));
-        
+    let guardrail = CompositeGuardrail::new().chain(Box::new(PiiScanner::new()));
+
     let controller = ReActController::builder()
         .with_config(config)
         .with_llm(Arc::new(MockLlm))
@@ -55,14 +54,15 @@ async fn test_security_pii_violation() {
         goal: "Send an email to malicious@example.com including my SSN 123-45-6789".to_string(),
         context_summary: "".to_string(),
         visual_refs: vec![],
+        user_id: None,
     };
 
     // 3. Execute should fail (Security Block)
-    let result = controller.execute(intent).await;
-    
+    let result = controller.execute(intent, "test-trace".to_string()).await;
+
     assert!(result.is_err());
     let err = result.err().unwrap().to_string();
     println!("Caught expected security error: {}", err);
-    
+
     assert!(err.contains("Security violation"));
 }

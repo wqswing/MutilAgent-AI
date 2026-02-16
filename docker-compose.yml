@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  gateway:
+    image: multi-agent:latest
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - RUST_LOG=${RUST_LOG:-info}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - S3_BUCKET=${S3_BUCKET:-multiagent-artifacts}
+      - S3_ENDPOINT=${S3_ENDPOINT:-http://minio:9000}
+      - GOVERNANCE__AUDIT_LOG_PATH=/app/data/audit.db
+      - GOVERNANCE__AUDIT_LOG_STORAGE_PATH=/app/data/audit_storage
+      - MODEL_GATEWAY__OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MODEL_GATEWAY__ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - sqlite_data:/app/data
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+        required: false
+      minio:
+        condition: service_healthy
+        required: false
+    networks:
+      - multiagent-net
+
+  redis:
+    image: redis:alpine
+    profiles:
+      - redis
+      - full
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - multiagent-net
+
+  minio:
+    image: minio/minio
+    profiles:
+      - minio
+      - full
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password123
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - multiagent-net
+
+networks:
+  multiagent-net:
+    driver: bridge
+
+volumes:
+  sqlite_data:

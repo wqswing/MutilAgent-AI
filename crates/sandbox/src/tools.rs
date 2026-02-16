@@ -8,11 +8,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
 
-use multi_agent_core::{
-    traits::Tool,
-    types::ToolOutput,
-    Result,
-};
+use multi_agent_core::{traits::Tool, types::ToolOutput, Result};
 
 use crate::engine::{SandboxConfig, SandboxEngine, SandboxId};
 
@@ -43,7 +39,10 @@ impl SandboxManager {
     }
 
     /// Set an event emitter for auditing.
-    pub fn with_event_emitter(mut self, emitter: Arc<dyn multi_agent_core::traits::EventEmitter>) -> Self {
+    pub fn with_event_emitter(
+        mut self,
+        emitter: Arc<dyn multi_agent_core::traits::EventEmitter>,
+    ) -> Self {
         self.event_emitter = Some(emitter);
         self
     }
@@ -157,7 +156,11 @@ impl Tool for SandboxShellTool {
         let timeout = Duration::from_secs(timeout_secs);
 
         let sandbox_id = self.manager.get_or_create().await?;
-        let result = self.manager.engine().exec(&sandbox_id, command, timeout).await?;
+        let result = self
+            .manager
+            .engine()
+            .exec(&sandbox_id, command, timeout)
+            .await?;
 
         if result.timed_out {
             return Ok(ToolOutput::error(format!(
@@ -187,8 +190,10 @@ impl Tool for SandboxShellTool {
             })))
         } else {
             Ok(ToolOutput::error(format!(
-                "Command failed (exit code {}):\n{}", result.exit_code, output
-            )).with_data(json!({
+                "Command failed (exit code {}):\n{}",
+                result.exit_code, output
+            ))
+            .with_data(json!({
                 "exit_code": result.exit_code,
                 "timed_out": false,
             })))
@@ -259,8 +264,10 @@ impl Tool for SandboxWriteFileTool {
 
         // Security: validate path using fs_policy
         let validated_path = multi_agent_core::fs_policy::validate_sandbox_path("/workspace", path)
-            .map_err(|e| multi_agent_core::Error::invalid_request(format!("Invalid path: {}", e)))?;
-        
+            .map_err(|e| {
+                multi_agent_core::Error::invalid_request(format!("Invalid path: {}", e))
+            })?;
+
         // Convert back to string for engine
         let path_str = validated_path.to_string_lossy();
 
@@ -270,14 +277,22 @@ impl Tool for SandboxWriteFileTool {
         if let Some(parent) = validated_path.parent() {
             if !parent.as_os_str().is_empty() {
                 let mkdir_cmd = format!("mkdir -p /workspace/{}", parent.display());
-                self.manager.engine().exec(&sandbox_id, &mkdir_cmd, Duration::from_secs(5)).await?;
+                self.manager
+                    .engine()
+                    .exec(&sandbox_id, &mkdir_cmd, Duration::from_secs(5))
+                    .await?;
             }
         }
 
-        self.manager.engine().write_file(&sandbox_id, &path_str, content.as_bytes()).await?;
+        self.manager
+            .engine()
+            .write_file(&sandbox_id, &path_str, content.as_bytes())
+            .await?;
 
         Ok(ToolOutput::text(format!(
-            "File written: /workspace/{} ({} bytes)", path_str, content.len()
+            "File written: /workspace/{} ({} bytes)",
+            path_str,
+            content.len()
         )))
     }
 }
@@ -331,14 +346,22 @@ impl Tool for SandboxReadFileTool {
 
         // Security: validate path using fs_policy
         let validated_path = multi_agent_core::fs_policy::validate_sandbox_path("/workspace", path)
-            .map_err(|e| multi_agent_core::Error::invalid_request(format!("Invalid path: {}", e)))?;
-        
+            .map_err(|e| {
+                multi_agent_core::Error::invalid_request(format!("Invalid path: {}", e))
+            })?;
+
         let path_str = validated_path.to_string_lossy();
 
         let sandbox_id = self.manager.get_or_create().await?;
-        let bytes = self.manager.engine().read_file(&sandbox_id, &path_str).await?;
+        let bytes = self
+            .manager
+            .engine()
+            .read_file(&sandbox_id, &path_str)
+            .await?;
 
-        Ok(ToolOutput::text(String::from_utf8_lossy(&bytes).to_string()))
+        Ok(ToolOutput::text(
+            String::from_utf8_lossy(&bytes).to_string(),
+        ))
     }
 }
 
@@ -384,26 +407,30 @@ impl Tool for SandboxListFilesTool {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolOutput> {
-        let path = args
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
+        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
         // Security: validate path using fs_policy
         let validated_path = multi_agent_core::fs_policy::validate_sandbox_path("/workspace", path)
-            .map_err(|e| multi_agent_core::Error::invalid_request(format!("Invalid path: {}", e)))?;
-        
+            .map_err(|e| {
+                multi_agent_core::Error::invalid_request(format!("Invalid path: {}", e))
+            })?;
+
         let path_str = validated_path.to_string_lossy();
 
         let sandbox_id = self.manager.get_or_create().await?;
         let command = format!("ls -la /workspace/{}", path_str.trim_start_matches('/'));
-        let result = self.manager.engine().exec(&sandbox_id, &command, Duration::from_secs(5)).await?;
+        let result = self
+            .manager
+            .engine()
+            .exec(&sandbox_id, &command, Duration::from_secs(5))
+            .await?;
 
         if result.success() {
             Ok(ToolOutput::text(result.stdout))
         } else {
             Ok(ToolOutput::error(format!(
-                "Failed to list files: {}", result.stderr
+                "Failed to list files: {}",
+                result.stderr
             )))
         }
     }
@@ -487,11 +514,10 @@ mod tests {
 
         let result = tool
             .execute(json!({"path": "../../../etc/passwd", "content": "evil"}))
-            .await
-            .unwrap();
+            .await;
 
-        assert!(!result.success);
-        assert!(result.content.contains("Path traversal"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Path traversal"));
     }
 
     #[tokio::test]
@@ -499,13 +525,10 @@ mod tests {
         let manager = make_manager(vec![]);
         let tool = SandboxReadFileTool::new(manager);
 
-        let result = tool
-            .execute(json!({"path": "/etc/passwd"}))
-            .await
-            .unwrap();
+        let result = tool.execute(json!({"path": "/etc/passwd"})).await;
 
-        assert!(!result.success);
-        assert!(result.content.contains("Path traversal"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Absolute paths"));
     }
 
     #[tokio::test]

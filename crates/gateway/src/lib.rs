@@ -10,8 +10,8 @@ pub mod semantic_cache;
 pub mod server;
 pub mod vision;
 
-pub use audio::{AudioProcessor, AudioFormat, TranscriptionResult};
+pub use audio::{AudioFormat, AudioProcessor, TranscriptionResult};
 pub use router::DefaultRouter;
 pub use semantic_cache::InMemorySemanticCache;
-pub use server::{GatewayServer, GatewayConfig};
-pub use vision::{VisionProcessor, ImageInfo};
+pub use server::{GatewayConfig, GatewayServer};
+pub use vision::{ImageInfo, VisionProcessor};

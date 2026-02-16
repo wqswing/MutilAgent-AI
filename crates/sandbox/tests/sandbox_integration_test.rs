@@ -3,15 +3,15 @@
 //! Tests the full pipeline: Tool → SandboxManager → SandboxEngine (MockSandbox).
 //! These tests do NOT require Docker — they use MockSandbox for deterministic behavior.
 
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 
 use multi_agent_core::traits::Tool;
 use multi_agent_core::types::ToolRiskLevel;
 use multi_agent_sandbox::engine::{ExecResult, MockSandbox, SandboxConfig};
 use multi_agent_sandbox::tools::{
-    SandboxManager, SandboxReadFileTool, SandboxShellTool, SandboxWriteFileTool,
-    SandboxListFilesTool,
+    SandboxListFilesTool, SandboxManager, SandboxReadFileTool, SandboxShellTool,
+    SandboxWriteFileTool,
 };
 
 // =============================================================================
@@ -106,9 +106,7 @@ async fn test_write_then_read_file_pipeline() {
     assert_eq!(r.content, script, "Content should be unchanged");
 
     // Read a non-existent file
-    let err = read_tool
-        .execute(json!({"path": "nonexistent.txt"}))
-        .await;
+    let err = read_tool.execute(json!({"path": "nonexistent.txt"})).await;
     assert!(err.is_err(), "Reading non-existent file should error");
 }
 
@@ -167,5 +165,8 @@ async fn test_sandbox_lifecycle() {
     assert_ne!(id1.0, id3.0, "Should create a new sandbox after teardown");
 
     // Verify availability
-    assert!(manager.is_available().await, "MockSandbox should be available");
+    assert!(
+        manager.is_available().await,
+        "MockSandbox should be available"
+    );
 }

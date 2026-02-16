@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use multi_agent_core::{
-    traits::{KnowledgeStore, KnowledgeEntry, LlmClient, ChatMessage},
-    types::{AgentResult, Session, HistoryEntry},
+    traits::{ChatMessage, KnowledgeEntry, KnowledgeStore, LlmClient},
+    types::{AgentResult, HistoryEntry, Session},
     Result,
 };
 
@@ -33,10 +33,7 @@ pub struct SummarizationCapability {
 
 impl SummarizationCapability {
     /// Create a new summarization capability.
-    pub fn new(
-        knowledge_store: Arc<dyn KnowledgeStore>,
-        llm: Arc<dyn LlmClient>,
-    ) -> Self {
+    pub fn new(knowledge_store: Arc<dyn KnowledgeStore>, llm: Arc<dyn LlmClient>) -> Self {
         Self {
             knowledge_store,
             llm,
@@ -297,9 +294,14 @@ mod tests {
 
         async fn chat(&self, _messages: &[ChatMessage]) -> Result<LlmResponse> {
             Ok(LlmResponse {
-                content: "Successfully analyzed the codebase and identified key security patterns.".to_string(),
+                content: "Successfully analyzed the codebase and identified key security patterns."
+                    .to_string(),
                 finish_reason: "stop".to_string(),
-                usage: LlmUsage { prompt_tokens: 100, completion_tokens: 30, total_tokens: 130 },
+                usage: LlmUsage {
+                    prompt_tokens: 100,
+                    completion_tokens: 30,
+                    total_tokens: 130,
+                },
                 tool_calls: None,
             })
         }
@@ -312,6 +314,8 @@ mod tests {
     fn create_test_session() -> Session {
         Session {
             id: "test-session-42".to_string(),
+            trace_id: "test-trace-42".to_string(),
+            user_id: None,
             status: SessionStatus::Running,
             history: vec![],
             task_state: Some(TaskState {
@@ -360,6 +364,8 @@ mod tests {
         // Second: start a new similar task
         let mut session2 = Session {
             id: "test-session-43".to_string(),
+            trace_id: "test-trace-43".to_string(),
+            user_id: None,
             status: SessionStatus::Running,
             history: vec![],
             task_state: Some(TaskState {

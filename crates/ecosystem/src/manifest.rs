@@ -1,6 +1,6 @@
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use anyhow::{Context, Result};
 
 /// Manifest defining a plugin's identity, capabilities, and permissions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -74,7 +74,6 @@ impl PluginManifest {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read manifest at {:?}", path.as_ref()))?;
-        serde_yaml::from_str(&content)
-            .with_context(|| "Failed to parse plugin manifest YAML")
+        serde_yaml::from_str(&content).with_context(|| "Failed to parse plugin manifest YAML")
     }
 }

@@ -1,9 +1,9 @@
 //! L-M Model Gateway traits.
 
+use crate::error::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::error::Result;
 
 /// LLM client interface.
 #[async_trait]

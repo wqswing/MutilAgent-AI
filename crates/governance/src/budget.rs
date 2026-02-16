@@ -4,11 +4,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use std::time::{Duration, Instant};
 
-use multi_agent_core::{
-    traits::BudgetController,
-    types::TokenUsage,
-    Error, Result,
-};
+use multi_agent_core::{traits::BudgetController, types::TokenUsage, Error, Result};
 
 /// Budget entry for a session.
 #[derive(Debug, Clone)]
@@ -68,7 +64,10 @@ impl TokenBudgetController {
     }
 
     /// Get or create a budget entry.
-    fn get_or_create(&self, session_id: &str) -> dashmap::mapref::one::RefMut<'_, String, BudgetEntry> {
+    fn get_or_create(
+        &self,
+        session_id: &str,
+    ) -> dashmap::mapref::one::RefMut<'_, String, BudgetEntry> {
         self.budgets
             .entry(session_id.to_string())
             .or_insert_with(|| BudgetEntry::new(self.default_limit))
@@ -76,7 +75,8 @@ impl TokenBudgetController {
 
     /// Clean up expired entries.
     pub fn cleanup(&self) {
-        self.budgets.retain(|_, v| v.last_update.elapsed() < self.expiration);
+        self.budgets
+            .retain(|_, v| v.last_update.elapsed() < self.expiration);
     }
 
     /// Get total active sessions.
@@ -176,7 +176,10 @@ mod tests {
 
         // Record actual usage (4000 tokens used, 1000 of reservation remains)
         // Remaining = 10000 - 4000 used - 1000 reserved = 5000
-        controller.record_usage("session1", 3000, 1000).await.unwrap();
+        controller
+            .record_usage("session1", 3000, 1000)
+            .await
+            .unwrap();
         assert_eq!(controller.remaining("session1").await.unwrap(), 5000);
     }
 

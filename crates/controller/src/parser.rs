@@ -18,14 +18,9 @@ pub enum ReActAction {
     /// Continue thinking (no action yet).
     Think(String),
     /// Delegate to a subagent (v0.2 autonomous capability).
-    Delegate {
-        objective: String,
-        context: String,
-    },
+    Delegate { objective: String, context: String },
     /// Select MCP server for a task (v0.2 autonomous capability).
-    McpSelect {
-        task_description: String,
-    },
+    McpSelect { task_description: String },
 }
 
 /// Parser for LLM responses, supporting multiple formats.
@@ -100,7 +95,10 @@ impl ActionParser {
 
         // Simple format: { "name": "...", "arguments": {...} }
         if let Some(name) = json.get("name").and_then(|n| n.as_str()) {
-            let args = json.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+            let args = json
+                .get("arguments")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
             return Some(ReActAction::ToolCall {
                 name: name.to_string(),
                 args,
@@ -151,7 +149,8 @@ mod tests {
     #[test]
     fn test_parse_text_tool_call() {
         let parser = ActionParser::new(vec![]);
-        let action = parser.parse("THOUGHT: I need to search.\nACTION: search\nARGS: {\"query\": \"rust\"}");
+        let action =
+            parser.parse("THOUGHT: I need to search.\nACTION: search\nARGS: {\"query\": \"rust\"}");
         match action {
             ReActAction::ToolCall { name, args } => {
                 assert_eq!(name, "search");

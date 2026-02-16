@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::refs::RefId;
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // Tool Types (L2)
@@ -42,11 +42,7 @@ impl ToolOutput {
     pub fn reference(ref_id: RefId, summary: impl Into<String>) -> Self {
         Self {
             success: true,
-            content: format!(
-                "Output saved as RefID: {}. {}",
-                ref_id,
-                summary.into()
-            ),
+            content: format!("Output saved as RefID: {}. {}", ref_id, summary.into()),
             data: None,
             created_refs: vec![ref_id],
         }

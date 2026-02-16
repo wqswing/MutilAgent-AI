@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::refs::RefId;
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // Agent Result Types (L1 Output)
@@ -50,9 +50,10 @@ pub enum AgentResult {
 ///
 /// Used by the HITL (Human-in-the-Loop) approval gate to determine
 /// which tool calls require human approval before execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub enum ToolRiskLevel {
     /// No risk — pure read-only / informational.
+    #[default]
     Low,
     /// Moderate risk — writes data but is reversible.
     Medium,
@@ -71,12 +72,6 @@ impl ToolRiskLevel {
             Self::High => 60,
             Self::Critical => 90,
         }
-    }
-}
-
-impl Default for ToolRiskLevel {
-    fn default() -> Self {
-        Self::Low
     }
 }
 
@@ -127,4 +122,3 @@ pub enum ApprovalResponse {
         reason_code: String,
     },
 }
-

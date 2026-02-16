@@ -1,9 +1,9 @@
 //! L4 Governance traits.
 
-use async_trait::async_trait;
-use serde_json::Value;
 use crate::error::Result;
 use crate::types::{AgentResult, NormalizedRequest};
+use async_trait::async_trait;
+use serde_json::Value;
 
 /// Budget controller for token management.
 #[async_trait]
@@ -58,4 +58,3 @@ pub trait ApprovalGate: Send + Sync {
         crate::types::ToolRiskLevel::High
     }
 }
-

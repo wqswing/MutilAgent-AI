@@ -1,7 +1,10 @@
 //! Axum-based HTTP server for the gateway.
 
 use axum::{
-    extract::{Json, Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{
+        ws::{Message, WebSocket},
+        Json, Path, State, WebSocketUpgrade,
+    },
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -14,8 +17,12 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use multi_agent_core::{
+    config::TlsConfig,
     traits::{Controller, IntentRouter, SemanticCache},
-    types::{AgentResult, ApprovalResponse, NormalizedRequest, RequestContent, RequestMetadata, UserIntent},
+    types::{
+        AgentResult, ApprovalResponse, NormalizedRequest, RequestContent, RequestMetadata,
+        UserIntent,
+    },
     Result,
 };
 use multi_agent_governance::approval::ChannelApprovalGate;
@@ -33,6 +40,8 @@ pub struct GatewayConfig {
     pub enable_tracing: bool,
     /// Allowed CORS origins.
     pub allowed_origins: Vec<String>,
+    /// TLS Configuration.
+    pub tls: TlsConfig,
 }
 
 impl Default for GatewayConfig {
@@ -42,7 +51,13 @@ impl Default for GatewayConfig {
             port: 3000,
             enable_cors: true,
             enable_tracing: true,
-            allowed_origins: vec!["*".to_string()], // Default to permissive for dev
+            allowed_origins: vec!["*".to_string()],
+            tls: TlsConfig {
+                enabled: false,
+                cert_path: None,
+                key_path: None,
+                ca_path: None,
+            },
         }
     }
 }
@@ -68,6 +83,8 @@ pub struct AppState {
     pub admin_state: Option<Arc<multi_agent_admin::AdminState>>,
     /// Plugin manager for dynamic tool loading.
     pub plugin_manager: Option<Arc<multi_agent_ecosystem::PluginManager>>,
+    /// Application configuration.
+    pub app_config: multi_agent_core::config::AppConfig,
 }
 
 impl AppState {
@@ -113,6 +130,7 @@ impl GatewayServer {
                 policy_engine: None,
                 admin_state: None,
                 plugin_manager: None,
+                app_config: multi_agent_core::config::AppConfig::load().unwrap_or_default(),
             }),
             metrics_handle: None,
             admin_state: None,
@@ -139,7 +157,10 @@ impl GatewayServer {
     }
 
     /// Set the plugin manager.
-    pub fn with_plugin_manager(mut self, manager: Arc<multi_agent_ecosystem::PluginManager>) -> Self {
+    pub fn with_plugin_manager(
+        mut self,
+        manager: Arc<multi_agent_ecosystem::PluginManager>,
+    ) -> Self {
         if let Some(state) = Arc::get_mut(&mut self.state) {
             state.plugin_manager = Some(manager);
         }
@@ -154,7 +175,11 @@ impl GatewayServer {
 
     /// Set admin state.
     pub fn with_admin(mut self, state: Arc<multi_agent_admin::AdminState>) -> Self {
-        self.admin_state = Some(state);
+        self.admin_state = Some(state.clone());
+        if let Some(s) = Arc::get_mut(&mut self.state) {
+            s.app_config = state.app_config.clone();
+            s.admin_state = Some(state);
+        }
         self
     }
 
@@ -182,36 +207,60 @@ impl GatewayServer {
         self
     }
 
-
-    /// Build the Axum router.
-
     /// Build the Axum router.
     pub fn build_router(&self) -> Router {
+        // System Routes
+        let metrics_handle = self.metrics_handle.clone();
+        let system_router = Router::new()
+            .route("/health", get(health_handler))
+            .route("/healthz", get(healthz_handler))
+            .route("/readyz", get(readyz_handler))
+            .route("/metrics", get(move || {
+                let handle = metrics_handle.clone();
+                async move {
+                    if let Some(h) = handle {
+                        h.render()
+                    } else {
+                        "Metrics not enabled".to_string()
+                    }
+                }
+            }));
+
+        // Agent Routes
+        let agent_router = Router::new()
+            .route("/chat", post(chat_handler))
+            .route("/intent", post(intent_handler))
+            .route("/webhook/{event_type}", post(webhook_handler))
+            .route("/ws/approval", get(approval_ws_handler))
+            .route("/ws/logs", get(logs_ws_handler))
+            .route("/approve/{request_id}", post(approve_rest_handler))
+            .route("/onboarding/status", get(onboarding_status_handler))
+            .route("/onboarding/setup", post(onboarding_setup_handler))
+            .route("/policy", get(get_policy_handler).put(put_policy_handler))
+            .route("/plugins", get(get_plugins_handler))
+            .route("/plugins/{plugin_id}", get(get_plugin_details_handler))
+            .route("/plugins/{plugin_id}/toggle", post(toggle_plugin_handler))
+            .layer(axum::middleware::from_fn_with_state(self.state.clone(), bearer_auth_middleware));
+
         let mut router = Router::new()
+            // Consolidated v1 namespace
+            .nest("/v1/system", system_router)
+            .nest("/v1/agent", agent_router)
+            // Backward compatibility
             .route("/health", get(health_handler))
             .route("/v1/chat", post(chat_handler))
             .route("/v1/intent", post(intent_handler))
-            .route("/v1/webhook/{event_type}", post(webhook_handler))
-            .route("/ws/approval", get(approval_ws_handler))
-            .route("/ws/logs", get(logs_ws_handler))
-            .route("/v1/onboarding/status", get(onboarding_status_handler))
-            .route("/v1/onboarding/setup", post(onboarding_setup_handler))
-            .route("/v1/policy", get(get_policy_handler).put(put_policy_handler))
-            .route("/v1/approve/{request_id}", post(approve_rest_handler))
-            .route("/v1/plugins", get(get_plugins_handler))
-            .route("/v1/plugins/{plugin_id}", get(get_plugin_details_handler))
-            .route("/v1/plugins/{plugin_id}/toggle", post(toggle_plugin_handler))
             .with_state(self.state.clone());
 
-        if let Some(handle) = &self.metrics_handle {
-            let handle = handle.clone();
-            router = router.route("/metrics", get(move || async move { handle.render() }));
-        }
-
+        // Admin API
         if let Some(admin_state) = &self.admin_state {
-            let admin_router = multi_agent_admin::admin_router(admin_state.clone())
-                .route_layer(axum::middleware::from_fn(restrict_to_localhost));
-            router = router.nest("/admin", admin_router);
+            let admin_api = multi_agent_admin::admin_api_router(admin_state.clone())
+                .route_layer(axum::middleware::from_fn(restrict_to_localhost))
+                .route_layer(axum::middleware::from_fn_with_state(self.state.clone(), bearer_auth_middleware));
+            router = router.nest("/v1/admin", admin_api);
+
+            // Management Console (Static assets)
+            router = router.nest("/console", multi_agent_admin::admin_static_router());
         }
 
         // Apply rate limiting: Distributed (Redis) or Local (Governor)
@@ -224,14 +273,14 @@ impl GatewayServer {
         } else {
             tracing::info!("Using Local Rate Limiter (Tower Governor)");
             use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
-            
+
             // Rate limit: ~120 requests per minute per IP
             let governor_conf = GovernorConfigBuilder::default()
                 .per_second(2) // ~120/min
                 .burst_size(30) // Allow bursts
                 .finish()
                 .expect("Failed to build rate limiter config");
-                
+
             let governor_limiter = GovernorLayer {
                 config: std::sync::Arc::new(governor_conf),
             };
@@ -245,18 +294,18 @@ impl GatewayServer {
                 router = router.layer(CorsLayer::new().allow_origin(Any).allow_methods(Any));
             } else {
                 use axum::http::HeaderValue;
-                let origins: Vec<HeaderValue> = self.config.allowed_origins.iter()
+                let origins: Vec<HeaderValue> = self
+                    .config
+                    .allowed_origins
+                    .iter()
                     .filter_map(|s| s.parse().ok())
                     .collect();
-                
+
                 if !origins.is_empty() {
-                    router = router.layer(
-                        CorsLayer::new()
-                            .allow_origin(origins)
-                            .allow_methods(Any)
-                    );
+                    router =
+                        router.layer(CorsLayer::new().allow_origin(origins).allow_methods(Any));
                 } else {
-                     tracing::warn!("CORS: Enabled but no valid origins provided. Blocking all.");
+                    tracing::warn!("CORS: Enabled but no valid origins provided. Blocking all.");
                 }
             }
         }
@@ -268,19 +317,44 @@ impl GatewayServer {
         router
     }
 
-
     /// Run the server.
     pub async fn run(self) -> Result<()> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
-        let listener = tokio::net::TcpListener::bind(&addr)
+        if self.config.tls.enabled {
+            use axum_server::tls_rustls::RustlsConfig;
+            
+            let cert_path = self.config.tls.cert_path.as_ref()
+                .ok_or_else(|| multi_agent_core::Error::gateway("TLS enabled but cert_path missing"))?;
+            let key_path = self.config.tls.key_path.as_ref()
+                .ok_or_else(|| multi_agent_core::Error::gateway("TLS enabled but key_path missing"))?;
+
+            tracing::info!(addr = %addr, "Gateway server starting (TLS ENABLED)");
+
+            let config = RustlsConfig::from_pem_file(
+                cert_path,
+                key_path,
+            )
             .await
-            .map_err(|e| multi_agent_core::Error::gateway(format!("Failed to bind: {}", e)))?;
+            .map_err(|e| multi_agent_core::Error::gateway(format!("TLS config error: {}", e)))?;
 
-        tracing::info!(addr = %addr, "Gateway server starting");
+            axum_server::bind_rustls(addr.parse::<std::net::SocketAddr>().unwrap(), config)
+                .serve(self.build_router().into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .await
+                .map_err(|e| multi_agent_core::Error::gateway(format!("TLS Server error: {}", e)))?;
+        } else {
+            tracing::info!(addr = %addr, "Gateway server starting (PLAIN HTTP)");
+            let listener = tokio::net::TcpListener::bind(&addr)
+                .await
+                .map_err(|e| multi_agent_core::Error::gateway(format!("Failed to bind: {}", e)))?;
 
-        axum::serve(listener, self.build_router().into_make_service_with_connect_info::<std::net::SocketAddr>())
+            axum::serve(
+                listener,
+                self.build_router()
+                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
             .await
             .map_err(|e| multi_agent_core::Error::gateway(format!("Server error: {}", e)))?;
+        }
 
         Ok(())
     }
@@ -364,6 +438,45 @@ async fn health_handler() -> impl IntoResponse {
     })
 }
 
+/// Liveness check handler (k8s style).
+async fn healthz_handler() -> impl IntoResponse {
+    StatusCode::OK
+}
+
+/// Readiness check handler (k8s style).
+async fn readyz_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut errors = Vec::new();
+
+    // Check Artifact Store
+    if let Some(admin) = &state.admin_state {
+        if let Some(store) = &admin.artifact_store {
+            if let Err(e) = store.health_check().await {
+                errors.push(format!("ArtifactStore: {}", e));
+            }
+        }
+
+        // Check Session Store
+        if let Some(store) = &admin.session_store {
+            if let Err(e) = store.health_check().await {
+                errors.push(format!("SessionStore: {}", e));
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        (StatusCode::OK, "ready").into_response()
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "status": "unready",
+                "errors": errors
+            })),
+        )
+            .into_response()
+    }
+}
+
 /// Onboarding status response.
 #[derive(Debug, Serialize)]
 pub struct OnboardingStatus {
@@ -379,9 +492,9 @@ pub struct OnboardingSetup {
     pub anthropic_key: Option<String>,
 }
 
-async fn onboarding_status_handler() -> impl IntoResponse {
-    let openai_key_set = std::env::var("OPENAI_API_KEY").is_ok();
-    let anthropic_key_set = std::env::var("ANTHROPIC_API_KEY").is_ok();
+async fn onboarding_status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let openai_key_set = state.app_config.model_gateway.openai_api_key.is_some();
+    let anthropic_key_set = state.app_config.model_gateway.anthropic_api_key.is_some();
     let onboarding_completed = openai_key_set || anthropic_key_set;
 
     Json(OnboardingStatus {
@@ -428,18 +541,17 @@ async fn onboarding_setup_handler(
     StatusCode::OK
 }
 
-async fn get_policy_handler(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn get_policy_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     match &state.policy_engine {
         Some(engine) => {
             let engine = engine.read().await;
             (StatusCode::OK, Json(engine.policy.clone())).into_response()
-        },
+        }
         None => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Policy engine not configured"})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -450,7 +562,7 @@ async fn put_policy_handler(
     match &state.policy_engine {
         Some(engine) => {
             let mut engine = engine.write().await;
-            
+
             // Persist to disk
             let policy_path = ".sovereign_claw/policies/default.yaml";
             if let Ok(content) = serde_yaml::to_string(&payload) {
@@ -462,11 +574,12 @@ async fn put_policy_handler(
 
             engine.policy = payload;
             StatusCode::OK.into_response()
-        },
+        }
         None => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "Policy engine not configured"})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -492,15 +605,15 @@ async fn chat_handler(
                 "message_len": payload.message.len(),
                 "has_session": payload.session_id.is_some(),
                 "has_user": payload.user_id.is_some()
-            })
+            }),
         )
         .with_trace(&trace_id)
         .with_actor(payload.user_id.as_deref().unwrap_or("anonymous"));
-        
+
         if let Some(sid) = &payload.session_id {
-             state.emit_event(event.with_session(sid));
+            state.emit_event(event.with_session(sid));
         } else {
-             state.emit_event(event);
+            state.emit_event(event);
         }
     }
 
@@ -508,7 +621,11 @@ async fn chat_handler(
     let session_id = payload.session_id.as_deref().unwrap_or("default");
 
     // Check semantic cache first
-    match state.cache.get(workspace_id, session_id, &payload.message).await {
+    match state
+        .cache
+        .get(workspace_id, session_id, &payload.message)
+        .await
+    {
         Ok(Some(cached_response)) => {
             tracing::info!(trace_id = %trace_id, workspace = %workspace_id, session = %session_id, "Cache hit");
             return (
@@ -553,19 +670,19 @@ async fn chat_handler(
         Ok(intent) => {
             // Emit INTENT_RESOLVED
             {
-                 use multi_agent_core::events::{EventEnvelope, EventType};
-                 let event = EventEnvelope::new(
+                use multi_agent_core::events::{EventEnvelope, EventType};
+                let event = EventEnvelope::new(
                     EventType::IntentResolved,
                     serde_json::json!({
                         "intent_type": format!("{:?}", intent),
                         "router": "default" // Placeholder
-                    })
+                    }),
                 )
                 .with_trace(&trace_id);
                 state.emit_event(event);
             }
             intent
-        },
+        }
         Err(e) => {
             tracing::error!(trace_id = %trace_id, error = %e, "Failed to classify intent");
             return (
@@ -595,7 +712,11 @@ async fn chat_handler(
                 // Cache successful text responses
                 if let AgentResult::Text(ref text) = result {
                     // Extract IDs again as payload was moved or use references
-                    let w_id = request.metadata.workspace_id.as_deref().unwrap_or("default");
+                    let w_id = request
+                        .metadata
+                        .workspace_id
+                        .as_deref()
+                        .unwrap_or("default");
                     let s_id = request.metadata.session_id.as_deref().unwrap_or("default");
                     let _ = state.cache.set(w_id, s_id, &request.content, text).await;
                 }
@@ -638,10 +759,7 @@ async fn intent_handler(
     let request = NormalizedRequest::text(&payload.message);
 
     match state.router.classify(&request).await {
-        Ok(intent) => (
-            StatusCode::OK,
-            Json(IntentResponse { trace_id, intent }),
-        ),
+        Ok(intent) => (StatusCode::OK, Json(IntentResponse { trace_id, intent })),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(IntentResponse {
@@ -811,10 +929,15 @@ async fn handle_approval_ws(state: Arc<AppState>, mut socket: WebSocket) {
     let gate = match &state.approval_gate {
         Some(gate) => gate.clone(),
         None => {
-            tracing::warn!("WebSocket approval connection attempted but no approval gate configured");
-            let _ = socket.send(Message::Text(
-                serde_json::json!({"type": "error", "message": "Approval gate not configured"}).to_string().into()
-            )).await;
+            tracing::warn!(
+                "WebSocket approval connection attempted but no approval gate configured"
+            );
+            let _ = socket
+                .send(Message::Text(
+                    serde_json::json!({"type": "error", "message": "Approval gate not configured"})
+                        .to_string(),
+                ))
+                .await;
             return;
         }
     };
@@ -906,9 +1029,12 @@ async fn handle_logs_ws(state: Arc<AppState>, mut socket: WebSocket) {
     let mut rx = match &state.logs_channel {
         Some(tx) => tx.subscribe(),
         None => {
-            let _ = socket.send(Message::Text(
-                serde_json::json!({"type": "error", "message": "Logs channel not configured"}).to_string()
-            )).await;
+            let _ = socket
+                .send(Message::Text(
+                    serde_json::json!({"type": "error", "message": "Logs channel not configured"})
+                        .to_string(),
+                ))
+                .await;
             return;
         }
     };
@@ -955,18 +1081,30 @@ async fn approve_rest_handler(
     let response = match payload.decision.as_str() {
         "approved" => ApprovalResponse::Approved {
             reason: payload.reason.clone(),
-            reason_code: payload.reason_code.clone().unwrap_or_else(|| "USER_APPROVED".to_string()),
+            reason_code: payload
+                .reason_code
+                .clone()
+                .unwrap_or_else(|| "USER_APPROVED".to_string()),
         },
         "denied" => ApprovalResponse::Denied {
-            reason: payload.reason.clone().unwrap_or_else(|| "Denied via REST".into()),
-            reason_code: payload.reason_code.clone().unwrap_or_else(|| "USER_DENIED".to_string()),
+            reason: payload
+                .reason
+                .clone()
+                .unwrap_or_else(|| "Denied via REST".into()),
+            reason_code: payload
+                .reason_code
+                .clone()
+                .unwrap_or_else(|| "USER_DENIED".to_string()),
         },
         _ => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ApproveResponse {
                     accepted: false,
-                    message: format!("Unknown decision: '{}'. Use 'approved' or 'denied'.", payload.decision),
+                    message: format!(
+                        "Unknown decision: '{}'. Use 'approved' or 'denied'.",
+                        payload.decision
+                    ),
                 }),
             );
         }
@@ -994,11 +1132,73 @@ async fn approve_rest_handler(
 mod tests {
     use super::*;
 
-
-
     #[tokio::test]
     async fn test_health_handler() {
         let response = health_handler().await.into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    use axum::middleware::from_fn_with_state;
+    use multi_agent_governance::StaticTokenRbacConnector;
+    use axum::body::Body;
+
+    #[tokio::test]
+    async fn test_bearer_auth_middleware_unauthorized() {
+        let rbac = Arc::new(StaticTokenRbacConnector::new("secret-token"));
+        let state = Arc::new(AppState {
+            router: Arc::new(crate::DefaultRouter::new()),
+            cache: Arc::new(crate::InMemorySemanticCache::new(Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy")))),
+            controller: None,
+            rate_limiter: None,
+            approval_gate: None,
+            logs_channel: None,
+            policy_engine: None,
+            admin_state: Some(Arc::new(multi_agent_admin::AdminState {
+                audit_store: Arc::new(multi_agent_governance::InMemoryAuditStore::new()),
+                rbac: rbac.clone(),
+                metrics: None,
+                mcp_registry: Arc::new(multi_agent_skills::mcp_registry::McpRegistry::new()),
+                providers: Arc::new(tokio::sync::RwLock::new(vec![])),
+                provider_store: None,
+                secrets: Arc::new(multi_agent_governance::AesGcmSecretsManager::new(None)),
+                privacy_controller: None,
+                artifact_store: None,
+                session_store: None,
+                app_config: multi_agent_core::config::AppConfig::default(),
+            })),
+            plugin_manager: None,
+            app_config: multi_agent_core::config::AppConfig::default(),
+        });
+
+        let app = Router::new()
+            .route("/", get(|| async { "Secret content" }))
+            .layer(from_fn_with_state(state.clone(), bearer_auth_middleware))
+            .with_state(state);
+
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        // No header
+        let req = Request::builder().uri("/").body(Body::empty()).unwrap();
+        let response = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // Invalid token
+        let req = Request::builder()
+            .uri("/")
+            .header("Authorization", "Bearer invalid")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // Valid token
+        let req = Request::builder()
+            .uri("/")
+            .header("Authorization", "Bearer secret-token")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(req).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }
 }
@@ -1014,16 +1214,20 @@ async fn distributed_rate_limit(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     // Extract ConnectInfo manually
-    let addr = req.extensions()
+    let addr = req
+        .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .map(|ci| ci.0.ip())
         .unwrap_or_else(|| std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)));
 
     if let Some(limiter) = &state.rate_limiter {
         let key = format!("rate_limit:{}", addr);
-        
+
         // 120 requests per minute
-        match limiter.check_and_increment(&key, 120, std::time::Duration::from_secs(60)).await {
+        match limiter
+            .check_and_increment(&key, 120, std::time::Duration::from_secs(60))
+            .await
+        {
             Ok(allowed) => {
                 if !allowed {
                     return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();
@@ -1034,8 +1238,56 @@ async fn distributed_rate_limit(
             }
         }
     }
-    
+
     next.run(req).await
+}
+
+/// Middleware for bearer token authentication.
+async fn bearer_auth_middleware(
+    State(state): State<Arc<AppState>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // 1. Extract Authorization header
+    let auth_header = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok());
+
+    let token = match auth_header {
+        Some(h) if h.starts_with("Bearer ") => &h[7..],
+        _ => {
+            // Check if we allow anonymous access (only for health checks if moved)
+            // But here we enforce it for all v1/agent and v1/admin
+            return (StatusCode::UNAUTHORIZED, "Missing or invalid authorization header").into_response();
+        }
+    };
+
+    // 2. Validate token
+    // We try to get RBAC from AdminState if available
+    let rbac = state.admin_state.as_ref().map(|s| s.rbac.clone());
+
+    match rbac {
+        Some(rbac) => {
+            match rbac.validate(token).await {
+                Ok(user) => {
+                    // Inject user info into request extensions
+                    let mut req = req;
+                    req.extensions_mut().insert(user);
+                    next.run(req).await
+                }
+                Err(e) => {
+                    tracing::warn!("Auth validation failed: {}", e);
+                    (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
+                }
+            }
+        }
+        None => {
+            // If no RBAC configured, we might allow during bootstrap or fail-closed
+            tracing::error!("Auth middleware active but no RBAC connector configured");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Authentication system misconfigured").into_response()
+        }
+    }
 }
 
 /// Middleware to restrict access to localhost.
@@ -1057,27 +1309,29 @@ async fn restrict_to_localhost(
 // =============================================================================
 
 /// List all plugins.
-async fn get_plugins_handler(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn get_plugins_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     if let Some(manager) = &state.plugin_manager {
         let plugins = manager.list();
-        let response: Vec<serde_json::Value> = plugins.into_iter().map(|(manifest, enabled)| {
-            serde_json::json!({
-                "id": manifest.id,
-                "name": manifest.name,
-                "version": manifest.version,
-                "description": manifest.description,
-                "enabled": enabled,
-                "capabilities": manifest.capabilities,
+        let response: Vec<serde_json::Value> = plugins
+            .into_iter()
+            .map(|(manifest, enabled)| {
+                serde_json::json!({
+                    "id": manifest.id,
+                    "name": manifest.name,
+                    "version": manifest.version,
+                    "description": manifest.description,
+                    "enabled": enabled,
+                    "capabilities": manifest.capabilities,
+                })
             })
-        }).collect();
+            .collect();
         (StatusCode::OK, Json(response)).into_response()
     } else {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "Plugin manager not configured"})),
-        ).into_response()
+        )
+            .into_response()
     }
 }
 
@@ -1095,18 +1349,21 @@ async fn get_plugin_details_handler(
                     "manifest": manifest,
                     "enabled": enabled,
                 })),
-            ).into_response()
+            )
+                .into_response()
         } else {
             (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({"error": "Plugin not found"})),
-            ).into_response()
+            )
+                .into_response()
         }
     } else {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "Plugin manager not configured"})),
-        ).into_response()
+        )
+            .into_response()
     }
 }
 
@@ -1139,17 +1396,20 @@ async fn toggle_plugin_handler(
                         "enabled": enabled,
                         "message": if enabled { "Plugin enabled" } else { "Plugin disabled" }
                     })),
-                ).into_response()
+                )
+                    .into_response()
             }
             Err(e) => (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"error": e.to_string()})),
-            ).into_response(),
+            )
+                .into_response(),
         }
     } else {
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({"error": "Plugin manager not configured"})),
-        ).into_response()
+        )
+            .into_response()
     }
 }

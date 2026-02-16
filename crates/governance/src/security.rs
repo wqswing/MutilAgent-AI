@@ -73,10 +73,7 @@ impl DefaultSecurityProxy {
         let lower = content.to_lowercase();
         for pattern in &self.config.blocked_patterns {
             if lower.contains(&pattern.to_lowercase()) {
-                tracing::warn!(
-                    pattern = pattern,
-                    "Blocked pattern detected"
-                );
+                tracing::warn!(pattern = pattern, "Blocked pattern detected");
                 return Err(Error::SecurityViolation(format!(
                     "Request contains blocked pattern: {}",
                     pattern
@@ -144,9 +141,7 @@ impl SecurityProxy for DefaultSecurityProxy {
             AgentResult::Text(text) => {
                 // Could add PII detection here
                 if text.len() > 1_000_000 {
-                    return Err(Error::SecurityViolation(
-                        "Output too large".to_string(),
-                    ));
+                    return Err(Error::SecurityViolation("Output too large".to_string()));
                 }
             }
             AgentResult::Error { message, .. } => {

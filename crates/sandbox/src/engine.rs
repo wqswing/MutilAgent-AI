@@ -61,7 +61,7 @@ impl Default for SandboxConfig {
         Self {
             image: "multiagent-sandbox:latest".to_string(),
             memory_limit: 512 * 1024 * 1024, // 512MB
-            cpu_quota: 100_000,               // 1 CPU core
+            cpu_quota: 100_000,              // 1 CPU core
             default_timeout: Duration::from_secs(30),
             network_profile: NetworkProfile::None,
             workdir: "/workspace".to_string(),
@@ -138,18 +138,23 @@ pub struct DockerSandbox {
 impl DockerSandbox {
     /// Create a new Docker sandbox engine connecting to the local Docker daemon.
     pub fn new() -> Result<Self> {
-        let docker = bollard::Docker::connect_with_local_defaults()
-            .map_err(|e| multi_agent_core::Error::internal(format!(
-                "Failed to connect to Docker daemon: {}. Is Docker running?", e
-            )))?;
+        let docker = bollard::Docker::connect_with_local_defaults().map_err(|e| {
+            multi_agent_core::Error::internal(format!(
+                "Failed to connect to Docker daemon: {}. Is Docker running?",
+                e
+            ))
+        })?;
         Ok(Self {
             docker,
             event_emitter: None,
         })
     }
-    
+
     /// Set an event emitter for auditing sandbox operations.
-    pub fn with_event_emitter(mut self, emitter: Arc<dyn multi_agent_core::traits::EventEmitter>) -> Self {
+    pub fn with_event_emitter(
+        mut self,
+        emitter: Arc<dyn multi_agent_core::traits::EventEmitter>,
+    ) -> Self {
         self.event_emitter = Some(emitter);
         self
     }
@@ -198,13 +203,11 @@ impl SandboxEngine for DockerSandbox {
             security_opt: Some(vec!["no-new-privileges:true".to_string()]),
             // Resource limits: prevent fork bombs and too many open files
             pids_limit: Some(100),
-            ulimits: Some(vec![
-                bollard::models::ResourcesUlimits {
-                    name: Some("nofile".to_string()),
-                    soft: Some(1024),
-                    hard: Some(2048),
-                }
-            ]),
+            ulimits: Some(vec![bollard::models::ResourcesUlimits {
+                name: Some("nofile".to_string()),
+                soft: Some(1024),
+                hard: Some(2048),
+            }]),
             ..Default::default()
         };
 
@@ -214,9 +217,10 @@ impl SandboxEngine for DockerSandbox {
             user: Some("agent".to_string()), // non-root
             cmd: Some(vec!["sleep".to_string(), "infinity".to_string()]),
             host_config: Some(host_config),
-            labels: Some(std::collections::HashMap::from([
-                ("managed-by".to_string(), "multiagent-sandbox".to_string()),
-            ])),
+            labels: Some(std::collections::HashMap::from([(
+                "managed-by".to_string(),
+                "multiagent-sandbox".to_string(),
+            )])),
             ..Default::default()
         };
 
@@ -228,17 +232,23 @@ impl SandboxEngine for DockerSandbox {
         self.docker
             .create_container(Some(options), container_config)
             .await
-            .map_err(|e| multi_agent_core::Error::internal(format!(
-                "Failed to create sandbox container: {}", e
-            )))?;
+            .map_err(|e| {
+                multi_agent_core::Error::internal(format!(
+                    "Failed to create sandbox container: {}",
+                    e
+                ))
+            })?;
 
         // Start the container
         self.docker
             .start_container::<String>(&sandbox_id, None)
             .await
-            .map_err(|e| multi_agent_core::Error::internal(format!(
-                "Failed to start sandbox container: {}", e
-            )))?;
+            .map_err(|e| {
+                multi_agent_core::Error::internal(format!(
+                    "Failed to start sandbox container: {}",
+                    e
+                ))
+            })?;
 
         tracing::info!(sandbox_id = %sandbox_id, image = %config.image, "Sandbox container created and started");
 
@@ -257,19 +267,23 @@ impl SandboxEngine for DockerSandbox {
             ..Default::default()
         };
 
-        let exec = self.docker
+        let exec = self
+            .docker
             .create_exec(&id.0, exec_options)
             .await
-            .map_err(|e| multi_agent_core::Error::tool_execution(format!(
-                "Failed to create exec in sandbox: {}", e
-            )))?;
+            .map_err(|e| {
+                multi_agent_core::Error::tool_execution(format!(
+                    "Failed to create exec in sandbox: {}",
+                    e
+                ))
+            })?;
 
-        let start_result = self.docker
-            .start_exec(&exec.id, None)
-            .await
-            .map_err(|e| multi_agent_core::Error::tool_execution(format!(
-                "Failed to start exec in sandbox: {}", e
-            )))?;
+        let start_result = self.docker.start_exec(&exec.id, None).await.map_err(|e| {
+            multi_agent_core::Error::tool_execution(format!(
+                "Failed to start exec in sandbox: {}",
+                e
+            ))
+        })?;
 
         let mut stdout = String::new();
         let mut stderr = String::new();
@@ -311,12 +325,9 @@ impl SandboxEngine for DockerSandbox {
         }
 
         // Get exit code
-        let inspect = self.docker
-            .inspect_exec(&exec.id)
-            .await
-            .map_err(|e| multi_agent_core::Error::tool_execution(format!(
-                "Failed to inspect exec result: {}", e
-            )))?;
+        let inspect = self.docker.inspect_exec(&exec.id).await.map_err(|e| {
+            multi_agent_core::Error::tool_execution(format!("Failed to inspect exec result: {}", e))
+        })?;
 
         let exit_code = inspect.exit_code.unwrap_or(-1);
 
@@ -334,12 +345,21 @@ impl SandboxEngine for DockerSandbox {
                 input: Some(serde_json::json!({ "command": command })),
                 output: Some(exec_result.stdout.clone()),
                 duration_ms: None,
-                error: if exec_result.success() { None } else { Some(exec_result.stderr.clone()) },
+                error: if exec_result.success() {
+                    None
+                } else {
+                    Some(exec_result.stderr.clone())
+                },
             };
-            emitter.emit(multi_agent_core::events::EventEnvelope::new(
-                multi_agent_core::events::EventType::ToolExecFinished,
-                serde_json::to_value(payload).unwrap_or_default(),
-            ).with_actor("sandbox-engine")).await;
+            emitter
+                .emit(
+                    multi_agent_core::events::EventEnvelope::new(
+                        multi_agent_core::events::EventType::ToolExecFinished,
+                        serde_json::to_value(payload).unwrap_or_default(),
+                    )
+                    .with_actor("sandbox-engine"),
+                )
+                .await;
         }
 
         Ok(exec_result)
@@ -364,12 +384,21 @@ impl SandboxEngine for DockerSandbox {
                 operation: "write".to_string(),
                 size_bytes: Some(content.len() as u64),
                 success: result.success(),
-                error: if result.success() { None } else { Some(result.stderr.clone()) },
+                error: if result.success() {
+                    None
+                } else {
+                    Some(result.stderr.clone())
+                },
             };
-            emitter.emit(multi_agent_core::events::EventEnvelope::new(
-                multi_agent_core::events::EventType::FsWrite,
-                serde_json::to_value(payload).unwrap_or_default(),
-            ).with_actor("sandbox-engine")).await;
+            emitter
+                .emit(
+                    multi_agent_core::events::EventEnvelope::new(
+                        multi_agent_core::events::EventType::FsWrite,
+                        serde_json::to_value(payload).unwrap_or_default(),
+                    )
+                    .with_actor("sandbox-engine"),
+                )
+                .await;
         }
 
         if !result.success() {
@@ -391,14 +420,27 @@ impl SandboxEngine for DockerSandbox {
             let payload = multi_agent_core::events::FsPayload {
                 path: path.to_string(),
                 operation: "read".to_string(),
-                size_bytes: if result.success() { Some(result.stdout.len() as u64) } else { None },
+                size_bytes: if result.success() {
+                    Some(result.stdout.len() as u64)
+                } else {
+                    None
+                },
                 success: result.success(),
-                error: if result.success() { None } else { Some(result.stderr.clone()) },
+                error: if result.success() {
+                    None
+                } else {
+                    Some(result.stderr.clone())
+                },
             };
-            emitter.emit(multi_agent_core::events::EventEnvelope::new(
-                multi_agent_core::events::EventType::FsRead,
-                serde_json::to_value(payload).unwrap_or_default(),
-            ).with_actor("sandbox-engine")).await;
+            emitter
+                .emit(
+                    multi_agent_core::events::EventEnvelope::new(
+                        multi_agent_core::events::EventType::FsRead,
+                        serde_json::to_value(payload).unwrap_or_default(),
+                    )
+                    .with_actor("sandbox-engine"),
+                )
+                .await;
         }
 
         if !result.success() {
@@ -415,20 +457,27 @@ impl SandboxEngine for DockerSandbox {
         use bollard::container::{RemoveContainerOptions, StopContainerOptions};
 
         // Stop the container (with 5s grace period)
-        let _ = self.docker
+        let _ = self
+            .docker
             .stop_container(&id.0, Some(StopContainerOptions { t: 5 }))
             .await;
 
         // Remove the container
         self.docker
-            .remove_container(&id.0, Some(RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            }))
+            .remove_container(
+                &id.0,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
             .await
-            .map_err(|e| multi_agent_core::Error::internal(format!(
-                "Failed to remove sandbox container: {}", e
-            )))?;
+            .map_err(|e| {
+                multi_agent_core::Error::internal(format!(
+                    "Failed to remove sandbox container: {}",
+                    e
+                ))
+            })?;
 
         tracing::info!(sandbox_id = %id, "Sandbox container destroyed");
         Ok(())
@@ -466,7 +515,12 @@ impl SandboxEngine for MockSandbox {
         Ok(SandboxId(format!("mock-sandbox-{}", uuid::Uuid::new_v4())))
     }
 
-    async fn exec(&self, _id: &SandboxId, _command: &str, _timeout: Duration) -> Result<ExecResult> {
+    async fn exec(
+        &self,
+        _id: &SandboxId,
+        _command: &str,
+        _timeout: Duration,
+    ) -> Result<ExecResult> {
         let mut responses = self.exec_responses.lock().await;
         if responses.is_empty() {
             Ok(ExecResult {
@@ -481,13 +535,19 @@ impl SandboxEngine for MockSandbox {
     }
 
     async fn write_file(&self, _id: &SandboxId, path: &str, content: &[u8]) -> Result<()> {
-        self.files.lock().await.insert(path.to_string(), content.to_vec());
+        self.files
+            .lock()
+            .await
+            .insert(path.to_string(), content.to_vec());
         Ok(())
     }
 
     async fn read_file(&self, _id: &SandboxId, path: &str) -> Result<Vec<u8>> {
         self.files.lock().await.get(path).cloned().ok_or_else(|| {
-            multi_agent_core::Error::tool_execution(format!("File not found in mock sandbox: {}", path))
+            multi_agent_core::Error::tool_execution(format!(
+                "File not found in mock sandbox: {}",
+                path
+            ))
         })
     }
 
@@ -538,27 +598,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_sandbox_lifecycle() {
-        let mock = MockSandbox::new(vec![
-            ExecResult {
-                exit_code: 0,
-                stdout: "Hello Sovereign World".into(),
-                stderr: String::new(),
-                timed_out: false,
-            },
-        ]);
+        let mock = MockSandbox::new(vec![ExecResult {
+            exit_code: 0,
+            stdout: "Hello Sovereign World".into(),
+            stderr: String::new(),
+            timed_out: false,
+        }]);
 
         let config = SandboxConfig::default();
         let id = mock.create(&config).await.unwrap();
 
         // Write file
-        mock.write_file(&id, "test.txt", b"hello world").await.unwrap();
+        mock.write_file(&id, "test.txt", b"hello world")
+            .await
+            .unwrap();
 
         // Read file
         let content = mock.read_file(&id, "test.txt").await.unwrap();
         assert_eq!(content, b"hello world");
 
         // Execute command
-        let result = mock.exec(&id, "echo Hello", Duration::from_secs(5)).await.unwrap();
+        let result = mock
+            .exec(&id, "echo Hello", Duration::from_secs(5))
+            .await
+            .unwrap();
         assert!(result.success());
         assert_eq!(result.stdout, "Hello Sovereign World");
 

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: multi-agent
+description: Enterprise Multi-Agent System Gateway
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

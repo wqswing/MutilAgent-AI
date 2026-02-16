@@ -4,20 +4,17 @@
 //! used across the codebase for comprehensive unit and integration testing.
 
 use async_trait::async_trait;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use serde_json::Value;
 
 use crate::{
     traits::{
-        LlmClient, LlmResponse, LlmUsage, ChatMessage,
-        MemoryStore, MemoryEntry,
-        ToolRegistry, Tool,
-        IntentRouter, SemanticCache,
-        SessionStore,
+        ChatMessage, IntentRouter, LlmClient, LlmResponse, LlmUsage, MemoryEntry, MemoryStore,
+        SemanticCache, SessionStore, Tool, ToolRegistry,
     },
-    types::{UserIntent, NormalizedRequest, Session, ToolOutput, ToolDefinition},
-    Result, Error,
+    types::{NormalizedRequest, Session, ToolDefinition, ToolOutput, UserIntent},
+    Error, Result,
 };
 
 // =============================================================================
@@ -55,11 +52,14 @@ impl LlmClient for MockLlm {
     async fn complete(&self, _prompt: &str) -> Result<LlmResponse> {
         let mut count = self.call_count.lock().unwrap();
         *count += 1;
-        
+
         let responses = self.responses.lock().unwrap();
         let idx = (*count - 1) % responses.len().max(1);
-        let content = responses.get(idx).cloned().unwrap_or_else(|| "FINAL ANSWER: Done".to_string());
-        
+        let content = responses
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| "FINAL ANSWER: Done".to_string());
+
         Ok(LlmResponse {
             content,
             finish_reason: "stop".to_string(),
@@ -130,7 +130,7 @@ impl MemoryStore for MockMemoryStore {
     async fn search(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<MemoryEntry>> {
         let entries = self.entries.lock().unwrap();
         let mut results: Vec<_> = entries.values().cloned().collect();
-        
+
         // Simple similarity scoring based on first dimension
         results.sort_by(|a, b| {
             let sim_a = if !a.embedding.is_empty() && !query_embedding.is_empty() {
@@ -145,7 +145,7 @@ impl MemoryStore for MockMemoryStore {
             };
             sim_a.partial_cmp(&sim_b).unwrap()
         });
-        
+
         results.truncate(limit);
         Ok(results)
     }
@@ -244,20 +244,24 @@ impl ToolRegistry for MockToolRegistry {
         Ok(())
     }
 
-    async fn get(&self, name: &str) -> Result<Option<Box<dyn Tool>>> {
-        // Cannot easily clone a Box<dyn Tool>, return None for mock
-        let tools = self.tools.lock().unwrap();
-        Ok(if tools.contains_key(name) { None } else { None })
+    async fn get(&self, _name: &str) -> Result<Option<Box<dyn Tool>>> {
+        // Cannot easily clone a Box<dyn Tool> from Arc<dyn Tool>, return None for mock
+        // If we needed this, we'd have to change certain trait signatures or use a different mock approach.
+        let _tools = self.tools.lock().unwrap();
+        Ok(None)
     }
 
     async fn list(&self) -> Result<Vec<ToolDefinition>> {
         let tools = self.tools.lock().unwrap();
-        Ok(tools.values().map(|t| ToolDefinition {
-            name: t.name().to_string(),
-            description: t.description().to_string(),
-            parameters: t.parameters(),
-            supports_streaming: false,
-        }).collect())
+        Ok(tools
+            .values()
+            .map(|t| ToolDefinition {
+                name: t.name().to_string(),
+                description: t.description().to_string(),
+                parameters: t.parameters(),
+                supports_streaming: false,
+            })
+            .collect())
     }
 
     async fn execute(&self, name: &str, args: Value) -> Result<ToolOutput> {
@@ -266,7 +270,7 @@ impl ToolRegistry for MockToolRegistry {
             let tools = self.tools.lock().unwrap();
             tools.get(name).cloned()
         };
-        
+
         if let Some(tool) = tool {
             tool.execute(args).await
         } else {
@@ -291,7 +295,7 @@ impl MockRouter {
 
     /// Create a router that always returns ComplexMission.
     pub fn complex_mission(goal: &str) -> Self {
-        Self::new(UserIntent::ComplexMission { 
+        Self::new(UserIntent::ComplexMission {
             goal: goal.to_string(),
             context_summary: String::new(),
             visual_refs: Vec::new(),
@@ -301,8 +305,8 @@ impl MockRouter {
 
     /// Create a router that always returns FastAction.
     pub fn fast_action(tool: &str, args: Value) -> Self {
-        Self::new(UserIntent::FastAction { 
-            tool_name: tool.to_string(), 
+        Self::new(UserIntent::FastAction {
+            tool_name: tool.to_string(),
             args,
             user_id: None,
         })
@@ -346,13 +350,24 @@ impl MockSemanticCache {
 
 #[async_trait]
 impl SemanticCache for MockSemanticCache {
-    async fn get(&self, workspace_id: &str, session_id: &str, query: &str) -> Result<Option<String>> {
+    async fn get(
+        &self,
+        workspace_id: &str,
+        session_id: &str,
+        query: &str,
+    ) -> Result<Option<String>> {
         let cache = self.cache.lock().unwrap();
         let key = format!("{}:{}:{}", workspace_id, session_id, query);
         Ok(cache.get(&key).cloned())
     }
 
-    async fn set(&self, workspace_id: &str, session_id: &str, query: &str, response: &str) -> Result<()> {
+    async fn set(
+        &self,
+        workspace_id: &str,
+        session_id: &str,
+        query: &str,
+        response: &str,
+    ) -> Result<()> {
         let mut cache = self.cache.lock().unwrap();
         let key = format!("{}:{}:{}", workspace_id, session_id, query);
         cache.insert(key, response.to_string());
@@ -410,9 +425,27 @@ impl SessionStore for MockSessionStore {
 
     async fn list_running(&self) -> Result<Vec<String>> {
         let sessions = self.sessions.lock().unwrap();
-        Ok(sessions.iter()
+        Ok(sessions
+            .iter()
             .filter(|(_, s)| s.status == crate::types::SessionStatus::Running)
             .map(|(id, _)| id.clone())
+            .collect())
+    }
+
+    async fn list_sessions(
+        &self,
+        status: Option<crate::types::SessionStatus>,
+        user_id: Option<&str>,
+    ) -> Result<Vec<Session>> {
+        let sessions = self.sessions.lock().unwrap();
+        Ok(sessions
+            .values()
+            .filter(|s| {
+                let status_match = status.is_none_or(|st| s.status == st);
+                let user_match = user_id.is_none_or(|u| s.user_id.as_deref() == Some(u));
+                status_match && user_match
+            })
+            .cloned()
             .collect())
     }
 }

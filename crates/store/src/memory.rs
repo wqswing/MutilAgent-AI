@@ -5,11 +5,12 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::retention::{Erasable, Prunable};
 use multi_agent_core::{
-    traits::{ArtifactMetadata, ArtifactStore, StorageTier, SessionStore},
-    types::{RefId, Session, SessionStatus}, Result,
+    traits::{ArtifactMetadata, ArtifactStore, SessionStore, StorageTier},
+    types::{RefId, Session, SessionStatus},
+    Result,
 };
-use crate::retention::{Prunable, Erasable};
 
 /// Stored artifact with metadata.
 #[derive(Debug, Clone)]
@@ -118,6 +119,23 @@ impl SessionStore for InMemorySessionStore {
             .map(|r| r.key().clone())
             .collect())
     }
+
+    async fn list_sessions(
+        &self,
+        status: Option<SessionStatus>,
+        user_id: Option<&str>,
+    ) -> Result<Vec<Session>> {
+        Ok(self
+            .sessions
+            .iter()
+            .filter(|r| {
+                let status_match = status.is_none_or(|s| r.status == s);
+                let user_match = user_id.is_none_or(|u| r.user_id.as_deref() == Some(u));
+                status_match && user_match
+            })
+            .map(|r| r.value().clone())
+            .collect())
+    }
 }
 
 #[async_trait]
@@ -137,7 +155,7 @@ impl Prunable for InMemorySessionStore {
         // Let's use atomics for counting.
         use std::sync::atomic::{AtomicUsize, Ordering};
         let count = AtomicUsize::new(0);
-        
+
         self.sessions.retain(|_, v| {
             if v.updated_at < cutoff {
                 count.fetch_add(1, Ordering::Relaxed);
@@ -155,7 +173,7 @@ impl Erasable for InMemorySessionStore {
     async fn erase_user(&self, user_id: &str) -> Result<usize> {
         use std::sync::atomic::{AtomicUsize, Ordering};
         let count = AtomicUsize::new(0);
-        
+
         // DashMap retain
         self.sessions.retain(|_, v| {
             if v.user_id.as_deref() == Some(user_id) {
@@ -274,10 +292,10 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_load() {
         let store = InMemoryStore::new();
-        
+
         let data = Bytes::from("Hello, World!");
         let ref_id = store.save(data.clone()).await.unwrap();
-        
+
         let loaded = store.load(&ref_id).await.unwrap();
         assert_eq!(loaded, Some(data));
     }
@@ -285,10 +303,13 @@ mod tests {
     #[tokio::test]
     async fn test_save_with_type() {
         let store = InMemoryStore::new();
-        
+
         let data = Bytes::from("{\"key\": \"value\"}");
-        let ref_id = store.save_with_type(data.clone(), "application/json").await.unwrap();
-        
+        let ref_id = store
+            .save_with_type(data.clone(), "application/json")
+            .await
+            .unwrap();
+
         let meta = store.metadata(&ref_id).await.unwrap().unwrap();
         assert_eq!(meta.content_type, "application/json");
         assert_eq!(meta.size, data.len());
@@ -297,14 +318,14 @@ mod tests {
     #[tokio::test]
     async fn test_delete() {
         let store = InMemoryStore::new();
-        
+
         let data = Bytes::from("To be deleted");
         let ref_id = store.save(data).await.unwrap();
-        
+
         assert!(store.exists(&ref_id).await.unwrap());
-        
+
         store.delete(&ref_id).await.unwrap();
-        
+
         assert!(!store.exists(&ref_id).await.unwrap());
         assert!(store.load(&ref_id).await.unwrap().is_none());
     }
@@ -313,7 +334,7 @@ mod tests {
     async fn test_not_found() {
         let store = InMemoryStore::new();
         let fake_id = RefId::from_string("nonexistent");
-        
+
         assert!(!store.exists(&fake_id).await.unwrap());
         assert!(store.load(&fake_id).await.unwrap().is_none());
         assert!(store.metadata(&fake_id).await.unwrap().is_none());
@@ -322,13 +343,13 @@ mod tests {
     #[tokio::test]
     async fn test_memory_usage() {
         let store = InMemoryStore::new();
-        
+
         let data1 = Bytes::from("Hello");
         let data2 = Bytes::from("World!");
-        
+
         store.save(data1.clone()).await.unwrap();
         store.save(data2.clone()).await.unwrap();
-        
+
         assert_eq!(store.len(), 2);
         assert_eq!(store.memory_usage(), data1.len() + data2.len());
     }

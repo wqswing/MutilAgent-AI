@@ -1,12 +1,12 @@
 //! In-memory vector store implementation.
-//! 
+//!
 //! This module provides a simple, in-memory vector database using cosine similarity.
 //! It serves as a reference implementation and fallback for the memory system.
 
 use async_trait::async_trait;
 use dashmap::DashMap;
 use multi_agent_core::{
-    traits::{MemoryStore, MemoryEntry},
+    traits::{MemoryEntry, MemoryStore},
     Result,
 };
 
@@ -97,14 +97,14 @@ mod tests {
             embedding: vec![0.0, 1.0, 0.0],
             metadata: Default::default(),
         };
-        
+
         store.add(e1).await.unwrap();
         store.add(e2).await.unwrap();
 
         // Search close to Apple
         let query = vec![0.9, 0.1, 0.0];
         let results = store.search(&query, 1).await.unwrap();
-        
+
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].content, "Apple");
     }

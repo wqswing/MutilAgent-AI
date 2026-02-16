@@ -2,13 +2,13 @@
 //!
 //! Handles the execution of tools and management of observations.
 
-use std::sync::Arc;
+use crate::capability::AgentCapability;
 use multi_agent_core::{
     traits::ToolRegistry,
-    types::{Session, HistoryEntry, ToolCallInfo},
+    types::{HistoryEntry, Session, ToolCallInfo},
     Error, Result,
 };
-use crate::capability::AgentCapability;
+use std::sync::Arc;
 
 /// Tool executor that wraps registry access and observation management.
 pub struct ToolExecutor {
@@ -22,7 +22,10 @@ impl ToolExecutor {
         tools: Option<Arc<dyn ToolRegistry>>,
         capabilities: Vec<Arc<dyn AgentCapability>>,
     ) -> Self {
-        Self { tools, capabilities }
+        Self {
+            tools,
+            capabilities,
+        }
     }
 
     /// Execute a tool and update the session with the observation.
@@ -77,10 +80,7 @@ impl ToolExecutor {
     }
 
     /// Validate security for a fast action before execution.
-    pub async fn validate_fast_action_security(
-        &self,
-        args: &serde_json::Value,
-    ) -> Result<()> {
+    pub async fn validate_fast_action_security(&self, args: &serde_json::Value) -> Result<()> {
         for cap in &self.capabilities {
             if cap.name() == "security_guardrails" {
                 let mut temp_session = Session {

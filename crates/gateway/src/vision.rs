@@ -41,16 +41,14 @@ impl VisionProcessor {
     /// RefId for the stored image
     pub async fn store_image(&self, image_data: &[u8], _format: &str) -> Result<RefId> {
         // Encode the image data as base64
-        let content = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            image_data,
-        );
-        
+        let content =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image_data);
+
         // Save returns the generated RefId
         let ref_id = self.store.save(content.into()).await?;
-        
+
         tracing::info!(ref_id = %ref_id, size = image_data.len(), "Image stored");
-        
+
         Ok(ref_id)
     }
 
@@ -58,18 +56,17 @@ impl VisionProcessor {
     ///
     /// Uses the configured LLM's vision capabilities.
     pub async fn describe(&self, image_data: &[u8], prompt: Option<&str>) -> Result<String> {
-        let _llm = self.llm.as_ref().ok_or_else(|| {
-            Error::gateway("Vision LLM not configured".to_string())
-        })?;
+        let _llm = self
+            .llm
+            .as_ref()
+            .ok_or_else(|| Error::gateway("Vision LLM not configured".to_string()))?;
 
         let default_prompt = "Describe this image in detail.";
         let prompt = prompt.unwrap_or(default_prompt);
 
         // Encode image as base64
-        let _base64_image = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            image_data,
-        );
+        let _base64_image =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image_data);
 
         // Build prompt with image
         // Note: In a full implementation, this would use Rig's multi-modal support
@@ -101,7 +98,8 @@ impl VisionProcessor {
 
     /// Detect and extract text from an image (OCR).
     pub async fn extract_text(&self, image_data: &[u8]) -> Result<String> {
-        self.describe(image_data, Some("Extract all text visible in this image.")).await
+        self.describe(image_data, Some("Extract all text visible in this image."))
+            .await
     }
 
     /// Validate image format and dimensions.

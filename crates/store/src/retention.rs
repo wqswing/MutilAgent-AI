@@ -1,9 +1,9 @@
 //! Data retention policy and pruning logic.
 
-use std::time::Duration;
-use async_trait::async_trait;
 use crate::Result;
-use serde::{Serialize, Deserialize};
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Configuration for data retention.
 #[derive(Debug, Clone, Serialize, Deserialize)]

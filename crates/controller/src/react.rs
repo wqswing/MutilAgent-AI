@@ -16,8 +16,13 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use multi_agent_core::{
-    traits::{ChatMessage, Controller, LlmClient, LlmResponse, ToolRegistry, SessionStore, ApprovalGate},
-    types::{AgentResult, HistoryEntry, Session, SessionStatus, TaskState, TokenUsage, UserIntent, ToolCallInfo, ApprovalRequest, ApprovalResponse, ToolRiskLevel},
+    traits::{
+        ApprovalGate, ChatMessage, Controller, LlmClient, LlmResponse, SessionStore, ToolRegistry,
+    },
+    types::{
+        AgentResult, ApprovalRequest, ApprovalResponse, HistoryEntry, Session, SessionStatus,
+        TaskState, TokenUsage, ToolCallInfo, ToolRiskLevel, UserIntent,
+    },
     Error, Result,
 };
 
@@ -69,7 +74,8 @@ pub struct ReActController {
     /// Human-in-the-Loop approval gate for high-risk tools.
     pub(crate) approval_gate: Option<Arc<dyn ApprovalGate>>,
     /// Policy Engine for rule-based risk assessment.
-    pub(crate) policy_engine: Option<Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>>,
+    pub(crate) policy_engine:
+        Option<Arc<tokio::sync::RwLock<multi_agent_governance::PolicyEngine>>>,
     /// Event emitter for structured events.
     pub(crate) event_emitter: Option<Arc<dyn multi_agent_core::traits::EventEmitter>>,
 }
@@ -123,7 +129,7 @@ impl ReActController {
     /// Build the system prompt for the agent.
     fn build_system_prompt(&self, goal: &str) -> String {
         let tools_description = self.get_tools_description();
-        
+
         format!(
             r#"You are an AI assistant that uses the ReAct (Reasoning + Acting) pattern.
 
@@ -154,8 +160,6 @@ FINAL ANSWER: <your complete answer>
 Always think before acting. Be concise and focused on the goal."#
         )
     }
-
-
 
     /// Get description of available tools (for system prompt building).
     fn get_tools_description(&self) -> String {
@@ -193,9 +197,10 @@ Always think before acting. Be concise and focused on the goal."#
         session: &mut Session,
         iteration: usize,
     ) -> Result<Option<AgentResult>> {
-        let llm = self.llm.as_ref().ok_or_else(|| {
-            Error::controller("LLM client not configured")
-        })?;
+        let llm = self
+            .llm
+            .as_ref()
+            .ok_or_else(|| Error::controller("LLM client not configured"))?;
 
         tracing::info!(
             session_id = %session.id,
@@ -206,7 +211,9 @@ Always think before acting. Be concise and focused on the goal."#
 
         // v0.3: Capabilities On-Pre-Reasoning Hook (Compression, Security, etc.)
         for cap in &self.capabilities {
-            cap.on_pre_reasoning(session).await.map_err(|e| Error::controller(e.to_string()))?;
+            cap.on_pre_reasoning(session)
+                .await
+                .map_err(|e| Error::controller(e.to_string()))?;
         }
 
         let messages = self.build_messages(session); // Rebuild messages after potential compression
@@ -242,15 +249,14 @@ Always think before acting. Be concise and focused on the goal."#
                 // Check capabilities on execution (Security Output check)
                 for cap in &self.capabilities {
                     if let Some(result) = cap.on_execute(&action, session).await? {
-                         // If a capability interrupts/handles FinalAnswer (e.g., blocks it), return that result
-                         // Standard security cap returns Err on violation, keeping this flow simple.
-                         match result {
-                             AgentResult::Error { .. } => return Ok(Some(result)),
-                             _ => {} // Ignore other results for FinalAnswer
-                         }
+                        // If a capability interrupts/handles FinalAnswer (e.g., blocks it), return that result
+                        // Standard security cap returns Err on violation, keeping this flow simple.
+                        if let AgentResult::Error { .. } = result {
+                            return Ok(Some(result));
+                        }
                     }
                 }
-                
+
                 let final_result = AgentResult::Text(answer.clone());
 
                 // Run on_finish hooks (e.g., knowledge summarization)
@@ -264,7 +270,10 @@ Always think before acting. Be concise and focused on the goal."#
                     }
                 }
 
-                tracing::info!(answer_len = answer.len(), "Task completed with final answer");
+                tracing::info!(
+                    answer_len = answer.len(),
+                    "Task completed with final answer"
+                );
                 Ok(Some(final_result))
             }
 
@@ -274,7 +283,7 @@ Always think before acting. Be concise and focused on the goal."#
 
             ReActAction::Think(thought) => {
                 tracing::debug!(thought_len = thought.len(), "Agent thinking");
-                
+
                 // Ask the agent to take an action
                 session.history.push(HistoryEntry {
                     role: "user".to_string(),
@@ -285,41 +294,44 @@ Always think before acting. Be concise and focused on the goal."#
 
                 // v0.4: Post-Execute Hook
                 for cap in &self.capabilities {
-                    cap.on_post_execute(session).await.map_err(|e| Error::controller(e.to_string()))?;
+                    cap.on_post_execute(session)
+                        .await
+                        .map_err(|e| Error::controller(e.to_string()))?;
                 }
 
                 Ok(None) // Continue loop
             }
 
-
             // Fallback: Check custom capability actions
             _ => {
                 for cap in &self.capabilities {
-                     if let Some(result) = cap.on_execute(&action, session).await? {
-                         // Add observation to history if returned
-                         if let AgentResult::Text(observation) = &result {
-                             session.history.push(HistoryEntry {
+                    if let Some(result) = cap.on_execute(&action, session).await? {
+                        // Add observation to history if returned
+                        if let AgentResult::Text(observation) = &result {
+                            session.history.push(HistoryEntry {
                                 role: "user".to_string(),
                                 content: Arc::new(format!("OBSERVATION: {}", observation)),
                                 tool_call: None,
                                 timestamp: chrono_timestamp(),
                             });
-                             // Update task state
+                            // Update task state
                             if let Some(ref mut task_state) = session.task_state {
                                 task_state.observations.push(Arc::new(observation.clone()));
                             }
-                         }
-                         
-                        // v0.4: Post-Execute Hook
-                        for cap in &self.capabilities {
-                            cap.on_post_execute(session).await.map_err(|e| Error::controller(e.to_string()))?;
                         }
 
-                         return Ok(None); // Action handled, continue loop
-                     }
+                        // v0.4: Post-Execute Hook
+                        for cap in &self.capabilities {
+                            cap.on_post_execute(session)
+                                .await
+                                .map_err(|e| Error::controller(e.to_string()))?;
+                        }
+
+                        return Ok(None); // Action handled, continue loop
+                    }
                 }
-                 // If no capability handled it, default behavior (shouldn't happen if parsed correctly)
-                 Ok(None)
+                // If no capability handled it, default behavior (shouldn't happen if parsed correctly)
+                Ok(None)
             }
         }
     }
@@ -364,14 +376,17 @@ Always think before acting. Be concise and focused on the goal."#
     async fn validate_fast_action_security(&self, args: &serde_json::Value) -> Result<()> {
         for cap in &self.capabilities {
             if cap.name() == "security_guardrails" {
-                let mut temp_session = self.create_session("fast_action_check", "temp-trace-id", None);
+                let mut temp_session =
+                    self.create_session("fast_action_check", "temp-trace-id", None);
                 temp_session.history.push(HistoryEntry {
                     role: "user".to_string(),
                     content: Arc::new(serde_json::to_string(args).unwrap_or_default()),
                     tool_call: None,
                     timestamp: chrono_timestamp(),
                 });
-                cap.on_pre_reasoning(&mut temp_session).await.map_err(|e| Error::controller(e.to_string()))?;
+                cap.on_pre_reasoning(&mut temp_session)
+                    .await
+                    .map_err(|e| Error::controller(e.to_string()))?;
             }
         }
         Ok(())
@@ -387,17 +402,17 @@ Always think before acting. Be concise and focused on the goal."#
 
         // Emit TOOL_CALL_PROPOSED
         if let Some(emitter) = &self.event_emitter {
-             use multi_agent_core::events::{EventEnvelope, EventType};
-             let event = EventEnvelope::new(
-                 EventType::ToolCallProposed,
-                 serde_json::json!({
-                     "tool_name": name,
-                     "args": args
-                 })
-             )
-             .with_trace(&session.trace_id)
-             .with_session(&session.id);
-             emitter.emit(event).await;
+            use multi_agent_core::events::{EventEnvelope, EventType};
+            let event = EventEnvelope::new(
+                EventType::ToolCallProposed,
+                serde_json::json!({
+                    "tool_name": name,
+                    "args": args
+                }),
+            )
+            .with_trace(&session.trace_id)
+            .with_session(&session.id);
+            emitter.emit(event).await;
         }
 
         // =====================================================================
@@ -406,49 +421,51 @@ Always think before acting. Be concise and focused on the goal."#
         let mut effective_args = args.clone();
 
         // 1. Evaluate Policy
-        let (risk, risk_score, reason, matched_rule, policy_version) = if let Some(ref engine) = self.policy_engine {
-             let engine = engine.read().await;
-             let decision = engine.evaluate(&name, &effective_args);
-             (
-                 decision.risk_level,
-                 decision.risk_score,
-                 decision.reason,
-                 decision.matched_rule,
-                 decision.policy_version,
-             )
-        } else {
-             // Fallback to legacy behavior if no engine is configured
-             let risk = if let Some(ref tools) = self.tools {
-                 tools.get_risk_level(&name).await
-             } else {
-                 ToolRiskLevel::Low
-             };
-             (
-                 risk,
-                 risk.score(),
-                 "Default policy (no engine)".to_string(),
-                 None,
-                 "0.0.0".to_string()
-             )
-        };
+        let (risk, risk_score, reason, matched_rule, policy_version) =
+            if let Some(ref engine) = self.policy_engine {
+                let engine = engine.read().await;
+                let decision = engine.evaluate(&name, &effective_args);
+                (
+                    decision.risk_level,
+                    decision.risk_score,
+                    decision.reason,
+                    decision.matched_rule,
+                    decision.policy_version,
+                )
+            } else {
+                // Fallback to legacy behavior if no engine is configured
+                let risk = if let Some(ref tools) = self.tools {
+                    tools.get_risk_level(&name).await
+                } else {
+                    ToolRiskLevel::Low
+                };
+                (
+                    risk,
+                    risk.score(),
+                    "Default policy (no engine)".to_string(),
+                    None,
+                    "0.0.0".to_string(),
+                )
+            };
 
         // 2. Emit POLICY_EVALUATED event
         if let Some(emitter) = &self.event_emitter {
-             use multi_agent_core::events::{EventEnvelope, EventType, PolicyEvaluationPayload};
-             let event = EventEnvelope::new(
-                 EventType::PolicyEvaluated,
-                 serde_json::to_value(PolicyEvaluationPayload {
-                     tool_name: name.clone(),
-                     risk_level: format!("{:?}", risk),
-                     risk_score,
-                     matched_rule,
-                     reason: reason.clone(),
-                     policy_version,
-                 }).unwrap_or_default()
-             )
-             .with_trace(&session.trace_id)
-             .with_session(&session.id);
-             emitter.emit(event).await;
+            use multi_agent_core::events::{EventEnvelope, EventType, PolicyEvaluationPayload};
+            let event = EventEnvelope::new(
+                EventType::PolicyEvaluated,
+                serde_json::to_value(PolicyEvaluationPayload {
+                    tool_name: name.clone(),
+                    risk_level: format!("{:?}", risk),
+                    risk_score,
+                    matched_rule,
+                    reason: reason.clone(),
+                    policy_version,
+                })
+                .unwrap_or_default(),
+            )
+            .with_trace(&session.trace_id)
+            .with_session(&session.id);
+            emitter.emit(event).await;
         }
 
         // 3. Approval Check
@@ -470,14 +487,23 @@ Always think before acting. Be concise and focused on the goal."#
                     tool_name: name.clone(),
                     args: effective_args.clone(),
                     risk_level: risk,
-                    context: format!("Policy Reason: {}. Session Goal: {}", reason, session.task_state.as_ref()
-                        .map(|t| t.goal.clone())
-                        .unwrap_or_default()),
+                    context: format!(
+                        "Policy Reason: {}. Session Goal: {}",
+                        reason,
+                        session
+                            .task_state
+                            .as_ref()
+                            .map(|t| t.goal.clone())
+                            .unwrap_or_default()
+                    ),
                     timeout_secs: None,
                 };
 
                 match gate.request_approval(&approval_req).await? {
-                    ApprovalResponse::Approved { reason, reason_code } => {
+                    ApprovalResponse::Approved {
+                        reason,
+                        reason_code,
+                    } => {
                         tracing::info!(
                             tool = %name,
                             reason = ?reason,
@@ -489,21 +515,25 @@ Always think before acting. Be concise and focused on the goal."#
                             task_state.consecutive_rejections = 0;
                         }
                     }
-                    ApprovalResponse::Denied { reason, reason_code } => {
+                    ApprovalResponse::Denied {
+                        reason,
+                        reason_code,
+                    } => {
                         tracing::warn!(
                             tool = %name,
                             reason = %reason,
                             reason_code = %reason_code,
                             "Tool call DENIED by human"
                         );
-                        
+
                         // Increment deadlock counter
                         if let Some(ref mut task_state) = session.task_state {
                             task_state.consecutive_rejections += 1;
                         }
 
                         let observation = format!(
-                            "Tool '{}' was DENIED by human reviewer ({}): {}", name, reason_code, reason
+                            "Tool '{}' was DENIED by human reviewer ({}): {}",
+                            name, reason_code, reason
                         );
                         session.history.push(HistoryEntry {
                             role: "user".to_string(),
@@ -520,7 +550,11 @@ Always think before acting. Be concise and focused on the goal."#
                         }
                         return Ok(None); // Continue loop; agent must adapt
                     }
-                    ApprovalResponse::Modified { args, reason, reason_code } => {
+                    ApprovalResponse::Modified {
+                        args,
+                        reason,
+                        reason_code,
+                    } => {
                         tracing::info!(
                             tool = %name,
                             reason = ?reason,
@@ -543,14 +577,14 @@ Always think before acting. Be concise and focused on the goal."#
         let observation = if let Some(ref tools) = self.tools {
             // Emit TOOL_EXEC_STARTED
             if let Some(emitter) = &self.event_emitter {
-                 use multi_agent_core::events::{EventEnvelope, EventType};
-                 let event = EventEnvelope::new(
-                     EventType::ToolExecStarted,
-                     serde_json::json!({ "tool_name": name })
-                 )
-                 .with_trace(&session.trace_id)
-                 .with_session(&session.id);
-                 emitter.emit(event).await;
+                use multi_agent_core::events::{EventEnvelope, EventType};
+                let event = EventEnvelope::new(
+                    EventType::ToolExecStarted,
+                    serde_json::json!({ "tool_name": name }),
+                )
+                .with_trace(&session.trace_id)
+                .with_session(&session.id);
+                emitter.emit(event).await;
             }
 
             let start_time = std::time::Instant::now();
@@ -559,24 +593,24 @@ Always think before acting. Be concise and focused on the goal."#
 
             // Emit TOOL_EXEC_FINISHED
             if let Some(emitter) = &self.event_emitter {
-                 use multi_agent_core::events::{EventEnvelope, EventType};
-                 let (success, output) = match &result {
-                     Ok(o) => (o.success, o.content.clone()),
-                     Err(e) => (false, e.to_string()),
-                 };
-                 
-                 let event = EventEnvelope::new(
-                     EventType::ToolExecFinished,
-                     serde_json::json!({
-                         "tool_name": name,
-                         "success": success,
-                         "duration_ms": duration,
-                         "output_len": output.len()
-                     })
-                 )
-                 .with_trace(&session.trace_id)
-                 .with_session(&session.id);
-                 emitter.emit(event).await;
+                use multi_agent_core::events::{EventEnvelope, EventType};
+                let (success, output) = match &result {
+                    Ok(o) => (o.success, o.content.clone()),
+                    Err(e) => (false, e.to_string()),
+                };
+
+                let event = EventEnvelope::new(
+                    EventType::ToolExecFinished,
+                    serde_json::json!({
+                        "tool_name": name,
+                        "success": success,
+                        "duration_ms": duration,
+                        "output_len": output.len()
+                    }),
+                )
+                .with_trace(&session.trace_id)
+                .with_session(&session.id);
+                emitter.emit(event).await;
             }
 
             match result {
@@ -609,7 +643,9 @@ Always think before acting. Be concise and focused on the goal."#
         }
 
         for cap in &self.capabilities {
-            cap.on_post_execute(session).await.map_err(|e| Error::controller(e.to_string()))?;
+            cap.on_post_execute(session)
+                .await
+                .map_err(|e| Error::controller(e.to_string()))?;
         }
 
         Ok(None)
@@ -617,13 +653,26 @@ Always think before acting. Be concise and focused on the goal."#
 
     /// Run the ReAct loop for a session.
     async fn run_loop(&self, session: &mut Session) -> Result<AgentResult> {
-        let start_iteration = session.task_state.as_ref().map(|t| t.iteration).unwrap_or(0);
-        
+        let start_iteration = session
+            .task_state
+            .as_ref()
+            .map(|t| t.iteration)
+            .unwrap_or(0);
+
         tracing::info!(
-            session_id = %session.id, 
+            session_id = %session.id,
             start_iteration = start_iteration,
             "Starting/Resuming ReAct loop"
         );
+
+        // Run on_start capabilities for fresh sessions (not resuming)
+        if start_iteration == 0 {
+            for cap in &self.capabilities {
+                cap.on_start(session)
+                    .await
+                    .map_err(|e| Error::controller(e.to_string()))?;
+            }
+        }
 
         for iteration in start_iteration..self.config.max_iterations {
             if let Some(ref mut task_state) = session.task_state {
@@ -647,7 +696,9 @@ Always think before acting. Be concise and focused on the goal."#
                     tracing::error!(session_id = %session.id, "Deadlock detected: too many consecutive rejections");
                     session.status = SessionStatus::Failed;
                     self.persist_session(session).await;
-                    return Err(Error::controller("Deadlock: Too many consecutive human rejections (3). Terminating session."));
+                    return Err(Error::controller(
+                        "Deadlock: Too many consecutive human rejections (3). Terminating session.",
+                    ));
                 }
             }
 
@@ -686,7 +737,11 @@ Always think before acting. Be concise and focused on the goal."#
 impl Controller for ReActController {
     async fn execute(&self, intent: UserIntent, trace_id: String) -> Result<AgentResult> {
         match intent {
-            UserIntent::FastAction { tool_name, args, user_id: _ } => {
+            UserIntent::FastAction {
+                tool_name,
+                args,
+                user_id: _,
+            } => {
                 self.validate_fast_action_security(&args).await?;
 
                 // Fast path: direct tool execution
@@ -730,17 +785,15 @@ impl Controller for ReActController {
         }
     }
 
-
-
-
-
     async fn resume(&self, session_id: &str, _user_id: Option<&str>) -> Result<AgentResult> {
         let session_store = self.session_store.as_ref().ok_or_else(|| {
-             Error::controller("State persistence not configured (session_store is None)")
+            Error::controller("State persistence not configured (session_store is None)")
         })?;
 
         // Load session
-        let mut session = session_store.load(session_id).await?
+        let mut session = session_store
+            .load(session_id)
+            .await?
             .ok_or_else(|| Error::controller(format!("Session {} not found", session_id)))?;
 
         tracing::info!(session_id = %session_id, status = ?session.status, "Resuming session");
@@ -752,15 +805,15 @@ impl Controller for ReActController {
                 // OR we can just return the last message content if it was a final answer
                 // Since our `run_loop` returns AgentResult::Text(answer), we try to reconstruct it.
                 // For now, let's just return a generic success message or the last content.
-                let last_content = session.history.last()
+                let last_content = session
+                    .history
+                    .last()
                     .map(|h| h.content.to_string())
                     .unwrap_or_else(|| "Task completed (no content)".to_string());
-                
+
                 Ok(AgentResult::Text(last_content))
             }
-            SessionStatus::Failed => {
-                Err(Error::controller("Cannot resume failed session"))
-            }
+            SessionStatus::Failed => Err(Error::controller("Cannot resume failed session")),
             SessionStatus::Running | SessionStatus::Paused => {
                 // Resume execution
                 self.run_loop(&mut session).await
@@ -789,10 +842,10 @@ mod tests {
     #[test]
     fn test_parse_final_answer() {
         let controller = ReActController::new(ReActConfig::default());
-        
+
         let response = "FINAL ANSWER: The result is 42.";
         let action = controller.parse_action(response);
-        
+
         match action {
             ReActAction::FinalAnswer(answer) => {
                 assert_eq!(answer, "The result is 42.");
@@ -804,13 +857,13 @@ mod tests {
     #[test]
     fn test_parse_tool_call() {
         let controller = ReActController::new(ReActConfig::default());
-        
+
         let response = r#"THOUGHT: I need to calculate something.
 ACTION: calculator
 ARGS: {"operation": "add", "a": 5, "b": 3}"#;
-        
+
         let action = controller.parse_action(response);
-        
+
         match action {
             ReActAction::ToolCall { name, args } => {
                 assert_eq!(name, "calculator");
@@ -823,10 +876,10 @@ ARGS: {"operation": "add", "a": 5, "b": 3}"#;
     #[test]
     fn test_parse_thought() {
         let controller = ReActController::new(ReActConfig::default());
-        
+
         let response = "THOUGHT: I need to think about this more.";
         let action = controller.parse_action(response);
-        
+
         match action {
             ReActAction::Think(thought) => {
                 assert!(thought.contains("think about"));
@@ -842,9 +895,13 @@ ARGS: {"operation": "add", "a": 5, "b": 3}"#;
         let intent = UserIntent::FastAction {
             tool_name: "test_tool".to_string(),
             args: serde_json::json!({"query": "test"}),
+            user_id: None,
         };
 
-        let result = controller.execute(intent).await.unwrap();
+        let result = controller
+            .execute(intent, "test-trace".to_string())
+            .await
+            .unwrap();
         match result {
             AgentResult::Text(text) => {
                 assert!(text.contains("test_tool"));
@@ -861,9 +918,13 @@ ARGS: {"operation": "add", "a": 5, "b": 3}"#;
             goal: "Test goal".to_string(),
             context_summary: "Test context".to_string(),
             visual_refs: vec![],
+            user_id: None,
         };
 
-        let result = controller.execute(intent).await.unwrap();
+        let result = controller
+            .execute(intent, "test-trace".to_string())
+            .await
+            .unwrap();
         match result {
             AgentResult::Text(text) => {
                 assert!(text.contains("Mock ReAct"));
