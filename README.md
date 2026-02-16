@@ -9,55 +9,40 @@
 
 Multiagent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching, vector memory, and circuit breakers.
 
-## ✨ What's New in v1.2 (Enterprise Evolution)
-
-- **Unified Configuration**: Centralized `AppConfig` with TOML/Env layering and validated defaults across all crates.
-- **Tamper-Evident Audit**: Cryptographically chained audit logs with SHA-256 hashing to ensure data integrity.
-- **Queryable Audit Store**: High-performance SQLite backend for audit trails with structured search and filtering.
-- **Deployment Convergence**: Production-ready Helm charts and Docker Compose profiles for seamless multi-environment rollout.
-- **Security Hardening**: Standardized API namespacing (`/v1/admin`) and enhanced mTLS support for inter-service communication.
-
-## ✨ What's New in v1.1 (Sovereign & Resilient)
-
-- **System Doctor**: Automated self-diagnosis for API connectivity, storage availability, and security health.
-- **Sovereign Sandbox**: Docker-based tool execution environment for safe code execution.
-- **Airlock Networking**: Fine-grained network governance for agent tools.
-- **Axum 0.7 Migration**: Fully upgraded web layer with enhanced type safety and performance.
-- **Privacy & Retention**: Automated background pruning of old sessions and one-click data erasure.
-
-## ✨ What's New in v1.0 (Stateless Architecture)
-
-- **Stateless & Scalable**: fully decoupled state management using Redis.
-    - **Session Persistence**: Long-running agent tasks (`ReActLoop`) persist state after every step, enabling seamless resumption across pods.
-    - **Distributed Rate Limiting**: Global sliding window rate limiter backed by Redis Lua scripts.
-- **Enhanced Admin Dashboard**:
-    - **Provider Management**: Configure LLM providers (OpenAI, Anthropic, Local) dynamically via UI.
-    - **MCP Registry**: Inspect and manage Model Context Protocol servers directly from the dashboard.
-    - **Persistence Config**: Hot-swap storage backends (S3/MinIO) without restarts.
-- **Security Hardening**:
-    - **Encryption at Rest**: Provider API keys are encrypted using AES-256-GCM before storage.
-    - **RBAC Enforcement**: Strict role-based access control for all admin endpoints.
-
 ## 🚀 Key Capabilities
 
 ### 🧠 Intelligence Layer
-- **Autonomous Agents**: Uses the ReAct (Reason+Act) pattern to solve complex, multi-step problems
-- **Workflow Orchestration**: Supports parallel execution of tasks via DAGs and SOPs defined in YAML
-- **Adaptive Model Selection**: Dynamically routes requests to the best LLM based on complexity and cost
-- **Long-Term Memory**: RAG-enabled memory with Qdrant vector database integration
+- **Autonomous Agents**: Uses the ReAct (Reason+Act) pattern to solve complex, multi-step problems.
+- **Workflow Orchestration**: Supports parallel execution of tasks via DAGs and SOPs defined in YAML.
+- **Adaptive Model Selection**: Dynamically routes requests to the best LLM based on complexity and cost.
+- **Long-Term Memory**: RAG-enabled memory with Qdrant vector database integration.
+- **Model Context Protocol (MCP)**: Full support for connecting and managing external tool servers.
 
 ### ⚡ Performance & Scalability
-- **Semantic Caching**: Vector-embedding based caching to serve repeated queries instantly
-- **Tiered Storage**: Hybrid storage using In-Memory (fast), Redis (state), and S3 (artifacts)
-- **Circuit Breaker**: Automatic failure detection and isolation for LLM providers
+- **Stateless & Scalable**: Fully decoupled state management using Redis for seamless horizontally scaling.
+- **Session Persistence**: Long-running agent tasks persist state after every step, enabling resumption across pods.
+- **Semantic Caching**: Vector-embedding based caching to serve repeated queries instantly.
+- **Tiered Storage**: Hybrid storage using In-Memory (fast), Redis (state), and S3/MinIO (artifacts).
+- **Circuit Breaker**: Automatic failure detection and isolation for LLM providers.
 
-### �️ Governance & Security
-- **Guardrails**: Integrated PII detection, prompt injection mitigation, and custom policy enforcement
-- **Tamper-Evident Auditing**: SHA-256 hash chaining for all administrative actions with SQLite persistence
-- **Budget Control**: Real-time token tracking and usage limits per user/workspace
-- **Sovereign Sandbox**: Secure, isolated environment for executing code tools (Docker-backed)
-- **Airlock**: Multi-layer network governance for tool-triggered outbound requests
-- **Secrets Management**: AES-256-GCM encrypted persistence for LLM provider keys
+### 🛡️ Governance & Security
+- **Guardrails**: Integrated PII detection, prompt injection mitigation, and custom policy enforcement.
+- **Tamper-Evident Auditing**: SHA-256 hash chaining for all administrative actions with SQLite persistence.
+- **Airlock Networking**: Fine-grained network governance and domain allowlisting for agent tools.
+- **Sovereign Sandbox**: Secure, isolated Docker environment for executing untrusted tool code.
+- **Secrets Management**: AES-256-GCM encrypted persistence for provider API keys.
+- **RBAC Enforcement**: Strict role-based access control for all management endpoints.
+
+### 📊 Management & Observability
+- **Admin Dashboard**: Web-based console for managing providers, MCP servers, and session state.
+- **System Doctor**: Automated self-diagnosis for connectivity, storage, and security health.
+- **Distributed Rate Limiting**: Global sliding window rate limiter backed by Redis.
+- **Privacy & Retention**: Automated background pruning and one-click user data erasure (GDPR ready).
+
+### 🏗️ Deployment & Infrastructure
+- **Unified Configuration**: Centralized `AppConfig` with TOML/Env layering and validated defaults.
+- **Kubernetes Ready**: Production-grade Helm charts with resource limits and ingress configuration.
+- **Docker First**: Composable `docker-compose.yml` with profiles for gateway, redis, and minio.
 
 ## 🏗️ Architecture
 
