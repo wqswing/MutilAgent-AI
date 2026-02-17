@@ -86,6 +86,49 @@ async fn main() -> anyhow::Result<()> {
     let secrets_manager: Arc<dyn multi_agent_governance::SecretsManager> =
         Arc::new(multi_agent_governance::secrets::FilePersistentSecretsManager::new(secrets_path, master_key_bytes).await?);
 
+    // M11.2: Secrets Migration
+    // Check for legacy onboarding.json and migrate to SecretsManager
+    let legacy_path = std::path::PathBuf::from(".sovereign_claw/onboarding.json");
+    if legacy_path.exists() {
+        tracing::info!("Found legacy onboarding.json - migrating secrets...");
+        match tokio::fs::read_to_string(&legacy_path).await {
+            Ok(content) => {
+                let json: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                let mut migrated = false;
+
+                if let Some(key) = json.get("openai_key").and_then(|v| v.as_str()) {
+                    if !key.is_empty() {
+                        if let Err(e) = secrets_manager.store("openai_api_key", key).await {
+                            tracing::error!("Failed to migrate OpenAI key: {}", e);
+                        } else {
+                            migrated = true;
+                        }
+                    }
+                }
+
+                if let Some(key) = json.get("anthropic_key").and_then(|v| v.as_str()) {
+                    if !key.is_empty() {
+                        if let Err(e) = secrets_manager.store("anthropic_api_key", key).await {
+                            tracing::error!("Failed to migrate Anthropic key: {}", e);
+                        } else {
+                            migrated = true;
+                        }
+                    }
+                }
+
+                if migrated {
+                    let new_path = legacy_path.with_extension("json.migrated");
+                    if let Err(e) = tokio::fs::rename(&legacy_path, &new_path).await {
+                         tracing::error!("Failed to rename legacy onboarding file: {}", e);
+                    } else {
+                        tracing::info!("Secrets migrated successfully. Renamed legacy file to {:?}", new_path);
+                    }
+                }
+            }
+            Err(e) => tracing::error!("Failed to read legacy onboarding file: {}", e),
+        }
+    }
+
     // Initialize Session Store
     let (session_store_raw, session_store): (Arc<dyn multi_agent_core::traits::Erasable>, Arc<dyn SessionStore>) = if let Some(redis_url) = &app_config.store.redis_url
     {

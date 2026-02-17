@@ -12,6 +12,7 @@ multi_agent_admin.workspace = true
 multi_agent_governance.workspace = true
 multi_agent_ecosystem.workspace = true
 rig-core.workspace = true
+reqwest.workspace = true
 sha2 = "0.10"
 tokio.workspace = true
 axum = { workspace = true, features = ["ws"] }

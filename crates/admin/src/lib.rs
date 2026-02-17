@@ -30,6 +30,7 @@ use tokio::sync::RwLock;
 struct Asset;
 
 use multi_agent_core::traits::{ArtifactStore, ProviderStore, SessionStore};
+use multi_agent_core::types::RefId;
 use multi_agent_skills::mcp_registry::{McpRegistry, McpServerInfo};
 use sha2::{Digest, Sha256};
 use std::io::Write;
@@ -768,6 +769,7 @@ async fn get_audit(
 }
 
 /// Export audit logs as JSON file.
+/// Export audit logs as JSON file.
 async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
     let filter = AuditFilter {
         limit: Some(10000), // Hard limit for safety
@@ -785,7 +787,16 @@ async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
                 // 1. events.jsonl
                 zip.start_file("events.jsonl", options).unwrap();
                 let mut events_content = String::new();
+                let mut artifact_ids = std::collections::HashSet::new();
+
                 for entry in &entries {
+                    // Extract artifact IDs from metadata
+                    if let Some(meta) = &entry.metadata {
+                         if let Some(artifact_id) = meta.get("artifact_id").and_then(|v| v.as_str()) {
+                             artifact_ids.insert(artifact_id.to_string());
+                         }
+                    }
+
                     if let Ok(line) = serde_json::to_string(entry) {
                         events_content.push_str(&line);
                         events_content.push('\n');
@@ -811,9 +822,22 @@ async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
                 let manifest = serde_json::json!({
                     "export_timestamp": chrono::Utc::now().to_rfc3339(),
                     "entry_count": entries.len(),
-                    "filter_applied": "limit=10000"
+                    "filter_applied": "limit=10000",
+                    "artifacts_included": artifact_ids.len()
                 });
                 zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes()).unwrap();
+
+                // 4. artifacts/
+                if let Some(store) = &state.artifact_store {
+                    for artifact_id in artifact_ids {
+                        let ref_id = RefId::from_string(&artifact_id);
+                        if let Ok(Some(content)) = store.load(&ref_id).await {
+                             let filename = format!("artifacts/{}.txt", artifact_id);
+                             zip.start_file(filename, options).unwrap();
+                             zip.write_all(&content).unwrap();
+                        }
+                    }
+                }
 
                 zip.finish().unwrap();
             }

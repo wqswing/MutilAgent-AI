@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#070b13"/>
+    </linearGradient>
+
+    <filter id="glowCyan" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glowGreen" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glowPurple" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glowOrange" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <style>
+      .title { font: 700 40px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#eaf2ff; letter-spacing:0.5px; }
+      .subtitle { font: 500 14px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#9fb1cf; }
+      .hdr { font: 700 16px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#eaf2ff; }
+      .txt { font: 500 12px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#c7d4ee; }
+      .muted { font: 500 11px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#93a6c7; }
+      .chip { font: 600 11px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#bfe9ff; }
+      .chip2 { font: 600 11px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#c6ffda; }
+      .chip3 { font: 600 11px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#ead7ff; }
+      .chip4 { font: 600 11px system-ui, -apple-system, Segoe UI, Roboto, Arial; fill:#ffe2b8; }
+      .panel { fill: rgba(255,255,255,0.03); stroke-width:2; rx:18; ry:18; }
+      .inner { fill: rgba(255,255,255,0.02); stroke-width:1.4; rx:12; ry:12; }
+      .dash { stroke-dasharray:6 6; }
+      .arrow { stroke:#7bdcff; stroke-width:1.4; fill:none; marker-end:url(#mArrow); }
+      .arrowG { stroke:#63ffad; stroke-width:1.4; fill:none; marker-end:url(#mArrowG); }
+      .arrowP { stroke:#b88cff; stroke-width:1.4; fill:none; marker-end:url(#mArrowP); }
+      .arrowO { stroke:#ffb35c; stroke-width:1.4; fill:none; marker-end:url(#mArrowO); }
+    </style>
+
+    <marker id="mArrow" markerWidth="6" markerHeight="6" refX="5.2" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#7bdcff"/>
+    </marker>
+    <marker id="mArrowG" markerWidth="6" markerHeight="6" refX="5.2" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#63ffad"/>
+    </marker>
+    <marker id="mArrowP" markerWidth="6" markerHeight="6" refX="5.2" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#b88cff"/>
+    </marker>
+    <marker id="mArrowO" markerWidth="6" markerHeight="6" refX="5.2" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#ffb35c"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1600" height="900" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="800" y="62" text-anchor="middle" class="title">MultiAgent-AI Architecture (branch: 1.04)</text>
+  <text x="800" y="86" text-anchor="middle" class="subtitle">Axum Gateway • Controller/Planner • Skills+MCP • Sandbox Tools • Tiered Store (Memory/Artifacts) • Model Gateway (Rig)</text>
+
+  <!-- Top row panels -->
+  <!-- Clients -->
+  <rect x="60" y="120" width="270" height="250" class="panel" stroke="#59b7ff" filter="url(#glowCyan)"/>
+  <text x="195" y="152" text-anchor="middle" class="hdr">Clients / Channels</text>
+  <rect x="90" y="175" width="210" height="30" class="inner" stroke="#59b7ff"/>
+  <text x="195" y="195" text-anchor="middle" class="txt">Web Console (/console)</text>
+  <rect x="90" y="212" width="210" height="30" class="inner" stroke="#59b7ff"/>
+  <text x="195" y="232" text-anchor="middle" class="txt">CLI / SDK</text>
+  <rect x="90" y="249" width="210" height="30" class="inner" stroke="#59b7ff"/>
+  <text x="195" y="269" text-anchor="middle" class="txt">Webhook Integrations</text>
+  <rect x="90" y="286" width="210" height="30" class="inner" stroke="#59b7ff" opacity="0.7"/>
+  <text x="195" y="306" text-anchor="middle" class="muted">Chat Apps (future)</text>
+  <text x="195" y="338" text-anchor="middle" class="muted">HTTP / WebSocket → Gateway</text>
+
+  <!-- Governance / Security -->
+  <rect x="360" y="120" width="320" height="250" class="panel" stroke="#ffb35c" filter="url(#glowOrange)"/>
+  <text x="520" y="152" text-anchor="middle" class="hdr">Governance / Security</text>
+
+  <rect x="390" y="175" width="260" height="34" class="inner dash" stroke="#ffb35c"/>
+  <text x="520" y="197" text-anchor="middle" class="txt">Bearer Auth Middleware</text>
+
+  <rect x="390" y="215" width="260" height="34" class="inner dash" stroke="#ffb35c"/>
+  <text x="520" y="237" text-anchor="middle" class="txt">Rate Limiting (Redis or Local)</text>
+
+  <rect x="390" y="255" width="260" height="34" class="inner dash" stroke="#ffb35c"/>
+  <text x="520" y="277" text-anchor="middle" class="txt">HITL Approval Gate</text>
+
+  <rect x="390" y="295" width="260" height="34" class="inner dash" stroke="#ffb35c"/>
+  <text x="520" y="317" text-anchor="middle" class="txt">Policy Engine + Audit Events</text>
+
+  <!-- Model Gateway / Providers -->
+  <rect x="710" y="120" width="830" height="250" class="panel" stroke="#63ffad" filter="url(#glowGreen)"/>
+  <text x="1125" y="152" text-anchor="middle" class="hdr">Model Gateway / Providers</text>
+  <text x="1125" y="174" text-anchor="middle" class="muted">ProviderRegistry • AdaptiveModelSelector • CircuitBreaker • PricingRegistry</text>
+
+  <!-- Provider chips -->
+  <rect x="760" y="200" width="180" height="34" class="inner" stroke="#63ffad"/>
+  <text x="850" y="222" text-anchor="middle" class="chip2">OpenAI (Rig)</text>
+
+  <rect x="955" y="200" width="210" height="34" class="inner" stroke="#63ffad"/>
+  <text x="1060" y="222" text-anchor="middle" class="chip2">Anthropic (Rig)</text>
+
+  <rect x="1180" y="200" width="180" height="34" class="inner dash" stroke="#63ffad"/>
+  <text x="1270" y="222" text-anchor="middle" class="chip2">custom base_url</text>
+
+  <rect x="760" y="245" width="600" height="95" class="inner" stroke="#63ffad" opacity="0.85"/>
+  <text x="1060" y="272" text-anchor="middle" class="txt">Selection tiers: Fast / Standard / Premium → fallback to any healthy</text>
+  <text x="1060" y="294" text-anchor="middle" class="muted">Default mapping includes gpt-4o-mini, gpt-4o, claude-3-haiku, claude-3.5-sonnet</text>
+  <text x="1060" y="316" text-anchor="middle" class="muted">Circuit opens ~60s after sustained failures (heuristic)</text>
+
+  <!-- Middle: Agent Loop -->
+  <rect x="60" y="400" width="1480" height="190" class="panel" stroke="#63ffad" filter="url(#glowGreen)"/>
+  <text x="800" y="432" text-anchor="middle" class="hdr">Agent Runtime (Controller + Skills + Store)</text>
+
+  <!-- Flow boxes inside -->
+  <rect x="95" y="460" width="165" height="54" class="inner" stroke="#63ffad"/>
+  <text x="177" y="492" text-anchor="middle" class="txt">Request In</text>
+  <text x="177" y="510" text-anchor="middle" class="muted">/v1/agent/chat</text>
+
+  <rect x="285" y="460" width="200" height="54" class="inner" stroke="#63ffad"/>
+  <text x="385" y="492" text-anchor="middle" class="txt">Intent Router</text>
+  <text x="385" y="510" text-anchor="middle" class="muted">FastAction / ComplexMission</text>
+
+  <rect x="510" y="460" width="210" height="54" class="inner" stroke="#63ffad"/>
+  <text x="615" y="492" text-anchor="middle" class="txt">Planner / Controller</text>
+  <text x="615" y="510" text-anchor="middle" class="muted">ReAct • DAG • SOP</text>
+
+  <rect x="745" y="460" width="200" height="54" class="inner" stroke="#63ffad"/>
+  <text x="845" y="492" text-anchor="middle" class="txt">Model Calls</text>
+  <text x="845" y="510" text-anchor="middle" class="muted">RigLlmClient</text>
+
+  <rect x="970" y="460" width="220" height="54" class="inner" stroke="#63ffad"/>
+  <text x="1080" y="492" text-anchor="middle" class="txt">Tool Exec</text>
+  <text x="1080" y="510" text-anchor="middle" class="muted">Built-in • Network • MCP • Sandbox</text>
+
+  <rect x="1215" y="460" width="200" height="54" class="inner" stroke="#63ffad"/>
+  <text x="1315" y="492" text-anchor="middle" class="txt">Memory / Artifacts</text>
+  <text x="1315" y="510" text-anchor="middle" class="muted">TieredStore + Qdrant</text>
+
+  <rect x="1435" y="460" width="80" height="54" class="inner" stroke="#63ffad"/>
+  <text x="1475" y="492" text-anchor="middle" class="txt">Out</text>
+  <text x="1475" y="510" text-anchor="middle" class="muted">JSON</text>
+
+  <!-- Arrows inside agent loop -->
+  <path d="M260,487 L282,487" class="arrowG"/>
+  <path d="M485,487 L507,487" class="arrowG"/>
+  <path d="M720,487 L742,487" class="arrowG"/>
+  <path d="M945,487 L967,487" class="arrowG"/>
+  <path d="M1190,487 L1212,487" class="arrowG"/>
+  <path d="M1415,487 L1432,487" class="arrowG"/>
+
+  <!-- Cache bubble -->
+  <rect x="285" y="530" width="260" height="44" class="inner dash" stroke="#63ffad" opacity="0.9"/>
+  <text x="415" y="557" text-anchor="middle" class="txt">Semantic Cache</text>
+  <text x="415" y="572" text-anchor="middle" class="muted">Exact + embedding similarity</text>
+
+  <!-- Observability bubble -->
+  <rect x="575" y="530" width="275" height="44" class="inner dash" stroke="#63ffad" opacity="0.9"/>
+  <text x="712" y="557" text-anchor="middle" class="txt">Observability</text>
+  <text x="712" y="572" text-anchor="middle" class="muted">/metrics + tracing + ws/logs</text>
+
+  <!-- Bottom row panels -->
+  <!-- Skills -->
+  <rect x="60" y="620" width="520" height="220" class="panel" stroke="#b88cff" filter="url(#glowPurple)"/>
+  <text x="320" y="652" text-anchor="middle" class="hdr">L2 Skills Layer</text>
+  <rect x="95" y="678" width="450" height="44" class="inner" stroke="#b88cff"/>
+  <text x="320" y="706" text-anchor="middle" class="txt">Tool Registry (Default + Composite)</text>
+
+  <rect x="95" y="732" width="215" height="82" class="inner dash" stroke="#b88cff"/>
+  <text x="202" y="758" text-anchor="middle" class="txt">Built-in Tools</text>
+  <text x="202" y="778" text-anchor="middle" class="muted">echo / calculator</text>
+  <text x="202" y="798" text-anchor="middle" class="muted">read_artifact / list_tools</text>
+
+  <rect x="330" y="732" width="215" height="82" class="inner dash" stroke="#b88cff"/>
+  <text x="437" y="758" text-anchor="middle" class="txt">MCP Tools</text>
+  <text x="437" y="778" text-anchor="middle" class="muted">stdio / SSE / WS</text>
+  <text x="437" y="798" text-anchor="middle" class="muted">server registry + adapter</text>
+
+  <!-- Storage -->
+  <rect x="610" y="620" width="510" height="220" class="panel" stroke="#63ffad" filter="url(#glowGreen)"/>
+  <text x="865" y="652" text-anchor="middle" class="hdr">L3 Store Layer</text>
+
+  <rect x="645" y="678" width="440" height="54" class="inner" stroke="#63ffad"/>
+  <text x="865" y="710" text-anchor="middle" class="txt">TieredStore (pass-by-reference)</text>
+  <text x="865" y="728" text-anchor="middle" class="muted">Hot: InMemory • Warm: Redis • Cold: S3</text>
+
+  <rect x="645" y="742" width="215" height="82" class="inner dash" stroke="#63ffad"/>
+  <text x="752" y="768" text-anchor="middle" class="txt">Sessions</text>
+  <text x="752" y="788" text-anchor="middle" class="muted">InMemory / Redis</text>
+  <text x="752" y="808" text-anchor="middle" class="muted">retention + prune</text>
+
+  <rect x="870" y="742" width="215" height="82" class="inner dash" stroke="#63ffad"/>
+  <text x="977" y="768" text-anchor="middle" class="txt">Vector Memory</text>
+  <text x="977" y="788" text-anchor="middle" class="muted">QdrantMemoryStore</text>
+  <text x="977" y="808" text-anchor="middle" class="muted">embeddings via LLM</text>
+
+  <!-- Sandbox -->
+  <rect x="1150" y="620" width="390" height="220" class="panel" stroke="#ff6b6b" filter="url(#glowOrange)"/>
+  <text x="1345" y="652" text-anchor="middle" class="hdr">Sandbox / Risky Tools</text>
+
+  <rect x="1185" y="678" width="320" height="54" class="inner dash" stroke="#ffb35c"/>
+  <text x="1345" y="710" text-anchor="middle" class="txt">Docker-based Isolation</text>
+  <text x="1345" y="728" text-anchor="middle" class="muted">non-root • /workspace • timeouts</text>
+
+  <rect x="1185" y="742" width="155" height="82" class="inner" stroke="#ffb35c"/>
+  <text x="1262" y="768" text-anchor="middle" class="txt">shell</text>
+  <text x="1262" y="788" text-anchor="middle" class="muted">risk: HIGH</text>
+  <text x="1262" y="808" text-anchor="middle" class="muted">HITL gate</text>
+
+  <rect x="1350" y="742" width="155" height="82" class="inner" stroke="#ffb35c"/>
+  <text x="1427" y="768" text-anchor="middle" class="txt">write_file</text>
+  <text x="1427" y="788" text-anchor="middle" class="muted">risk: MED</text>
+  <text x="1427" y="808" text-anchor="middle" class="muted">scoped paths</text>
+
+  <!-- Connecting arrows (top to middle) -->
+  <!-- Minimal, non-crossing connectors (short vertical drops only) -->
+  <path d="M195,370 L195,400" class="arrow" opacity="0.60"/>
+  <path d="M1125,370 L1125,400" class="arrowG" opacity="0.60"/>
+
+  <!-- Footer -->
+  <text x="800" y="880" text-anchor="middle" class="subtitle">Diagram generated from repository structure &amp; code-level contracts (see analysis notes). SVG is editable (Inkscape/Figma).</text>
+</svg>

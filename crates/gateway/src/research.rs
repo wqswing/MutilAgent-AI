@@ -17,6 +17,7 @@ use rig::providers::openai;
 use rig::completion::Prompt;
 use chrono::Utc;
 use sha2::{Digest, Sha256};
+use reqwest;
 
 /// State of a research task.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -172,38 +173,76 @@ impl ResearchOrchestrator {
 
     async fn execute_research(&self, session_id: &str, trace_id: &str, plan: &ResearchPlan) -> Result<Vec<String>> {
         let mut results = Vec::new();
+        let client = reqwest::Client::builder()
+            .user_agent("MultiAgent-Research/1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| Error::internal(format!("Failed to build HTTP client: {}", e)))?;
         
         for domain in &plan.candidate_domains {
-            let url = format!("https://{}/", domain);
+            let url = if domain.starts_with("http") {
+                domain.clone()
+            } else {
+                format!("https://{}", domain)
+            };
             
             // Emit EGRESS_REQUEST
-            self.emit_audit(session_id, trace_id, EventType::EgressRequest, serde_json::json!({
+            self.emit_audit(session_id, trace_id, multi_agent_core::events::EventType::EgressRequest, serde_json::json!({
                 "url": url,
                 "method": "GET"
             }));
 
-            // In a real M10, we'd call the FetchTool here.
-            let simulated_content = format!("Content from {}. This is a simulated research finding for query: {}", domain, trace_id);
+            // M11.3: Real HTTP Request
+            let response: reqwest::Response = match client.get(&url).send().await {
+                Ok(resp) => resp,
+                Err(e) => {
+                     self.emit_audit(session_id, trace_id, multi_agent_core::events::EventType::EgressResult, serde_json::json!({
+                        "url": url,
+                        "status": "ERROR",
+                        "error": e.to_string()
+                    }));
+                    continue;
+                }
+            };
             
-            // M10.2: Persist finding to ArtifactStore
-            let ref_id = self.artifact_store.save_with_type(
-                bytes::Bytes::from(simulated_content.clone()),
-                "text/plain"
-            ).await?;
+            let status = response.status();
+            let headers = response.headers().clone();
+            let content_type = headers.get("content-type")
+                .and_then(|h: &reqwest::header::HeaderValue| h.to_str().ok())
+                .unwrap_or("unknown")
+                .to_string();
 
+            let body: String = match response.text().await {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::warn!("Failed to read body from {}: {}", url, e);
+                    continue;
+                }
+            };
+
+            // Calculate hash for audit
             let mut hasher = Sha256::new();
-            hasher.update(simulated_content.as_bytes());
+            hasher.update(body.as_bytes());
             let body_hash = format!("{:x}", hasher.finalize());
 
-            // Emit EGRESS_RESULT with reference to artifact
-            self.emit_audit(session_id, trace_id, EventType::EgressResult, serde_json::json!({
+            // Persist finding to ArtifactStore
+            // In a real system we'd parse HTML to text, but for now we store raw or simple text
+            let ref_id = self.artifact_store.save_with_type(
+                bytes::Bytes::from(body.clone()),
+                &content_type
+            ).await?;
+
+            // Emit EGRESS_RESULT with reference to artifact and metadata
+            self.emit_audit(session_id, trace_id, multi_agent_core::events::EventType::EgressResult, serde_json::json!({
                 "url": url,
-                "status": 200,
+                "status": status.as_u16(),
+                "content_type": content_type,
+                "body_len": body.len(),
                 "body_hash": body_hash,
                 "artifact_id": ref_id
             }));
 
-            results.push(simulated_content);
+            results.push(format!("Source: {}\nURL: {}\nContent:\n{}", domain, url, body));
         }
         
         Ok(results)

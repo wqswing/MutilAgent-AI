@@ -1,4 +1,4 @@
-# Multiagent v0.7 Architecture Overview
+# Multiagent  Architecture Overview
 
 ## 1. System Overview
 
@@ -102,3 +102,18 @@ Multiagent/
 │   └── main.rs       # Wiring & Entry Point
 └── tests/            # Integration Tests
 ```
+
+## 6. Verifiable Governance Evidence
+
+This section provides a mapping of project "Selling Points" to their technical implementation details, serving as a compliance audit trail.
+
+| Capability | Configuration Item | API Endpoint | Audit Log Entry | Integration Test |
+| :--- | :--- | :--- | :--- | :--- |
+| **RBAC** | `AppConfig.admin.auth` | `/v1/admin/*` | `ACCESS_GRANTED`, `AUTH_FAIL` | `tests/governance_test.rs` |
+| **Audit Chain** | `AuditStore`, `AdminConfig` | `/v1/admin/audit` | `ADMIN_ACTION`, `EXPORT_ZIP` | `tests/governance_test.rs` |
+| **Human Approval** | `ApprovalGate`, `Tools.risk` | `/v1/admin/approvals` | `APPROVAL_REQUEST`, `DECISION` | `tests/governance_test.rs` |
+| **PII/Guardrails** | `SecurityCapability` | *Transparent Middleware* | `PII_BLOCK`, `INJECTION_DETECT` | `tests/governance_test.rs` |
+| **Airlock (Egress)** | `DomainGovernance` | `/v1/admin/domains` | `EGRESS_REQUEST`, `EGRESS_RESULT` | `tests/governance_test.rs`* |
+| **Budget Control** | `ReActConfig.budget` | `/v1/chat` | `BUDGET_EXCEEDED` | `test_budget_exceeded` |
+
+*> Note: Egress monitoring is currently implemented in `multi_agent_gateway::research` for the Research Agent.*

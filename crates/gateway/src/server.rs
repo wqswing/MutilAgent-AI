@@ -517,8 +517,21 @@ pub struct OnboardingSetup {
 }
 
 async fn onboarding_status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let openai_key_set = state.app_config.model_gateway.openai_api_key.is_some();
-    let anthropic_key_set = state.app_config.model_gateway.anthropic_api_key.is_some();
+    let sm = match &state.admin_state {
+        Some(s) => &s.secrets,
+        None => return Json(OnboardingStatus {
+            openai_key_set: false,
+            anthropic_key_set: false,
+            onboarding_completed: false,
+        }),
+    };
+
+    let openai_key_set = sm.retrieve("openai_api_key").await.unwrap_or(None).is_some() 
+        || state.app_config.model_gateway.openai_api_key.is_some();
+        
+    let anthropic_key_set = sm.retrieve("anthropic_api_key").await.unwrap_or(None).is_some()
+        || state.app_config.model_gateway.anthropic_api_key.is_some();
+        
     let onboarding_completed = openai_key_set || anthropic_key_set;
 
     Json(OnboardingStatus {
@@ -529,36 +542,29 @@ async fn onboarding_status_handler(State(state): State<Arc<AppState>>) -> impl I
 }
 
 async fn onboarding_setup_handler(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(payload): Json<OnboardingSetup>,
 ) -> impl IntoResponse {
-    let mut config = serde_json::json!({});
-    let onboarding_path = ".sovereign_claw/onboarding.json";
-
-    // Load existing config if any
-    if let Ok(content) = std::fs::read_to_string(onboarding_path) {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-            config = v;
-        }
-    }
+    let sm = match &state.admin_state {
+        Some(s) => &s.secrets,
+        None => return StatusCode::SERVICE_UNAVAILABLE,
+    };
 
     if let Some(key) = payload.openai_key {
-        std::env::set_var("OPENAI_API_KEY", &key);
-        config["openai_api_key"] = serde_json::Value::String(key);
+        if !key.is_empty() {
+            if let Err(e) = sm.store("openai_api_key", &key).await {
+                tracing::error!("Failed to store OpenAI key: {}", e);
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+        }
     }
+    
     if let Some(key) = payload.anthropic_key {
-        std::env::set_var("ANTHROPIC_API_KEY", &key);
-        config["anthropic_api_key"] = serde_json::Value::String(key);
-    }
-
-    // Persist to file
-    if let Some(parent) = std::path::Path::new(onboarding_path).parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(content) = serde_json::to_string_pretty(&config) {
-        if let Err(e) = std::fs::write(onboarding_path, content) {
-            tracing::error!("Failed to write onboarding config: {}", e);
-            return StatusCode::INTERNAL_SERVER_ERROR;
+         if !key.is_empty() {
+            if let Err(e) = sm.store("anthropic_api_key", &key).await {
+                tracing::error!("Failed to store Anthropic key: {}", e);
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
         }
     }
 
@@ -935,6 +941,8 @@ struct WsApprovalResponse {
     msg_type: String,
     /// Request ID being responded to.
     request_id: String,
+    /// Nonce for security validation.
+    nonce: String,
     /// Decision: "approved", "denied", or "modified".
     decision: String,
     /// Reason (for denied or optional for others).
@@ -948,6 +956,8 @@ struct WsApprovalResponse {
 /// REST approval request body.
 #[derive(Debug, Deserialize)]
 pub struct ApproveRequest {
+    /// Nonce for security validation.
+    pub nonce: String,
     /// Decision: "approved" or "denied".
     pub decision: String,
     /// Reason (for denied).
@@ -1046,7 +1056,7 @@ async fn handle_approval_ws(state: Arc<AppState>, mut socket: WebSocket) {
                                     }
                                 };
 
-                                if let Err(e) = gate.submit_response(&resp.request_id, "TODO_NONCE_P0", approval_response).await {
+                                if let Err(e) = gate.submit_response(&resp.request_id, &resp.nonce, approval_response).await {
                                     tracing::warn!("Failed to submit approval response: {}", e);
                                 }
                             }
@@ -1161,7 +1171,7 @@ async fn approve_rest_handler(
         }
     };
 
-    match gate.submit_response(&request_id, "TODO_NONCE_P0", response).await {
+    match gate.submit_response(&request_id, &payload.nonce, response).await {
         Ok(()) => (
             StatusCode::OK,
             Json(ApproveResponse {

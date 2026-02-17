@@ -460,12 +460,105 @@ async function loadResearchRuns() {
 document.getElementById('btn-refresh-research')?.addEventListener('click', loadResearchRuns);
 
 // =========================================
-// Pending Approvals
+// Pending Approvals & WebSocket
 // =========================================
+let approvalSocket = null;
+
+function connectApprovalWS() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    approvalSocket = new WebSocket(`${protocol}//${window.location.host}/ws/approval`);
+
+    approvalSocket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'approval_request') {
+            handleApprovalRequest(msg.data);
+        }
+    };
+
+    approvalSocket.onclose = () => {
+        console.log('Approval WebSocket closed. Reconnecting in 5s...');
+        setTimeout(connectApprovalWS, 5000);
+    };
+}
+
+function handleApprovalRequest(req) {
+    // Check if modal is already open
+    const modal = document.getElementById('modal-approval');
+    if (!modal.classList.contains('hidden')) return;
+
+    // Display approval modal
+    window.showApprovalModal = function (req) {
+        document.getElementById('appr-tool').textContent = req.tool || 'Research Agent';
+        document.getElementById('appr-context').textContent = req.context || 'Task Execution';
+        document.getElementById('appr-args').textContent = JSON.stringify(req.params || {}, null, 2);
+        document.getElementById('appr-req-id').value = req.request_id;
+        document.getElementById('appr-nonce').value = req.nonce;
+        document.getElementById('appr-reason').value = '';
+
+        // Update Risk Badge
+        const riskBadge = document.getElementById('appr-risk-badge');
+        const risk = req.risk_level || 'high'; // Default to high for safety
+        riskBadge.className = `risk-badge risk-${risk}`;
+        riskBadge.querySelector('span').textContent = `${risk.toUpperCase()} Risk Action`;
+
+        // Update Request Time
+        const timeStr = new Date().toLocaleString();
+        document.getElementById('appr-req-time').textContent = timeStr;
+
+        // Populate Timeline (Dynamic if req.timeline exists, otherwise static)
+        const timeline = document.getElementById('appr-timeline');
+        if (req.timeline && req.timeline.length > 0) {
+            timeline.innerHTML = req.timeline.map((step, idx) => `
+                <div class="timeline-item ${idx < req.timeline.length - 1 ? 'completed' : 'active'}">
+                    <div class="timeline-content">
+                        <span class="timeline-time">${step.time || ''}</span>
+                        <span class="timeline-title">${step.title}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        const modal = document.getElementById('modal-approval');
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+    };
+    window.showApprovalModal(req); // Call the new function to display the modal
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    connectApprovalWS();
+});
+
+document.getElementById('btn-approve')?.addEventListener('click', () => submitDecision('approved'));
+document.getElementById('btn-deny')?.addEventListener('click', () => submitDecision('denied'));
+
+async function submitDecision(decision) {
+    const reqId = document.getElementById('appr-req-id').value;
+    const nonce = document.getElementById('appr-nonce').value;
+    const reason = document.getElementById('appr-reason').value;
+
+    if (!approvalSocket || approvalSocket.readyState !== WebSocket.OPEN) {
+        alert('WebSocket not connected. Cannot submit approval.');
+        return;
+    }
+
+    const payload = {
+        type: 'approval_response',
+        request_id: reqId,
+        nonce: nonce,
+        decision: decision,
+        reason: reason,
+        reason_code: decision === 'approved' ? 'USER_APPROVED' : 'USER_DENIED'
+    };
+
+    approvalSocket.send(JSON.stringify(payload));
+    closeModal('modal-approval');
+    loadPendingApprovals(); // Refresh list if needed
+}
+
 async function loadPendingApprovals() {
     try {
         // For P1, we query the audit log for APPROVAL_REQUESTED that hasn't been closed
-        // In a real system, there would be a dedicated /approvals endpoint
         const res = await fetchWithAuth(`${API_BASE}/audit?limit=50&action=APPROVAL_REQUESTED`);
         const entries = await res.json();
 
@@ -480,13 +573,12 @@ async function loadPendingApprovals() {
             return `
                 <div class="approval-card" data-id="${e.id}">
                     <div class="approval-info">
-                        <h4>Domain Access Request</h4>
-                        <p class="text-sm">Agent is requesting access to: <strong>${meta.domain || 'Unknown'}</strong></p>
-                        <span class="approval-meta">Trace ID: ${meta.trace_id || 'N/A'} • User: ${e.user_id}</span>
+                        <h4>Request History</h4>
+                        <p class="text-sm"><strong>${meta.plan?.tool || 'Action'}</strong></p>
+                        <span class="approval-meta">User: ${e.user_id}</span>
                     </div>
-                    <div class="approval-actions">
-                        <button class="btn-deny" onclick="submitApproval('${e.id}', 'denied')">Deny</button>
-                        <button class="btn-approve" onclick="submitApproval('${e.id}', 'approved')">Approve</button>
+                     <div class="approval-status ${e.outcome === 'Success' ? 'text-green' : 'text-orange'}">
+                        ${e.outcome}
                     </div>
                 </div>
             `;
@@ -496,15 +588,9 @@ async function loadPendingApprovals() {
     }
 }
 
+// Deprecated REST submit (kept for Reference, but unused for P0)
 window.submitApproval = async (id, decision) => {
-    try {
-        // Implementation for submitting HITL approval
-        // This typically goes to a specialized endpoint or via WebSocket
-        alert(`Submitted ${decision} for ${id}. (Mock Implementation)`);
-        loadPendingApprovals();
-    } catch (err) {
-        alert('Failed to submit approval: ' + err.message);
-    }
+    console.warn("REST approval not implemented for P0. Use WebSocket.");
 };
 
 document.getElementById('btn-refresh-approvals')?.addEventListener('click', loadPendingApprovals);

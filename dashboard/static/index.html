@@ -26,7 +26,7 @@
                     <i class="fa-solid fa-robot logo-icon"></i>
                     <div class="logo-text">
                         <h2>Multiagent</h2>
-                        <span class="badge-version">v0.9</span>
+                        <span class="badge-version">v0.9.0</span>
                     </div>
                 </div>
             </div>
@@ -589,6 +589,86 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Approval Modal -->
+                <div id="modal-approval" class="modal hidden">
+                    <div class="modal-overlay"></div>
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3><i class="fa-solid fa-shield-halved"></i> Human Approval Required</h3>
+                            <button class="btn-icon modal-close"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Risk Section -->
+                            <div
+                                style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+                                <div class="risk-badge risk-high" id="appr-risk-badge">
+                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                    <span>High Risk Action</span>
+                                </div>
+                                <span class="text-muted" style="font-size: 11px; font-weight: 600;"
+                                    id="appr-req-time">2026-02-17 12:24</span>
+                            </div>
+
+                            <h4 class="section-title">Request Context</h4>
+                            <div class="approval-details">
+                                <div class="detail-row">
+                                    <span class="label">Initiating Agent</span>
+                                    <span class="value" id="appr-tool">Research Agent</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="label">Security Context</span>
+                                    <span class="value" id="appr-context">External Web Egress</span>
+                                </div>
+                                <div class="detail-row"
+                                    style="flex-direction: column; border: none; padding-top: 12px;">
+                                    <span class="label">Action Parameters</span>
+                                    <pre class="code-block"
+                                        id="appr-args">{ "url": "https://api.openai.com/v1/..." }</pre>
+                                </div>
+                            </div>
+
+                            <h4 class="section-title">Timeline</h4>
+                            <div class="timeline" id="appr-timeline">
+                                <div class="timeline-item completed">
+                                    <div class="timeline-content">
+                                        <span class="timeline-time">12:23:45</span>
+                                        <span class="timeline-title">Request initiated by Controller</span>
+                                    </div>
+                                </div>
+                                <div class="timeline-item completed">
+                                    <div class="timeline-content">
+                                        <span class="timeline-time">12:23:46</span>
+                                        <span class="timeline-title">Passed Sandbox Pre-validation</span>
+                                    </div>
+                                </div>
+                                <div class="timeline-item active">
+                                    <div class="timeline-content">
+                                        <span class="timeline-time">Now</span>
+                                        <span class="timeline-title">Awaiting Human Review</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <input type="hidden" id="appr-req-id">
+                            <input type="hidden" id="appr-nonce">
+
+                            <div class="form-group" style="margin-top: 24px;">
+                                <label for="appr-reason">Decision Note (Logged to Audit)</label>
+                                <textarea id="appr-reason"
+                                    placeholder="Add a justification for this decision..."></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="btn-deny" class="btn-secondary" style="color: var(--danger);">
+                                <i class="fa-solid fa-ban"></i> Deny Request
+                            </button>
+                            <button id="btn-approve" class="btn-primary">
+                                <i class="fa-solid fa-check"></i> Approve & Execute
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- Network Governance Tab -->
@@ -606,7 +686,8 @@
                                 <h4 class="section-title">Allowlist (Explicit Safe)</h4>
                                 <div class="domain-input">
                                     <input type="text" id="input-allow-domain" placeholder="google.com">
-                                    <button id="btn-add-allow" class="btn-icon"><i class="fa-solid fa-plus"></i></button>
+                                    <button id="btn-add-allow" class="btn-icon"><i
+                                            class="fa-solid fa-plus"></i></button>
                                 </div>
                                 <ul id="list-allow-domains" class="domain-list"></ul>
                             </div>

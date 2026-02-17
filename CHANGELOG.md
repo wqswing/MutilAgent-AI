@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.0] - 2026-02-17
+
+### 🚀 Major Features
+- **Nexus Premium UI**: Complete dashboard overhaul with glassmorphism, neon accents, and improved layout.
+- **Enhanced Governance**:
+    - **Approval Timeline**: Visual tracking of human-in-the-loop decisions.
+    - **Risk Scoring**: Real-time risk level indicators for sensitive agent actions.
+- **Production Hardening**:
+    - **Nonce-based Approval**: End-to-end replay protection for binary decisions.
+    - **Encrypted Secrets Migration**: Automated migration and AES-256 encryption for provider keys.
+    - **Egress Monitoring**: Real-time HTTP audit logging in the Research Agent.
+
 ## [v0.8.0] - 2026-01-18
 
 ### 🚀 Major Features
