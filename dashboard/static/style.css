@@ -1001,3 +1001,159 @@ input:checked+.slider:before {
     font-size: 12px;
     font-weight: 500;
 }
+/* =========================================
+   Research & Control Styles
+   ========================================= */
+
+/* Research Grid */
+.research-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+}
+
+.research-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.research-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.research-status {
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: var(--bg-hover);
+}
+
+.status-planning { color: var(--info); border: 1px solid rgba(59, 130, 246, 0.3); }
+.status-executing { color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
+.status-completed { color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+
+.research-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.research-progress {
+    height: 6px;
+    background: var(--bg-hover);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.3s ease;
+}
+
+/* Approval Cards */
+.approval-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.approval-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.approval-info h4 {
+    font-size: 15px;
+    margin-bottom: 4px;
+}
+
+.approval-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.approval-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.btn-approve { background: var(--success); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: opacity 0.2s; }
+.btn-deny { background: var(--danger); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: opacity 0.2s; }
+.btn-approve:hover, .btn-deny:hover { opacity: 0.9; }
+
+/* Domain Manager */
+.domain-manager {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+}
+
+.domain-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.domain-input {
+    display: flex;
+    gap: 8px;
+}
+
+.domain-input input {
+    flex: 1;
+    padding: 10px;
+    background: var(--bg-body);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+}
+
+.domain-list {
+    background: var(--bg-body);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.domain-item {
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+}
+
+.domain-item:last-child {
+    border-bottom: none;
+}
+
+.domain-item:hover {
+    background: var(--bg-hover);
+}
+
+.btn-remove-domain {
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.btn-remove-domain:hover {
+    color: var(--danger);
+}

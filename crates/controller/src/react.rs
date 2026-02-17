@@ -497,6 +497,12 @@ Always think before acting. Be concise and focused on the goal."#
                             .unwrap_or_default()
                     ),
                     timeout_secs: None,
+                    nonce: uuid::Uuid::new_v4().to_string(),
+                    expires_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs() as i64
+                        + 300, // 5 minutes default expiry
                 };
 
                 match gate.request_approval(&approval_req).await? {

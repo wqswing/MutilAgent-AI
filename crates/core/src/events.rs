@@ -71,10 +71,14 @@ impl EventEnvelope {
 pub enum EventType {
     /// Received a new request from the user
     RequestReceived,
+    /// Research task created
+    ResearchCreated,
     /// User intent has been analyzed/resolved
     IntentResolved,
     /// Controller proposes a tool call
     ToolCallProposed,
+    /// Research plan proposed by LLM
+    PlanProposed,
     /// Policy engine evaluation result
     PolicyEvaluated,
     /// Manual approval requested
@@ -85,6 +89,10 @@ pub enum EventType {
     ToolExecStarted,
     /// Tool execution finished
     ToolExecFinished,
+    /// Egress (network) request initiated
+    EgressRequest,
+    /// Egress (network) result received
+    EgressResult,
     /// Filesystem read operation
     FsRead,
     /// Filesystem write operation
@@ -95,6 +103,10 @@ pub enum EventType {
     BudgetExceeded,
     /// Audit log entry appended
     AuditAppended,
+    /// Research report summary generated
+    ReportGenerated,
+    /// Audit export bundle generated
+    ExportGenerated,
     /// Data deletion initiated (GDPR/Retention)
     DataDeletionInitiated,
     /// Data deletion completed

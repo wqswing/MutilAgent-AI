@@ -28,6 +28,9 @@ pub trait SecretsManager: Send + Sync {
 
     /// List all secret keys (not values).
     async fn list_keys(&self) -> Result<Vec<String>>;
+
+    /// Rotate the encryption key (if supported).
+    async fn rotate_key(&self, new_key: Vec<u8>) -> Result<()>;
 }
 
 use aes_gcm::{
@@ -44,7 +47,7 @@ pub struct AesGcmSecretsManager {
     /// In-memory storage for encrypted values (for now, could be file/DB backed).
     storage: Arc<Mutex<HashMap<String, EncryptedSecret>>>,
     /// Encryption key.
-    key: [u8; 32],
+    key: std::sync::RwLock<[u8; 32]>,
 }
 
 impl AesGcmSecretsManager {
@@ -58,15 +61,59 @@ impl AesGcmSecretsManager {
 
         Self {
             storage: Arc::new(Mutex::new(HashMap::new())),
-            key,
+            key: std::sync::RwLock::new(key),
         }
+    }
+
+    /// Rotate the encryption key, re-encrypting all secrets.
+    pub fn rotate_key(&self, new_key: [u8; 32]) -> Result<()> {
+        let mut key_guard = self.key.write().unwrap();
+        let mut storage = self.storage.lock().unwrap();
+
+        let old_cipher = Aes256Gcm::new(&(*key_guard).into());
+        let new_cipher = Aes256Gcm::new(&new_key.into());
+
+        for (k, v) in storage.iter_mut() {
+            // Decrypt with old key
+            let nonce_bytes = BASE64.decode(&v.nonce).map_err(|e| {
+                multi_agent_core::error::Error::SecurityViolation(format!("Invalid nonce for {}: {}", k, e))
+            })?;
+            let ciphertext_bytes = BASE64.decode(&v.ciphertext).map_err(|e| {
+                multi_agent_core::error::Error::SecurityViolation(format!("Invalid ciphertext for {}: {}", k, e))
+            })?;
+            let nonce = Nonce::from_slice(&nonce_bytes);
+
+            let plaintext_bytes = old_cipher
+                .decrypt(nonce, ciphertext_bytes.as_ref())
+                .map_err(|e| {
+                    multi_agent_core::error::Error::SecurityViolation(format!("Decryption failed during rotation for {}: {}", k, e))
+                })?;
+
+            // Encrypt with new key
+            let mut new_nonce_bytes = [0u8; 12];
+            OsRng.fill_bytes(&mut new_nonce_bytes);
+            let new_nonce = Nonce::from_slice(&new_nonce_bytes);
+
+            let new_ciphertext = new_cipher
+                .encrypt(new_nonce, plaintext_bytes.as_ref())
+                .map_err(|e| {
+                    multi_agent_core::error::Error::SecurityViolation(format!("Encryption failed during rotation for {}: {}", k, e))
+                })?;
+
+            v.ciphertext = BASE64.encode(new_ciphertext);
+            v.nonce = BASE64.encode(new_nonce_bytes);
+        }
+
+        *key_guard = new_key;
+        Ok(())
     }
 }
 
 #[async_trait]
 impl SecretsManager for AesGcmSecretsManager {
     async fn store(&self, key: &str, plaintext: &str) -> Result<()> {
-        let cipher = Aes256Gcm::new(&self.key.into());
+        let key_guard = self.key.read().unwrap();
+        let cipher = Aes256Gcm::new(&(*key_guard).into());
         let mut nonce_bytes = [0u8; 12];
         OsRng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -88,7 +135,8 @@ impl SecretsManager for AesGcmSecretsManager {
     async fn retrieve(&self, key: &str) -> Result<Option<String>> {
         let storage = self.storage.lock().unwrap();
         if let Some(secret) = storage.get(key) {
-            let cipher = Aes256Gcm::new(&self.key.into());
+            let key_guard = self.key.read().unwrap();
+            let cipher = Aes256Gcm::new(&(*key_guard).into());
 
             let nonce_bytes = BASE64.decode(&secret.nonce).map_err(|e| {
                 multi_agent_core::error::Error::SecurityViolation(format!("Invalid nonce: {}", e))
@@ -129,6 +177,11 @@ impl SecretsManager for AesGcmSecretsManager {
 
     async fn list_keys(&self) -> Result<Vec<String>> {
         Ok(self.storage.lock().unwrap().keys().cloned().collect())
+    }
+
+    async fn rotate_key(&self, new_key: Vec<u8>) -> Result<()> {
+        let key: [u8; 32] = new_key.try_into().map_err(|_| multi_agent_core::error::Error::SecurityViolation("Key must be 32 bytes".into()))?;
+        self.rotate_key(key)
     }
 }
 
@@ -174,6 +227,12 @@ impl FilePersistentSecretsManager {
         
         Ok(())
     }
+
+    /// Rotate the encryption key and persist changes.
+    pub async fn rotate_key(&self, new_key: [u8; 32]) -> Result<()> {
+        self.inner.rotate_key(new_key)?;
+        self.flush().await
+    }
 }
 
 #[async_trait]
@@ -194,6 +253,12 @@ impl SecretsManager for FilePersistentSecretsManager {
 
     async fn list_keys(&self) -> Result<Vec<String>> {
         self.inner.list_keys().await
+    }
+
+    async fn rotate_key(&self, new_key: Vec<u8>) -> Result<()> {
+        let key: [u8; 32] = new_key.try_into().map_err(|_| multi_agent_core::error::Error::SecurityViolation("Key must be 32 bytes".into()))?;
+        self.inner.rotate_key(key)?;
+        self.flush().await
     }
 }
 
@@ -218,6 +283,41 @@ mod tests {
             let manager = FilePersistentSecretsManager::new(path, Some(key)).await.unwrap();
             let val: Option<String> = manager.retrieve("test_key").await.unwrap();
             assert_eq!(val, Some("secret_value".to_string()));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rotate_key() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("secrets_rotate.json");
+        let key1 = [1u8; 32];
+        let key2 = [2u8; 32];
+
+        // 1. Store with key1
+        {
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1)).await.unwrap();
+            manager.store("my_secret", "top_secret_data").await.unwrap();
+        }
+
+        // 2. Load with key1, rotate to key2
+        {
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1)).await.unwrap();
+            manager.rotate_key(key2).await.unwrap();
+        }
+
+        // 3. Load with key2, retrieve
+        {
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key2)).await.unwrap();
+            let val = manager.retrieve("my_secret").await.unwrap();
+            assert_eq!(val, Some("top_secret_data".to_string()));
+        }
+
+        // 4. Load with key1, should fail (or return garbage/error)
+        {
+            // Note: AesGcm decryption with wrong key usually fails due to auth tag mismatch
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1)).await.unwrap();
+            let result = manager.retrieve("my_secret").await;
+            assert!(result.is_err());
         }
     }
 }

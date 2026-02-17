@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use multi_agent_core::{
-    traits::{KnowledgeEntry, KnowledgeStore},
+    traits::{KnowledgeEntry, KnowledgeStore, Erasable},
     Result,
 };
 
@@ -102,6 +102,218 @@ impl KnowledgeStore for InMemoryKnowledgeStore {
     }
 }
 
+#[async_trait]
+impl Erasable for InMemoryKnowledgeStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        let mut entries = self.entries.write().await;
+        let initial_len = entries.len();
+        entries.retain(|e| e.user_id != user_id);
+        Ok(initial_len - entries.len())
+    }
+}
+
+use rusqlite::{params, Connection};
+
+/// SQLite-backed knowledge store for persistent research summaries.
+pub struct SqliteKnowledgeStore {
+    conn: Arc<tokio::sync::Mutex<Connection>>,
+}
+
+impl SqliteKnowledgeStore {
+    /// Create a new SQLite knowledge store at the given path.
+    pub fn new(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let conn = Connection::open(path)
+            .map_err(|e| multi_agent_core::error::Error::Internal(format!("DB error: {}", e)))?;
+
+        // Initialize schema
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS knowledge (
+                id TEXT PRIMARY KEY,
+                summary TEXT NOT NULL,
+                source_task TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                embedding TEXT NOT NULL, -- JSON array
+                tags TEXT NOT NULL,      -- JSON array
+                created_at INTEGER NOT NULL
+            )",
+            [],
+        ).map_err(|e| multi_agent_core::error::Error::Internal(format!("Schema error: {}", e)))?;
+
+        // Index for tag and user search
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_session ON knowledge (session_id)", [])
+            .map_err(|e| multi_agent_core::error::Error::Internal(format!("Index error: {}", e)))?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_user ON knowledge (user_id)", [])
+            .map_err(|e| multi_agent_core::error::Error::Internal(format!("Index error: {}", e)))?;
+
+        Ok(Self {
+            conn: Arc::new(tokio::sync::Mutex::new(conn)),
+        })
+    }
+}
+
+#[async_trait]
+impl KnowledgeStore for SqliteKnowledgeStore {
+    async fn store(&self, entry: KnowledgeEntry) -> Result<String> {
+        let conn = self.conn.clone();
+        let id = entry.id.clone();
+        
+        // Convert vectors to JSON strings for storage
+        let embedding_json = serde_json::to_string(&entry.embedding)
+            .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?;
+        let tags_json = serde_json::to_string(&entry.tags)
+            .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?;
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.blocking_lock();
+            conn.execute(
+                "INSERT OR REPLACE INTO knowledge (id, summary, source_task, user_id, session_id, embedding, tags, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    entry.id,
+                    entry.summary,
+                    entry.source_task,
+                    entry.user_id,
+                    entry.session_id,
+                    embedding_json,
+                    tags_json,
+                    entry.created_at
+                ],
+            ).map_err(|e| multi_agent_core::error::Error::Internal(format!("Insert error: {}", e)))?;
+            Ok(id)
+        })
+        .await
+        .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+
+    async fn search(&self, query_embedding: &[f32], limit: usize) -> Result<Vec<KnowledgeEntry>> {
+        let conn = self.conn.clone();
+        let query_vec = query_embedding.to_vec();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.blocking_lock();
+            let mut stmt = conn.prepare(
+                "SELECT id, summary, source_task, user_id, session_id, embedding, tags, created_at FROM knowledge"
+            ).map_err(|e| multi_agent_core::error::Error::Internal(format!("Prepare error: {}", e)))?;
+
+            let entries = stmt.query_map([], |row| {
+                let embedding_str: String = row.get(5)?;
+                let tags_str: String = row.get(6)?;
+                
+                Ok(KnowledgeEntry {
+                    id: row.get(0)?,
+                    summary: row.get(1)?,
+                    source_task: row.get(2)?,
+                    user_id: row.get(3)?,
+                    session_id: row.get(4)?,
+                    embedding: serde_json::from_str(&embedding_str).unwrap_or_default(),
+                    tags: serde_json::from_str(&tags_str).unwrap_or_default(),
+                    created_at: row.get(7)?,
+                })
+            }).map_err(|e| multi_agent_core::error::Error::Internal(format!("Query error: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| multi_agent_core::error::Error::Internal(format!("Result error: {}", e)))?;
+
+            // Compute similarity in-memory (SQLite-vec is preferred but we use manual approach for now)
+            let mut scored: Vec<(f32, KnowledgeEntry)> = entries
+                .into_iter()
+                .map(|e| (cosine_similarity(&query_vec, &e.embedding), e))
+                .collect();
+
+            scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+            Ok(scored
+                .into_iter()
+                .take(limit)
+                .filter(|(score, _)| *score > 0.0)
+                .map(|(_, entry)| entry)
+                .collect())
+        })
+        .await
+        .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+
+    async fn search_by_tags(&self, tags: &[String], limit: usize) -> Result<Vec<KnowledgeEntry>> {
+        let conn = self.conn.clone();
+        let search_tags = tags.to_vec();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.blocking_lock();
+            let mut stmt = conn.prepare(
+                "SELECT id, summary, source_task, user_id, session_id, embedding, tags, created_at FROM knowledge"
+            ).map_err(|e| multi_agent_core::error::Error::Internal(format!("Prepare error: {}", e)))?;
+
+            let entries = stmt.query_map([], |row| {
+                let embedding_str: String = row.get(5)?;
+                let tags_str: String = row.get(6)?;
+                
+                Ok(KnowledgeEntry {
+                    id: row.get(0)?,
+                    summary: row.get(1)?,
+                    source_task: row.get(2)?,
+                    user_id: row.get(3)?,
+                    session_id: row.get(4)?,
+                    embedding: serde_json::from_str(&embedding_str).unwrap_or_default(),
+                    tags: serde_json::from_str(&tags_str).unwrap_or_default(),
+                    created_at: row.get(7)?,
+                })
+            }).map_err(|e| multi_agent_core::error::Error::Internal(format!("Query error: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| multi_agent_core::error::Error::Internal(format!("Result error: {}", e)))?;
+
+            Ok(entries
+                .into_iter()
+                .filter(|e| search_tags.iter().any(|tag| e.tags.contains(tag)))
+                .take(limit)
+                .collect())
+        })
+        .await
+        .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+
+    async fn delete(&self, id: &str) -> Result<()> {
+        let conn = self.conn.clone();
+        let target_id = id.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.blocking_lock();
+            conn.execute("DELETE FROM knowledge WHERE id = ?1", params![target_id])
+                .map_err(|e| multi_agent_core::error::Error::Internal(format!("Delete error: {}", e)))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+
+    async fn count(&self) -> Result<usize> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.blocking_lock();
+            let count: usize = conn.query_row("SELECT COUNT(*) FROM knowledge", [], |row| row.get(0))
+                .map_err(|e| multi_agent_core::error::Error::Internal(format!("Count error: {}", e)))?;
+            Ok(count)
+        })
+        .await
+        .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+}
+
+#[async_trait]
+impl Erasable for SqliteKnowledgeStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        let conn = self.conn.clone();
+        let uid = user_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.blocking_lock();
+            let count = conn.execute("DELETE FROM knowledge WHERE user_id = ?", params![uid])
+                .map_err(|e| multi_agent_core::error::Error::Internal(format!("Delete error: {}", e)))?;
+            Ok(count)
+        })
+        .await
+        .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +323,7 @@ mod tests {
             id: id.to_string(),
             summary: summary.to_string(),
             source_task: "test task".to_string(),
+            user_id: "user-1".to_string(),
             session_id: "session-1".to_string(),
             embedding,
             tags: tags.into_iter().map(String::from).collect(),
@@ -248,5 +461,29 @@ mod tests {
         // Deleting non-existent ID should not error
         store.delete("nonexistent").await.unwrap();
         assert_eq!(store.count().await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_knowledge_store() {
+        use tempfile::NamedTempFile;
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+        let store = SqliteKnowledgeStore::new(path).unwrap();
+
+        assert_eq!(store.count().await.unwrap(), 0);
+
+        store
+            .store(make_entry("k1", "Sqlite is persistent", vec![1.0], vec!["db"]))
+            .await
+            .unwrap();
+        assert_eq!(store.count().await.unwrap(), 1);
+
+        let results = store.search(&[1.0], 1).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "k1");
+        assert_eq!(results[0].summary, "Sqlite is persistent");
+
+        store.delete("k1").await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 0);
     }
 }

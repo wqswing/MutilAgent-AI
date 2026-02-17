@@ -92,6 +92,10 @@ pub struct ApprovalRequest {
     pub context: String,
     /// Timeout for this specific request.
     pub timeout_secs: Option<u64>,
+    /// Cryptographic nonce to prevent replay attacks.
+    pub nonce: String,
+    /// Expiration timestamp (Unix epoch).
+    pub expires_at: i64,
 }
 
 /// Human's response to an approval request.

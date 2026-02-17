@@ -249,6 +249,7 @@ impl AgentCapability for SummarizationCapability {
             id: uuid::Uuid::new_v4().to_string(),
             summary: summary_text,
             source_task: goal,
+            user_id: session.user_id.clone().unwrap_or_else(|| "anonymous".to_string()),
             session_id: session.id.clone(),
             embedding,
             tags,

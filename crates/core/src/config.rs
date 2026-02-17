@@ -1,4 +1,5 @@
 use config::{Config, ConfigError, Environment, File};
+use secrecy::Secret;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -9,6 +10,13 @@ pub struct AppConfig {
     pub store: StoreConfig,
     pub governance: GovernanceConfig,
     pub model_gateway: ModelGatewayConfig,
+    pub safety: SafetyConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SafetyConfig {
+    pub max_download_size_bytes: u64,
+    pub allowed_content_types: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -52,7 +60,7 @@ pub struct StoreConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct EncryptionConfig {
     pub enabled: bool,
-    pub master_key: Option<String>,
+    pub master_key: Option<Secret<String>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -63,9 +71,10 @@ pub struct GovernanceConfig {
     pub audit_log_storage_path: String,
     pub multiagent_env: String,
     pub oidc_issuer: Option<String>,
-    pub admin_token: Option<String>,
+    pub admin_token: Option<Secret<String>>,
     pub allow_domains: Vec<String>,
     pub deny_domains: Vec<String>,
+    pub json_logs: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -73,8 +82,9 @@ pub struct ModelGatewayConfig {
     pub default_provider: String,
     pub fallback_enabled: bool,
     pub providers: std::collections::HashMap<String, ProviderConfig>,
-    pub openai_api_key: Option<String>,
-    pub anthropic_api_key: Option<String>,
+
+    pub openai_api_key: Option<Secret<String>>,
+    pub anthropic_api_key: Option<Secret<String>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -142,6 +152,7 @@ impl Default for AppConfig {
                 admin_token: None,
                 allow_domains: vec!["*.openai.com".into(), "*.anthropic.com".into()],
                 deny_domains: vec![],
+                json_logs: false,
             },
             model_gateway: ModelGatewayConfig {
                 default_provider: "openai".into(),
@@ -149,6 +160,18 @@ impl Default for AppConfig {
                 providers: std::collections::HashMap::new(),
                 openai_api_key: None,
                 anthropic_api_key: None,
+            },
+            safety: SafetyConfig {
+                max_download_size_bytes: 10 * 1024 * 1024, // 10MB
+                allowed_content_types: vec![
+                    "text/html".into(),
+                    "text/plain".into(),
+                    "application/json".into(),
+                    "application/pdf".into(),
+                    "text/csv".into(),
+                    "text/xml".into(),
+                    "application/xhtml+xml".into(),
+                ],
             },
         }
     }

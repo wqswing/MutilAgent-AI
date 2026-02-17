@@ -85,6 +85,8 @@ pub struct AppState {
     pub plugin_manager: Option<Arc<multi_agent_ecosystem::PluginManager>>,
     /// Application configuration.
     pub app_config: multi_agent_core::config::AppConfig,
+    /// Research orchestrator for P0 workflow.
+    pub research_orchestrator: Option<Arc<crate::research::ResearchOrchestrator>>,
 }
 
 impl AppState {
@@ -131,6 +133,7 @@ impl GatewayServer {
                 admin_state: None,
                 plugin_manager: None,
                 app_config: multi_agent_core::config::AppConfig::load().unwrap_or_default(),
+                research_orchestrator: None,
             }),
             metrics_handle: None,
             admin_state: None,
@@ -199,6 +202,17 @@ impl GatewayServer {
         self
     }
 
+    /// Set the research orchestrator.
+    pub fn with_research_orchestrator(
+        mut self,
+        orchestrator: Arc<crate::research::ResearchOrchestrator>,
+    ) -> Self {
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.research_orchestrator = Some(orchestrator);
+        }
+        self
+    }
+
     /// Set the logs broadcast channel.
     pub fn with_logs_channel(mut self, sender: tokio::sync::broadcast::Sender<String>) -> Self {
         if let Some(state) = Arc::get_mut(&mut self.state) {
@@ -236,6 +250,7 @@ impl GatewayServer {
             .route("/approve/{request_id}", post(approve_rest_handler))
             .route("/onboarding/status", get(onboarding_status_handler))
             .route("/onboarding/setup", post(onboarding_setup_handler))
+            .route("/research", post(research_handler))
             .route("/policy", get(get_policy_handler).put(put_policy_handler))
             .route("/plugins", get(get_plugins_handler))
             .route("/plugins/{plugin_id}", get(get_plugin_details_handler))
@@ -395,6 +410,15 @@ pub struct ChatResponse {
 pub struct IntentRequest {
     /// Message to classify.
     pub message: String,
+}
+
+/// Research request.
+#[derive(Debug, Deserialize)]
+pub struct ResearchRequest {
+    /// Research query.
+    pub query: String,
+    /// User ID (optional, normally from JWT).
+    pub user_id: Option<String>,
 }
 
 /// Intent response.
@@ -580,6 +604,33 @@ async fn put_policy_handler(
             Json(serde_json::json!({"error": "Policy engine not configured"})),
         )
             .into_response(),
+    }
+}
+
+/// Research agent handler.
+async fn research_handler(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ResearchRequest>,
+) -> impl IntoResponse {
+    let orchestrator = match &state.research_orchestrator {
+        Some(o) => o,
+        None => return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error": "Research orchestrator not enabled"}))
+        ).into_response(),
+    };
+
+    let session_id = format!("sync-rs-{}", Uuid::new_v4());
+    let user_id = req.user_id.unwrap_or_else(|| "anonymous".to_string());
+
+    match orchestrator.run_research(&session_id, &user_id, &req.query).await {
+        Ok(report) => (StatusCode::OK, Json(serde_json::json!({
+            "report": report,
+            "session_id": session_id,
+        }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "error": format!("Research failed: {}", e)
+        }))).into_response(),
     }
 }
 
@@ -995,7 +1046,7 @@ async fn handle_approval_ws(state: Arc<AppState>, mut socket: WebSocket) {
                                     }
                                 };
 
-                                if let Err(e) = gate.submit_response(&resp.request_id, approval_response).await {
+                                if let Err(e) = gate.submit_response(&resp.request_id, "TODO_NONCE_P0", approval_response).await {
                                     tracing::warn!("Failed to submit approval response: {}", e);
                                 }
                             }
@@ -1110,7 +1161,7 @@ async fn approve_rest_handler(
         }
     };
 
-    match gate.submit_response(&request_id, response).await {
+    match gate.submit_response(&request_id, "TODO_NONCE_P0", response).await {
         Ok(()) => (
             StatusCode::OK,
             Json(ApproveResponse {

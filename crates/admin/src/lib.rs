@@ -31,6 +31,8 @@ struct Asset;
 
 use multi_agent_core::traits::{ArtifactStore, ProviderStore, SessionStore};
 use multi_agent_skills::mcp_registry::{McpRegistry, McpServerInfo};
+use sha2::{Digest, Sha256};
+use std::io::Write;
 
 pub mod doctor;
 
@@ -59,6 +61,8 @@ pub struct AdminState {
     pub session_store: Option<Arc<dyn SessionStore>>,
     /// Application configuration.
     pub app_config: multi_agent_core::config::AppConfig,
+    /// Network Policy (mutable).
+    pub network_policy: Arc<RwLock<multi_agent_governance::network::NetworkPolicy>>,
 }
 
 /// LLM Provider entry.
@@ -117,6 +121,13 @@ pub struct RegisterMcpRequest {
     pub transport_type: String,
     pub command: String,
     pub capabilities: Vec<String>,
+}
+
+/// Request to rotate secrets.
+#[derive(Debug, Deserialize)]
+pub struct RotateSecretsRequest {
+    /// New 32-byte key (hex encoded).
+    pub new_key_hex: String,
 }
 
 /// Response for config endpoint.
@@ -470,6 +481,45 @@ async fn forget_user(
     }
 }
 
+/// Rotate secrets.
+async fn rotate_secrets_handler(
+    State(state): State<Arc<AdminState>>,
+    Json(req): Json<RotateSecretsRequest>,
+) -> Response {
+    let new_key: Vec<u8> = match hex::decode(&req.new_key_hex) {
+        Ok(k) => k,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid hex key").into_response(),
+    };
+
+    if new_key.len() != 32 {
+        return (StatusCode::BAD_REQUEST, "Key must be 32 bytes").into_response();
+    }
+
+    match state.secrets.rotate_key(new_key).await {
+        Ok(()) => {
+             let _ = state
+            .audit_store
+            .log(multi_agent_governance::AuditEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                user_id: "admin".to_string(),
+                action: "ROTATE_SECRETS".to_string(),
+                resource: "secrets".to_string(),
+                outcome: multi_agent_governance::AuditOutcome::Success,
+                metadata: None,
+                previous_hash: None,
+                hash: None,
+            })
+            .await;
+            StatusCode::OK.into_response()
+        },
+        Err(e) => {
+            tracing::error!("Failed to rotate secrets: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 // =========================================
 // MCP Endpoints
 // =========================================
@@ -717,6 +767,77 @@ async fn get_audit(
     }
 }
 
+/// Export audit logs as JSON file.
+async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
+    let filter = AuditFilter {
+        limit: Some(10000), // Hard limit for safety
+        ..Default::default()
+    };
+
+    match state.audit_store.query(filter).await {
+        Ok(entries) => {
+            let mut buf = Vec::new();
+            {
+                let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+                let options = zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored);
+
+                // 1. events.jsonl
+                zip.start_file("events.jsonl", options).unwrap();
+                let mut events_content = String::new();
+                for entry in &entries {
+                    if let Ok(line) = serde_json::to_string(entry) {
+                        events_content.push_str(&line);
+                        events_content.push('\n');
+                    }
+                }
+                zip.write_all(events_content.as_bytes()).unwrap();
+
+                // 2. hashes.json
+                zip.start_file("hashes.json", options).unwrap();
+                let mut hasher = Sha256::new();
+                hasher.update(events_content.as_bytes());
+                let events_hash = format!("{:x}", hasher.finalize());
+                
+                let hashes = serde_json::json!({
+                    "events_jsonl_sha256": events_hash,
+                    "integrity_version": "v1",
+                    "cumulative_hash": entries.last().and_then(|e| e.hash.clone()).unwrap_or_default()
+                });
+                zip.write_all(serde_json::to_string_pretty(&hashes).unwrap().as_bytes()).unwrap();
+
+                // 3. manifest.json
+                zip.start_file("manifest.json", options).unwrap();
+                let manifest = serde_json::json!({
+                    "export_timestamp": chrono::Utc::now().to_rfc3339(),
+                    "entry_count": entries.len(),
+                    "filter_applied": "limit=10000"
+                });
+                zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes()).unwrap();
+
+                zip.finish().unwrap();
+            }
+
+            let filename = format!("audit_bundle_{}.zip", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(
+                axum::http::header::CONTENT_DISPOSITION, 
+                axum::http::header::HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename)).unwrap()
+            );
+            headers.insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::HeaderValue::from_static("application/zip"),
+            );
+
+            (headers, buf).into_response()
+        },
+        Err(e) => {
+            tracing::error!("Failed to export audit logs: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        },
+    }
+}
+
 /// Get metrics.
 async fn get_metrics(State(state): State<Arc<AdminState>>) -> Response {
     if let Some(handle) = &state.metrics {
@@ -833,29 +954,105 @@ async fn index_handler() -> Response {
 
 /// Build the admin API router.
 pub fn admin_api_router(state: Arc<AdminState>) -> Router {
-    Router::new()
-        .route("/health", get(health))
-        .route("/config", get(get_config))
-        .route("/metrics", get(get_metrics))
-        .route("/audit", get(get_audit))
+    let api_routes = Router::new()
         .route("/providers", get(list_providers).post(add_provider))
         .route("/providers/test", post(test_provider))
         .route("/providers/:id", delete(delete_provider))
         .route("/providers/:id/test", post(test_provider_by_id))
-        .route("/persistence/test", post(test_s3_connection))
-        .route("/governance/forget-user", post(forget_user))
-        .route("/doctor", post(doctor::check_all))
-        .route("/mcp/servers", get(get_mcp_servers))
-        .route("/mcp/register", post(register_mcp))
+        .route("/config", get(get_config))
+        .route("/config/network", post(update_network_policy))
+        .route("/config/s3/test", post(test_s3_connection))
+        .route("/audit", get(get_audit))
+        .route("/audit/export", get(export_audit_log))
+        .route("/metrics", get(get_metrics))
+        .route("/mcp/servers", get(get_mcp_servers).post(register_mcp))
         .route("/mcp/servers/:id", delete(remove_mcp))
         .route("/sessions", get(list_sessions_admin))
         .route("/sessions/:id", get(get_session_admin).delete(delete_session_admin))
-        // Apply auth layer with state
-        .route_layer(middleware::from_fn_with_state(
+        .route("/privacy/forget-user", post(forget_user))
+        .route("/secrets/rotate", post(rotate_secrets_handler));
+
+    Router::new()
+        .merge(api_routes)
+        // Public routes
+        .route("/health", get(health))
+        .route("/dashboard/*file", get(dashboard_assets))
+        .route("/", get(dashboard_index))
+        .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
         ))
         .with_state(state)
+}
+
+async fn dashboard_index() -> impl IntoResponse {
+    dashboard_assets(Path("index.html".to_string())).await
+}
+
+async fn dashboard_assets(Path(file): Path<String>) -> impl IntoResponse {
+    let filename = if file.is_empty() || file == "/" {
+        "index.html"
+    } else {
+        &file
+    };
+
+    match Asset::get(filename) {
+        Some(content) => {
+            let mime = mime_guess::from_path(filename).first_or_octet_stream();
+            (
+                [(header::CONTENT_TYPE, mime.as_ref())],
+                content.data,
+            ).into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Update network policy.
+async fn update_network_policy(
+    State(state): State<Arc<AdminState>>,
+    Json(policy): Json<multi_agent_governance::network::NetworkPolicy>,
+) -> Response {
+    // 1. Update in-memory
+    {
+        let mut guard = state.network_policy.write().await;
+        *guard = policy.clone();
+        // Force new version
+        guard.version = uuid::Uuid::new_v4().to_string();
+    }
+
+    // 2. Persist to file (simple JSON dump)
+    let path = std::path::PathBuf::from("network_policy.json");
+    // We could use a proper store, but for now this suffices as per plan.
+    if let Ok(json) = serde_json::to_string_pretty(&policy) {
+        if let Err(e) = tokio::fs::write(path, json).await {
+            tracing::error!("Failed to persist network policy: {}", e);
+             // Verify if we should return error? 
+             // Ideally yes, but in-memory is updated.
+             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+
+    // 3. Log Audit
+     let _ = state
+        .audit_store
+        .log(multi_agent_governance::AuditEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_id: "admin".to_string(),
+            action: "UPDATE_NETWORK_POLICY".to_string(),
+            resource: "network_policy".to_string(),
+            outcome: multi_agent_governance::AuditOutcome::Success,
+            metadata: Some(serde_json::json!({
+                "allow_domains_count": policy.allow_domains.len(),
+                "deny_domains_count": policy.deny_domains.len()
+            })),
+            previous_hash: None,
+            hash: None,
+        })
+        .await;
+
+    StatusCode::OK.into_response()
 }
 
 /// Build the admin static asset router.

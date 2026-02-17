@@ -7,21 +7,16 @@ use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Configure distributed tracing with OpenTelemetry and stdout logging.
-pub fn configure_tracing(rust_log: Option<&str>, otel_endpoint: Option<&str>) -> Result<()> {
+pub fn configure_tracing(rust_log: Option<&str>, otel_endpoint: Option<&str>, json_logs: bool) -> Result<()> {
     // Basic EnvFilter
     let env_filter =
         tracing_subscriber::EnvFilter::new(rust_log.unwrap_or("info,multiagent=debug"));
 
-    // Stdout formatting layer
-    let fmt_layer = tracing_subscriber::fmt::layer();
+    // Registry with env filter
+    let registry = tracing_subscriber::registry().with(env_filter);
 
-    // Registry with fmt and filter
-    let registry = tracing_subscriber::registry()
-        .with(env_filter)
-        .with(fmt_layer);
-
-    // Check OTLP endpoint
-    if let Some(endpoint) = otel_endpoint {
+    // OTLP Tracer Setup
+    let tracer = if let Some(endpoint) = otel_endpoint {
         tracing::info!(endpoint = %endpoint, "Initializing OpenTelemetry tracing");
 
         let exporter = opentelemetry_otlp::new_exporter()
@@ -38,12 +33,27 @@ pub fn configure_tracing(rust_log: Option<&str>, otel_endpoint: Option<&str>) ->
             .build();
 
         use opentelemetry::trace::TracerProvider;
-        let tracer = provider.tracer("multiagent-gateway");
-        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
-        registry.with(otel_layer).init();
+        Some(provider.tracer("multiagent-gateway"))
     } else {
-        registry.init();
+        None
+    };
+
+    if json_logs {
+        let fmt_layer = tracing_subscriber::fmt::layer().json();
+        if let Some(tracer) = tracer {
+            let otel = tracing_opentelemetry::layer().with_tracer(tracer);
+            registry.with(fmt_layer).with(otel).init();
+        } else {
+            registry.with(fmt_layer).init();
+        }
+    } else {
+        let fmt_layer = tracing_subscriber::fmt::layer();
+        if let Some(tracer) = tracer {
+            let otel = tracing_opentelemetry::layer().with_tracer(tracer);
+            registry.with(fmt_layer).with(otel).init();
+        } else {
+            registry.with(fmt_layer).init();
+        }
     }
 
     Ok(())

@@ -5,6 +5,7 @@
 //! including semantic caching and intent routing.
 
 pub mod audio;
+pub mod research;
 pub mod router;
 pub mod semantic_cache;
 pub mod server;

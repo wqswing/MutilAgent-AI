@@ -286,6 +286,8 @@ async fn test_channel_gate_async_approve() {
         risk_level: ToolRiskLevel::High,
         context: "test".into(),
         timeout_secs: None,
+        nonce: "test-nonce-4".into(),
+        expires_at: 0,
     };
 
     // Spawn the approval request
@@ -297,6 +299,7 @@ async fn test_channel_gate_async_approve() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     gate.submit_response(
         "async-test",
+        "test-nonce-4",
         ApprovalResponse::Approved {
             reason: None,
             reason_code: "TEST_APPROVED".to_string(),

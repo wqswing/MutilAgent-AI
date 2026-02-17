@@ -12,6 +12,7 @@ use multi_agent_core::{
 // Import required Rig traits
 use rig::client::{CompletionClient, EmbeddingsClient, ProviderClient};
 use rig::completion::Prompt;
+use secrecy::{ExposeSecret, Secret};
 
 /// Provider type for Rig clients.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +35,7 @@ pub struct RigConfig {
     /// Max tokens.
     pub max_tokens: Option<u32>,
     /// API key override.
-    pub api_key: Option<String>,
+    pub api_key: Option<Secret<String>>,
 }
 
 impl Default for RigConfig {
@@ -70,7 +71,7 @@ impl RigConfig {
     }
 
     /// Set API key.
-    pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
+    pub fn with_api_key(mut self, key: impl Into<Secret<String>>) -> Self {
         self.api_key = Some(key.into());
         self
     }
@@ -154,7 +155,7 @@ impl RigLlmClient {
         use rig::providers::openai;
 
         let client = if let Some(key) = &self.config.api_key {
-            openai::Client::new(key)
+            openai::Client::new(key.expose_secret())
         } else {
             Ok(openai::Client::from_env())
         }
@@ -190,7 +191,7 @@ impl RigLlmClient {
         use rig::providers::anthropic;
 
         let client = if let Some(key) = &self.config.api_key {
-            anthropic::Client::new(key)
+            anthropic::Client::new(key.expose_secret())
         } else {
             Ok(anthropic::Client::from_env())
         }
@@ -248,7 +249,7 @@ impl LlmClient for RigLlmClient {
         use rig::providers::openai;
 
         let client = if let Some(key) = &self.config.api_key {
-            openai::Client::new(key)
+            openai::Client::new(key.expose_secret())
         } else {
             Ok(openai::Client::from_env())
         }

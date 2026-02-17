@@ -73,6 +73,26 @@
                         <span>Audit Logs</span>
                     </a>
                 </li>
+
+                <li class="nav-label">Research & Control</li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="research">
+                        <i class="fa-solid fa-flask"></i>
+                        <span>Research Runs</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="approvals">
+                        <i class="fa-solid fa-user-check"></i>
+                        <span>Pending Approvals</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="nav-item" data-tab="domains">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <span>Network Governance</span>
+                    </a>
+                </li>
             </ul>
 
             <div class="sidebar-footer">
@@ -491,12 +511,18 @@
 
             <!-- Audit Log Tab -->
             <section id="audit" class="tab-content">
+                <!-- ... existing audit content ... -->
                 <div class="card">
                     <div class="card-header">
                         <h3>Audit Trails</h3>
-                        <button id="btn-refresh" class="btn-primary">
-                            <i class="fa-solid fa-rotate-right"></i> Refresh
-                        </button>
+                        <div class="card-actions">
+                            <button id="btn-export-audit" class="btn-secondary">
+                                <i class="fa-solid fa-file-export"></i> Export ZIP
+                            </button>
+                            <button id="btn-refresh" class="btn-primary">
+                                <i class="fa-solid fa-rotate-right"></i> Refresh
+                            </button>
+                        </div>
                     </div>
                     <div class="toolbar">
                         <div class="search-box">
@@ -525,6 +551,74 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Research Runs Tab -->
+            <section id="research" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Active Research Runs</h3>
+                        <button id="btn-refresh-research" class="btn-primary">
+                            <i class="fa-solid fa-rotate-right"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="research-list" class="research-grid">
+                            <!-- Research cards injected here -->
+                            <div class="empty-state">No active research runs found.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Pending Approvals Tab -->
+            <section id="approvals" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Approval Queue</h3>
+                        <button id="btn-refresh-approvals" class="btn-primary">
+                            <i class="fa-solid fa-rotate-right"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="approval-list" class="approval-grid">
+                            <!-- Approval requests injected here -->
+                            <div class="empty-state">All clear! No pending approvals.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Network Governance Tab -->
+            <section id="domains" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Domain Governance</h3>
+                        <button id="btn-save-domains" class="btn-primary">
+                            <i class="fa-solid fa-save"></i> Save Changes
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="domain-manager">
+                            <div class="domain-column">
+                                <h4 class="section-title">Allowlist (Explicit Safe)</h4>
+                                <div class="domain-input">
+                                    <input type="text" id="input-allow-domain" placeholder="google.com">
+                                    <button id="btn-add-allow" class="btn-icon"><i class="fa-solid fa-plus"></i></button>
+                                </div>
+                                <ul id="list-allow-domains" class="domain-list"></ul>
+                            </div>
+                            <div class="domain-column">
+                                <h4 class="section-title">Denylist (Explicit Block)</h4>
+                                <div class="domain-input">
+                                    <input type="text" id="input-deny-domain" placeholder="malicious.com">
+                                    <button id="btn-add-deny" class="btn-icon"><i class="fa-solid fa-plus"></i></button>
+                                </div>
+                                <ul id="list-deny-domains" class="domain-list"></ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

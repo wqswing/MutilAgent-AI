@@ -28,6 +28,9 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 tracing.workspace = true
 bollard = "0.18"
 bytes = "1"
+hex = "0.4.3"
+zip = "2.2.2"
+sha2 = "0.10"
 
 
 

@@ -26,7 +26,7 @@ repository = "https://github.com/wqswing/Multiagent-AI"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 futures = "0.3"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 
 
 # Web framework
@@ -47,6 +47,7 @@ base64 = "0.22"
 
 # Cryptography
 aes-gcm = "0.10"
+secrecy = { version = "0.8", features = ["serde"] }
 sha2 = "0.10"
 rand = "0.8"
 jsonwebtoken = "9"
@@ -58,9 +59,11 @@ proc-macro2 = "1"
 
 # Serialization
 serde = { version = "1", features = ["derive", "rc"] }
+schemars = "0.8"
 serde_json = "1"
 serde_yaml = "0.9"
 toml = "0.8"
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Storage
 dashmap = "6"
@@ -94,7 +97,7 @@ config = "0.14"
 
 # Tracing
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Async traits
 async-trait = "0.1"
@@ -130,6 +133,7 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
+secrecy.workspace = true
 
 multi_agent_core.workspace = true
 multi_agent_gateway.workspace = true

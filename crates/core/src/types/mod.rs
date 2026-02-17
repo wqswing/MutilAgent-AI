@@ -10,6 +10,7 @@ pub mod intent;
 pub mod model;
 pub mod refs;
 pub mod request;
+pub mod research;
 pub mod session;
 pub mod tool;
 

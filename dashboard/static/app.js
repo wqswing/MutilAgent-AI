@@ -21,12 +21,11 @@ document.querySelectorAll('.nav-menu .nav-item').forEach(link => {
 
         // Update header title
         const titles = {
-            overview: 'Dashboard Overview',
-            providers: 'LLM Providers',
-            persistence: 'Persistence Configuration',
-            mcp: 'MCP Registry',
             metrics: 'Performance Metrics',
-            audit: 'Audit Trails'
+            audit: 'Audit Trails',
+            research: 'Research Runs',
+            approvals: 'Pending Approvals',
+            domains: 'Network Governance'
         };
         const pageTitle = document.getElementById('page-title');
         if (pageTitle) pageTitle.textContent = titles[tab] || tab;
@@ -416,8 +415,230 @@ async function loadMetrics() {
 }
 
 // =========================================
-// Audit Logs
+// Research Runs
 // =========================================
+async function loadResearchRuns() {
+    try {
+        // We filter audit logs for RESEARCH_* and PLAN_* events to reconstruct runs
+        const res = await fetchWithAuth(`${API_BASE}/audit?limit=100&action=RESEARCH_CREATED`);
+        const runs = await res.json();
+
+        const grid = document.getElementById('research-list');
+        if (runs.length === 0) {
+            grid.innerHTML = '<div class="empty-state">No active or past research runs found.</div>';
+            return;
+        }
+
+        grid.innerHTML = runs.map(run => {
+            const statusClass = run.outcome === 'Success' ? 'status-completed' : 'status-executing';
+            const statusText = run.outcome === 'Success' ? 'COMPLETED' : 'IN_PROGRESS';
+
+            return `
+                <div class="research-card">
+                    <div class="research-card-header">
+                        <span class="research-status ${statusClass}">${statusText}</span>
+                        <span class="text-xs text-muted">ID: ${run.id.split('-')[0]}</span>
+                    </div>
+                    <div class="research-info">
+                        <h4 class="font-medium">Research Task: ${run.resource}</h4>
+                        <p class="text-sm text-muted">User: ${run.user_id}</p>
+                    </div>
+                    <div class="research-progress">
+                        <div class="progress-bar" style="width: ${run.outcome === 'Success' ? '100%' : '65%'}"></div>
+                    </div>
+                    <div class="research-card-footer">
+                         <span class="text-xs text-muted">${new Date(run.timestamp).toLocaleString()}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error('Failed to load research runs:', err);
+    }
+}
+
+document.getElementById('btn-refresh-research')?.addEventListener('click', loadResearchRuns);
+
+// =========================================
+// Pending Approvals
+// =========================================
+async function loadPendingApprovals() {
+    try {
+        // For P1, we query the audit log for APPROVAL_REQUESTED that hasn't been closed
+        // In a real system, there would be a dedicated /approvals endpoint
+        const res = await fetchWithAuth(`${API_BASE}/audit?limit=50&action=APPROVAL_REQUESTED`);
+        const entries = await res.json();
+
+        const list = document.getElementById('approval-list');
+        if (entries.length === 0) {
+            list.innerHTML = '<div class="empty-state">All clear! No pending approvals.</div>';
+            return;
+        }
+
+        list.innerHTML = entries.map(e => {
+            const meta = e.metadata || {};
+            return `
+                <div class="approval-card" data-id="${e.id}">
+                    <div class="approval-info">
+                        <h4>Domain Access Request</h4>
+                        <p class="text-sm">Agent is requesting access to: <strong>${meta.domain || 'Unknown'}</strong></p>
+                        <span class="approval-meta">Trace ID: ${meta.trace_id || 'N/A'} • User: ${e.user_id}</span>
+                    </div>
+                    <div class="approval-actions">
+                        <button class="btn-deny" onclick="submitApproval('${e.id}', 'denied')">Deny</button>
+                        <button class="btn-approve" onclick="submitApproval('${e.id}', 'approved')">Approve</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error('Failed to load pending approvals:', err);
+    }
+}
+
+window.submitApproval = async (id, decision) => {
+    try {
+        // Implementation for submitting HITL approval
+        // This typically goes to a specialized endpoint or via WebSocket
+        alert(`Submitted ${decision} for ${id}. (Mock Implementation)`);
+        loadPendingApprovals();
+    } catch (err) {
+        alert('Failed to submit approval: ' + err.message);
+    }
+};
+
+document.getElementById('btn-refresh-approvals')?.addEventListener('click', loadPendingApprovals);
+
+// =========================================
+// Network Governance (Domain Rules)
+// =========================================
+let currentPolicy = { allow_domains: [], deny_domains: [] };
+
+async function loadDomainGovernance() {
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/config`);
+        const data = await res.json();
+
+        // Use policy from config if available, fallback to defaults
+        currentPolicy = data.network_policy || { allow_domains: [], deny_domains: [] };
+        renderDomainLists();
+    } catch (err) {
+        console.error('Failed to load domain governance:', err);
+    }
+}
+
+function renderDomainLists() {
+    const allowList = document.getElementById('list-allow-domains');
+    const denyList = document.getElementById('list-deny-domains');
+
+    if (allowList) {
+        allowList.innerHTML = currentPolicy.allow_domains.map(d => `
+            <li class="domain-item">
+                <span class="text-sm">${d}</span>
+                <button class="btn-remove-domain" onclick="removeDomain('allow', '${d}')"><i class="fa-solid fa-trash-can"></i></button>
+            </li>
+        `).join('');
+    }
+
+    if (denyList) {
+        denyList.innerHTML = currentPolicy.deny_domains.map(d => `
+            <li class="domain-item">
+                <span class="text-sm">${d}</span>
+                <button class="btn-remove-domain" onclick="removeDomain('deny', '${d}')"><i class="fa-solid fa-trash-can"></i></button>
+            </li>
+        `).join('');
+    }
+}
+
+window.removeDomain = (type, domain) => {
+    if (type === 'allow') {
+        currentPolicy.allow_domains = currentPolicy.allow_domains.filter(d => d !== domain);
+    } else {
+        currentPolicy.deny_domains = currentPolicy.deny_domains.filter(d => d !== domain);
+    }
+    renderDomainLists();
+};
+
+document.getElementById('btn-add-allow')?.addEventListener('click', () => {
+    const input = document.getElementById('input-allow-domain');
+    const domain = input.value.trim();
+    if (domain && !currentPolicy.allow_domains.includes(domain)) {
+        currentPolicy.allow_domains.push(domain);
+        input.value = '';
+        renderDomainLists();
+    }
+});
+
+document.getElementById('btn-add-deny')?.addEventListener('click', () => {
+    const input = document.getElementById('input-deny-domain');
+    const domain = input.value.trim();
+    if (domain && !currentPolicy.deny_domains.includes(domain)) {
+        currentPolicy.deny_domains.push(domain);
+        input.value = '';
+        renderDomainLists();
+    }
+});
+
+document.getElementById('btn-save-domains')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-domains');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/config/network`, {
+            method: 'POST',
+            body: JSON.stringify(currentPolicy)
+        });
+
+        if (res.ok) {
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> Saved!';
+            setTimeout(() => {
+                btn.innerHTML = '<i class="fa-solid fa-save"></i> Save Changes';
+                btn.disabled = false;
+            }, 2000);
+        } else {
+            alert('Failed to save network policy');
+            btn.disabled = false;
+        }
+    } catch (err) {
+        console.error('Failed to save domains:', err);
+        btn.disabled = false;
+    }
+});
+
+// =========================================
+// Audit Export
+// =========================================
+document.getElementById('btn-export-audit')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-export-audit');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Exporting...';
+
+    try {
+        const res = await fetchWithAuth(`${API_BASE}/audit/export`);
+        if (res.ok) {
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `audit_bundle_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '_')}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> Success';
+        } else {
+            alert('Export failed');
+        }
+    } catch (err) {
+        console.error('Export failed:', err);
+    }
+
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-file-export"></i> Export ZIP';
+    }, 2000);
+});
+
 async function loadAuditLogs() {
     const userId = document.getElementById('filter-user')?.value || '';
     const action = document.getElementById('filter-action')?.value || '';
@@ -461,6 +682,9 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPersistenceConfig();
     loadMcpServers();
     loadAuditLogs();
+    loadResearchRuns();
+    loadPendingApprovals();
+    loadDomainGovernance();
 
     // Auto-refresh metrics every 5s
     setInterval(loadMetrics, 5000);

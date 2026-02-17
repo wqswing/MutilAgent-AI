@@ -1,7 +1,7 @@
 //! Audit logging for compliance and observability.
 
 use async_trait::async_trait;
-use multi_agent_core::Result;
+use multi_agent_core::{traits::Erasable, Result};
 use serde::{Deserialize, Serialize};
 
 /// Outcome of an audited action.
@@ -99,6 +99,16 @@ impl AuditStore for InMemoryAuditStore {
         }
 
         Ok(result)
+    }
+}
+
+#[async_trait]
+impl Erasable for InMemoryAuditStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        let mut entries = self.entries.lock().unwrap();
+        let initial_len = entries.len();
+        entries.retain(|e| e.user_id != user_id);
+        Ok(initial_len - entries.len())
     }
 }
 
@@ -248,6 +258,22 @@ impl AuditStore for SqliteAuditStore {
             .map_err(|e| multi_agent_core::error::Error::Governance(format!("Result error: {}", e)))?;
 
             Ok(entries)
+        })
+        .await
+        .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?
+    }
+}
+
+#[async_trait]
+impl Erasable for SqliteAuditStore {
+    async fn erase_user(&self, user_id: &str) -> Result<usize> {
+        let conn = self.conn.clone();
+        let uid = user_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().unwrap();
+            let count = conn.execute("DELETE FROM audit_logs WHERE user_id = ?", params![uid])
+                .map_err(|e| multi_agent_core::error::Error::Governance(format!("Delete error: {}", e)))?;
+            Ok(count)
         })
         .await
         .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?

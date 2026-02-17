@@ -26,7 +26,7 @@ pub struct ChannelApprovalGate {
     /// Minimum risk level that triggers approval.
     threshold: ToolRiskLevel,
     /// Pending approval requests, keyed by request_id.
-    pending: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalResponse>>>>,
+    pending: Arc<Mutex<HashMap<String, (oneshot::Sender<ApprovalResponse>, String)>>>,
     /// Broadcast channel for notifying listeners about new requests.
     request_tx: broadcast::Sender<ApprovalRequest>,
     /// Timeout for waiting for approval (default: 5 minutes).
@@ -62,13 +62,19 @@ impl ChannelApprovalGate {
     pub async fn submit_response(
         &self,
         request_id: &str,
+        nonce: &str,
         response: ApprovalResponse,
     ) -> std::result::Result<(), String> {
         let mut pending = self.pending.lock().await;
         match pending.remove(request_id) {
-            Some(sender) => sender
-                .send(response)
-                .map_err(|_| "Request channel closed (agent may have timed out)".to_string()),
+            Some((sender, stored_nonce)) => {
+                if stored_nonce != nonce {
+                    return Err("Invalid nonce".to_string());
+                }
+                sender
+                    .send(response)
+                    .map_err(|_| "Request channel closed (agent may have timed out)".to_string())
+            }
             None => Err(format!("No pending request with ID: {}", request_id)),
         }
     }
@@ -87,7 +93,7 @@ impl ApprovalGate for ChannelApprovalGate {
         // Register the pending request
         {
             let mut pending = self.pending.lock().await;
-            pending.insert(req.request_id.clone(), tx);
+            pending.insert(req.request_id.clone(), (tx, req.nonce.clone()));
         }
 
         // Notify listeners (WebSocket, etc.)
@@ -180,6 +186,8 @@ mod tests {
             risk_level: ToolRiskLevel::Critical,
             context: "test".into(),
             timeout_secs: None,
+            nonce: "test-nonce-1".into(),
+            expires_at: 0,
         };
 
         let response = gate.request_approval(&req).await.unwrap();
@@ -199,6 +207,8 @@ mod tests {
             risk_level: ToolRiskLevel::High,
             context: "test".into(),
             timeout_secs: None,
+            nonce: "test-nonce-2".into(),
+            expires_at: 0,
         };
 
         // Spawn the approval request
@@ -215,6 +225,7 @@ mod tests {
         gate_clone
             .submit_response(
                 "test-2",
+                "test-nonce-2",
                 ApprovalResponse::Approved {
                     reason: None,
                     reason_code: "USER_APPROVED".into(),
@@ -242,6 +253,8 @@ mod tests {
             risk_level: ToolRiskLevel::High,
             context: "test".into(),
             timeout_secs: None,
+            nonce: "test-nonce-3".into(),
+            expires_at: 0,
         };
 
         let gate_for_task = gate.clone();
@@ -253,6 +266,7 @@ mod tests {
 
         gate.submit_response(
             "test-3",
+            "test-nonce-3",
             ApprovalResponse::Denied {
                 reason: "too dangerous".into(),
                 reason_code: "USER_DENIED".into(),
@@ -281,6 +295,8 @@ mod tests {
             risk_level: ToolRiskLevel::High,
             context: "test".into(),
             timeout_secs: None,
+            nonce: "test-nonce-4".into(),
+            expires_at: 0,
         };
 
         // Don't submit any response — should timeout

@@ -19,12 +19,13 @@ pub use rig_client::{create_default_client, RigConfig, RigLlmClient, RigProvider
 pub use selector::AdaptiveModelSelector;
 
 use config::ProviderConfig;
+use secrecy::Secret;
 
 /// Create an LLM client from configuration with optional explicit API keys.
 pub fn create_client_from_config(
     config: &ProviderConfig,
-    openai_key: Option<String>,
-    anthropic_key: Option<String>,
+    openai_key: Option<Secret<String>>,
+    anthropic_key: Option<Secret<String>>,
 ) -> multi_agent_core::Result<RigLlmClient> {
     // Simple strategy: Use the first provider/model found in the config
     // In the future, we could have a "default" flag or selection logic.

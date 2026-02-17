@@ -100,6 +100,8 @@ pub struct KnowledgeEntry {
     pub summary: String,
     /// The original task/goal that produced this knowledge.
     pub source_task: String,
+    /// The user ID who owns this knowledge.
+    pub user_id: String,
     /// The session ID where the knowledge was generated.
     pub session_id: String,
     /// Vector embedding of the summary (for semantic search).

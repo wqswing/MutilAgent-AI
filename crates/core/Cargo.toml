@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 serde.workspace = true
+schemars.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
@@ -17,3 +18,4 @@ config.workspace = true
 tera = "1.19"
 sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
+secrecy = { version = "0.8", features = ["serde"] }
