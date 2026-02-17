@@ -6,6 +6,7 @@
 //! Broken down into submodules for better maintainability.
 
 pub mod agent;
+pub mod gateway_contract;
 pub mod intent;
 pub mod model;
 pub mod refs;
@@ -16,6 +17,7 @@ pub mod tool;
 
 // Re-export everything to maintain backward compatibility
 pub use agent::*;
+pub use gateway_contract::*;
 pub use intent::*;
 pub use model::*;
 pub use refs::*;
