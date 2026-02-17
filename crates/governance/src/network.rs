@@ -351,3 +351,135 @@ mod tests {
         assert!(policy.check_ip(ip).is_ok(), "Should allow public IP");
     }
 }
+
+// =============================================================================
+// Egress Logic
+// =============================================================================
+
+use multi_agent_core::config::SafetyConfig;
+use futures::StreamExt;
+
+const MAX_REDIRECTS: usize = 5;
+
+/// Helper to perform request with manual redirect handling and SSRF protection.
+/// Supports strict network policy checks at every hop.
+pub async fn fetch_with_policy(
+    client: &reqwest::Client,
+    policy: &NetworkPolicy,
+    safety: &SafetyConfig,
+    mut method: reqwest::Method,
+    mut url: url::Url,
+    headers: Option<&reqwest::header::HeaderMap>,
+    body: Option<&String>,
+) -> multi_agent_core::Result<reqwest::Response> {
+    for _ in 0..MAX_REDIRECTS {
+        // 1. Check Policy (Domain)
+        match policy.check(url.as_str()) {
+            Ok(NetworkDecision::Allowed) => {}
+            Ok(NetworkDecision::Denied(reason)) => {
+                return Err(multi_agent_core::Error::governance(format!(
+                    "Network policy denied access to {}: {}",
+                    url, reason
+                )));
+            }
+            Err(e) => return Err(multi_agent_core::Error::governance(format!("Policy check failed: {}", e))),
+        }
+
+        // 2. Resolve IP & Check
+        let host = url.host_str().ok_or_else(|| multi_agent_core::Error::governance("URL has no host".to_string()))?;
+        let port = url.port_or_known_default().unwrap_or(80);
+        let addr_str = format!("{}:{}", host, port);
+        
+        let mut addrs = tokio::net::lookup_host(&addr_str).await
+            .map_err(|e| multi_agent_core::Error::governance(format!("DNS resolution failed for {}: {}", host, e)))?;
+        
+        // Use first IP
+        let target_socket = addrs.next().ok_or_else(|| multi_agent_core::Error::governance(format!("No IP addresses found for {}", host)))?;
+        let target_ip = target_socket.ip();
+
+        // Validate IP
+        if let Err(e) = policy.check_ip(target_ip) {
+            return Err(multi_agent_core::Error::governance(format!("Network policy denied IP {}: {}", target_ip, e)));
+        }
+
+        // 3. Prepare Request (IP Pinning)
+        let mut safe_url = url.clone();
+        if safe_url.set_host(Some(&target_ip.to_string())).is_err() {
+            return Err(multi_agent_core::Error::governance(format!("Failed to set safe IP host: {}", target_ip)));
+        }
+
+        let mut req_builder = client.request(method.clone(), safe_url)
+            .header("Host", host);
+        
+        if let Some(h) = headers {
+            req_builder = req_builder.headers(h.clone());
+        }
+
+        // Only attach body if method allows AND we aren't redirected to GET
+        if method != reqwest::Method::GET {
+             if let Some(b) = body {
+                 req_builder = req_builder.body(b.clone());
+             }
+        }
+
+        let resp = req_builder.send().await
+            .map_err(|e| multi_agent_core::Error::governance(format!("Request failed: {}", e)))?;
+
+        // 4. Handle Redirects
+        if resp.status().is_redirection() {
+            if let Some(loc) = resp.headers().get(reqwest::header::LOCATION) {
+                let loc_str = loc.to_str().map_err(|e| multi_agent_core::Error::governance(format!("Invalid Location header: {}", e)))?;
+                // Parse relative or absolute
+                let next_url = url.join(loc_str)
+                    .map_err(|e| multi_agent_core::Error::governance(format!("Invalid redirect URL {}: {}", loc_str, e)))?;
+                
+                // Determine next method
+                let status = resp.status();
+                if status == reqwest::StatusCode::MOVED_PERMANENTLY || // 301
+                   status == reqwest::StatusCode::FOUND ||             // 302
+                   status == reqwest::StatusCode::SEE_OTHER {          // 303
+                    method = reqwest::Method::GET;
+                    // Body will be dropped in next iteration due to check above
+                }
+                
+                url = next_url;
+                continue;
+            }
+        }
+
+        // Check Content-Length if present
+        if let Some(cl) = resp.headers().get(reqwest::header::CONTENT_LENGTH) {
+            if let Ok(cl_str) = cl.to_str() {
+                if let Ok(size) = cl_str.parse::<u64>() {
+                    if size > safety.max_download_size_bytes {
+                        return Err(multi_agent_core::Error::governance(format!(
+                            "Content-Length {} exceeds limit {}",
+                            size, safety.max_download_size_bytes
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Check Content-Type if present
+        if !safety.allowed_content_types.is_empty() {
+            if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE) {
+                let ct_str = ct.to_str().unwrap_or("");
+                let mut allowed = false;
+                for a in &safety.allowed_content_types {
+                    if ct_str.starts_with(a) {
+                        allowed = true;
+                        break;
+                    }
+                }
+                if !allowed {
+                     return Err(multi_agent_core::Error::governance(format!("Content-Type '{}' not allowed", ct_str)));
+                }
+            }
+        }
+
+        return Ok(resp);
+    }
+    
+    Err(multi_agent_core::Error::governance(format!("Too many redirects (max {})", MAX_REDIRECTS)))
+}

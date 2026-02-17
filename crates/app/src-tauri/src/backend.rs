@@ -7,12 +7,15 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use multi_agent_controller::ReActController;
 use multi_agent_core::traits::{ArtifactStore, SessionStore, ToolRegistry};
 use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
+use multi_agent_gateway::research::ResearchOrchestrator;
+use multi_agent_governance::approval::{ChannelApprovalGate, ToolRiskLevel};
 use multi_agent_skills::{
     load_mcp_config, CalculatorTool, CompositeToolRegistry, DefaultToolRegistry, EchoTool,
     McpRegistry,
 };
 use multi_agent_store::{
     InMemorySessionStore, InMemoryStore, RedisSessionStore, S3ArtifactStore, TieredStore,
+    knowledge::InMemoryKnowledgeStore,
 };
 
 /// A writer that broadcasts log lines to a channel.
@@ -206,14 +209,14 @@ pub async fn start_server() -> Result<()> {
             {
                 Ok(policy) => {
                     tracing::info!("Loaded network policy from {}", policy_path);
-                    Arc::new(policy)
+                    Arc::new(tokio::sync::RwLock::new(policy))
                 }
                 Err(e) => {
                     tracing::error!(
                         "Failed to parse network policy: {}. Using Deny-All default.",
                         e
                     );
-                    Arc::new(multi_agent_governance::network::NetworkPolicy::default())
+                    Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default()))
                 }
             },
             Err(e) => {
@@ -221,7 +224,7 @@ pub async fn start_server() -> Result<()> {
                     "Failed to read network policy: {}. Using Deny-All default.",
                     e
                 );
-                Arc::new(multi_agent_governance::network::NetworkPolicy::default())
+                Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default()))
             }
         }
     } else {
@@ -237,12 +240,13 @@ pub async fn start_server() -> Result<()> {
                 let _ = std::fs::write(policy_path, yaml);
             }
         }
-        Arc::new(multi_agent_governance::network::NetworkPolicy::default())
+        Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default()))
     };
 
     local_registry
         .register(Box::new(multi_agent_skills::network::FetchTool::new(
             network_policy.clone(),
+            app_config.safety.clone(),
         )))
         .await?;
 
@@ -250,6 +254,7 @@ pub async fn start_server() -> Result<()> {
         local_registry
             .register(Box::new(multi_agent_skills::network::DownloadTool::new(
                 network_policy.clone(),
+                app_config.safety.clone(),
                 manager,
             )))
             .await?;
@@ -486,11 +491,31 @@ thresholds:
         tls: app_config.gateway.tls.clone(),
     };
 
+    // =========================================================================
+    // Initialize Research P0 Components
+    // =========================================================================
+    let approval_gate = Arc::new(ChannelApprovalGate::new(ToolRiskLevel::Medium));
+    let knowledge_store = Arc::new(InMemoryKnowledgeStore::new());
+
+    let research_orchestrator = Arc::new(ResearchOrchestrator::new(
+        admin_state.clone(),
+        approval_gate.clone(),
+        network_policy.clone(),
+        Some(policy_engine.clone()),
+        app_config.safety.clone(),
+        store.clone(),
+        knowledge_store.clone(),
+        Some(tx.clone()),
+    ));
+
     let server = GatewayServer::new(gateway_config.clone(), router, cache)
         .with_controller(controller)
         .with_admin(admin_state)
         .with_plugin_manager(plugin_manager)
-        .with_logs_channel(tx); // Pass the broadcast channel to Gateway
+        .with_logs_channel(tx)
+        .with_policy_engine(policy_engine)
+        .with_approval_gate(approval_gate)
+        .with_research_orchestrator(research_orchestrator);
 
     tracing::info!(
         host = %app_config.server.host,

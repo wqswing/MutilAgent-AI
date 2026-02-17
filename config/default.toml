@@ -29,6 +29,8 @@ enable_tracing = true
 audit_log_path = ".sovereign_claw/audit.log"
 audit_log_storage_path = ".sovereign_claw/audit.log.jsonl"
 multiagent_env = "development"
+# Allow external access to admin API (default: false, localhost only)
+admin_allow_external_access = false
 
 [model_gateway]
 # L-M Model Gateway settings

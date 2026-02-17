@@ -75,6 +75,8 @@ pub struct GovernanceConfig {
     pub allow_domains: Vec<String>,
     pub deny_domains: Vec<String>,
     pub json_logs: bool,
+    #[serde(default)]
+    pub admin_allow_external_access: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -153,6 +155,7 @@ impl Default for AppConfig {
                 allow_domains: vec!["*.openai.com".into(), "*.anthropic.com".into()],
                 deny_domains: vec![],
                 json_logs: false,
+                admin_allow_external_access: false,
             },
             model_gateway: ModelGatewayConfig {
                 default_provider: "openai".into(),

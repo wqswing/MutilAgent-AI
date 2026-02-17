@@ -17,145 +17,7 @@ use tokio::sync::RwLock;
 
 const MAX_REDIRECTS: usize = 5;
 
-// Helper to perform request with manual redirect handling and SSRF protection
-async fn fetch_with_policy(
-    client: &reqwest::Client,
-    policy: &tokio::sync::RwLock<NetworkPolicy>,
-    safety: &SafetyConfig,
-    mut method: reqwest::Method,
-    mut url: url::Url,
-    headers: Option<&reqwest::header::HeaderMap>,
-    body: Option<&String>,
-) -> Result<reqwest::Response> {
-    for _ in 0..MAX_REDIRECTS {
-        // Enforce content type on the final response? No, we check after request.
-        // But we must perform checks on every hop if needed? 
-        // We only check body/content-type on the final response mostly.
-        
-        // 1. Check Policy (Domain)
-        {
-            let p = policy.read().await;
-            match p.check(url.as_str()) {
-                Ok(multi_agent_governance::network::NetworkDecision::Allowed) => {}
-                Ok(multi_agent_governance::network::NetworkDecision::Denied(reason)) => {
-                    return Err(Error::tool_execution(format!(
-                        "Network policy denied access to {}: {}",
-                        url, reason
-                    )));
-                }
-                Err(e) => return Err(Error::tool_execution(format!("Policy check failed: {}", e))),
-            }
-        }
-
-        // 2. Resolve IP & Check
-        let host = url.host_str().ok_or_else(|| Error::tool_execution("URL has no host".to_string()))?;
-        let port = url.port_or_known_default().unwrap_or(80);
-        let addr_str = format!("{}:{}", host, port);
-        
-        let mut addrs = tokio::net::lookup_host(&addr_str).await
-            .map_err(|e| Error::tool_execution(format!("DNS resolution failed for {}: {}", host, e)))?;
-        
-        // Use first IP
-        let target_socket = addrs.next().ok_or_else(|| Error::tool_execution(format!("No IP addresses found for {}", host)))?;
-        let target_ip = target_socket.ip();
-
-        // Validate IP
-        {
-            let p = policy.read().await;
-            if let Err(e) = p.check_ip(target_ip) {
-                return Err(Error::tool_execution(format!("Network policy denied IP {}: {}", target_ip, e)));
-            }
-        }
-
-        // 3. Prepare Request (IP Pinning)
-        let mut safe_url = url.clone();
-        if safe_url.set_host(Some(&target_ip.to_string())).is_err() {
-            return Err(Error::tool_execution(format!("Failed to set safe IP host: {}", target_ip)));
-        }
-
-        let mut req_builder = client.request(method.clone(), safe_url)
-            .header("Host", host);
-        
-        if let Some(h) = headers {
-            req_builder = req_builder.headers(h.clone());
-        }
-
-        // Only attach body if method allows (or if we are keeping generic)
-        // For redirects, we need to handle body dropping logic if we change method
-        if let Some(b) = body {
-             req_builder = req_builder.body(b.clone());
-        }
-
-        let resp = req_builder.send().await
-            .map_err(|e| Error::tool_execution(format!("Request failed: {}", e)))?;
-
-        // 4. Handle Redirects
-        if resp.status().is_redirection() {
-            if let Some(loc) = resp.headers().get(reqwest::header::LOCATION) {
-                let loc_str = loc.to_str().map_err(|e| Error::tool_execution(format!("Invalid Location header: {}", e)))?;
-                // Parse relative or absolute
-                let next_url = url.join(loc_str)
-                    .map_err(|e| Error::tool_execution(format!("Invalid redirect URL {}: {}", loc_str, e)))?;
-                
-                // Determine next method/body
-                let status = resp.status();
-                if status == reqwest::StatusCode::MOVED_PERMANENTLY || // 301
-                   status == reqwest::StatusCode::FOUND ||             // 302
-                   status == reqwest::StatusCode::SEE_OTHER {          // 303
-                    method = reqwest::Method::GET;
-                    // Body is usually dropped for GET, we pass None in next iteration implicitly?
-                    // But we pass 'body' arg. We should update local 'body' ref or logic?
-                    // Actually, if we switch to GET, we should ignore 'body' in next iteration?
-                    // We can just keep 'method' as GET. Logic above adds body if 'body' is Some. 
-                    // reqwest/http might ignore body for GET? Or sending GET with body is allowed but discouraged?
-                    // Better to clear body if switching to GET.
-                    // But 'body' is immutable arg.
-                    // We'll need a flag `use_body`.
-                }
-                
-                url = next_url;
-                continue;
-            }
-        }
-
-
-
-        // Check Content-Length if present
-        if let Some(cl) = resp.headers().get(reqwest::header::CONTENT_LENGTH) {
-            if let Ok(cl_str) = cl.to_str() {
-                if let Ok(size) = cl_str.parse::<u64>() {
-                    if size > safety.max_download_size_bytes {
-                        return Err(Error::tool_execution(format!(
-                            "Content-Length {} exceeds limit {}",
-                            size, safety.max_download_size_bytes
-                        )));
-                    }
-                }
-            }
-        }
-
-        // Check Content-Type if present
-        if !safety.allowed_content_types.is_empty() {
-            if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE) {
-                let ct_str = ct.to_str().unwrap_or("");
-                let mut allowed = false;
-                for a in &safety.allowed_content_types {
-                    if ct_str.starts_with(a) {
-                        allowed = true;
-                        break;
-                    }
-                }
-                if !allowed {
-                     return Err(Error::tool_execution(format!("Content-Type '{}' not allowed", ct_str)));
-                }
-            }
-        }
-
-        return Ok(resp);
-    }
-    
-    Err(Error::tool_execution(format!("Too many redirects (max {})", MAX_REDIRECTS)))
-}
+// Local fetch_with_policy removed in favor of multi_agent_governance::network::fetch_with_policy
 
 /// Tool for fetching text/json content from a URL (GET/POST).
 #[derive(Clone)]
@@ -235,15 +97,15 @@ impl Tool for FetchTool {
         };
 
         // Use helper
-        let resp = fetch_with_policy(
+        let resp = multi_agent_governance::network::fetch_with_policy(
             &self.client,
-            &self.policy,
+            &self.policy.read().await,
             &self.safety,
             method,
             url,
             Some(&headers),
             args.body.as_ref()
-        ).await?;
+        ).await.map_err(|e| Error::tool_execution(e.to_string()))?;
         
         let status = resp.status();
         
@@ -352,15 +214,15 @@ impl Tool for DownloadTool {
         };
 
         // Download is GET, no body, no custom headers from args (for now)
-        let resp = fetch_with_policy(
+        let resp = multi_agent_governance::network::fetch_with_policy(
             &self.client,
-            &self.policy,
+            &self.policy.read().await,
             &self.safety,
             reqwest::Method::GET,
             url,
             None,
             None
-        ).await?;
+        ).await.map_err(|e| Error::tool_execution(e.to_string()))?;
 
         if !resp.status().is_success() {
              return Err(Error::tool_execution(format!("HTTP Error {}", resp.status())));

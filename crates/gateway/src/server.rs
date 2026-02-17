@@ -594,7 +594,10 @@ async fn put_policy_handler(
             let mut engine = engine.write().await;
 
             // Persist to disk
-            let policy_path = ".sovereign_claw/policies/default.yaml";
+            let policy_path = std::path::Path::new(".sovereign_claw/policies/default.yaml");
+            if let Some(parent) = policy_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
             if let Ok(content) = serde_yaml::to_string(&payload) {
                 if let Err(e) = std::fs::write(policy_path, content) {
                     tracing::error!("Failed to persist policy: {}", e);
@@ -1309,7 +1312,47 @@ async fn bearer_auth_middleware(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    // 1. Extract Authorization header
+    use axum_extra::extract::cookie::CookieJar;
+
+    // Check for Admin Token first (if configured)
+    if let Some(admin_secret) = &state.app_config.governance.admin_token {
+        use secrecy::ExposeSecret;
+        let admin_token_str = admin_secret.expose_secret();
+
+        // 1. Check Header: x-admin-token
+        let header_token = req.headers()
+            .get("x-admin-token")
+            .and_then(|h| h.to_str().ok());
+
+        // 2. Check Cookie: admin_token
+        let cookie_token = if header_token.is_none() {
+            let jar = CookieJar::from_headers(req.headers());
+            jar.get("admin_token").map(|c| c.value().to_string())
+        } else {
+            None
+        };
+
+        let candidate = header_token.or(cookie_token.as_deref());
+
+        if let Some(t) = candidate {
+            if t == admin_token_str {
+                // Determine user identity
+                // For admin token, we create a superuser identity
+                let user = multi_agent_governance::rbac::UserContext {
+                    user_id: "admin".to_string(),
+                    roles: vec!["admin".to_string()],
+                    permissions: vec!["*".to_string()], // Superuser
+                    session_id: None,
+                };
+                
+                let mut req = req;
+                req.extensions_mut().insert(user);
+                return next.run(req).await;
+            }
+        }
+    }
+
+    // 3. Fallback to Standard Bearer Auth (RBAC)
     let auth_header = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
@@ -1318,21 +1361,17 @@ async fn bearer_auth_middleware(
     let token = match auth_header {
         Some(h) if h.starts_with("Bearer ") => &h[7..],
         _ => {
-            // Check if we allow anonymous access (only for health checks if moved)
-            // But here we enforce it for all v1/agent and v1/admin
             return (StatusCode::UNAUTHORIZED, "Missing or invalid authorization header").into_response();
         }
     };
 
-    // 2. Validate token
-    // We try to get RBAC from AdminState if available
+    // Validate RBAC token
     let rbac = state.admin_state.as_ref().map(|s| s.rbac.clone());
 
     match rbac {
         Some(rbac) => {
             match rbac.validate(token).await {
                 Ok(user) => {
-                    // Inject user info into request extensions
                     let mut req = req;
                     req.extensions_mut().insert(user);
                     next.run(req).await
@@ -1344,7 +1383,6 @@ async fn bearer_auth_middleware(
             }
         }
         None => {
-            // If no RBAC configured, we might allow during bootstrap or fail-closed
             tracing::error!("Auth middleware active but no RBAC connector configured");
             (StatusCode::INTERNAL_SERVER_ERROR, "Authentication system misconfigured").into_response()
         }
@@ -1353,11 +1391,12 @@ async fn bearer_auth_middleware(
 
 /// Middleware to restrict access to localhost.
 async fn restrict_to_localhost(
+    State(state): State<Arc<AppState>>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    if addr.ip().is_loopback() {
+    if state.app_config.governance.admin_allow_external_access || addr.ip().is_loopback() {
         next.run(req).await
     } else {
         tracing::warn!(client_ip = %addr.ip(), "Blocked non-localhost access to Admin API");
