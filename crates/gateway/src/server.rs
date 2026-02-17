@@ -5,8 +5,8 @@ use axum::{
         ws::{Message, WebSocket},
         Json, Path, State, WebSocketUpgrade,
     },
-    http::StatusCode,
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
@@ -27,6 +27,7 @@ use multi_agent_core::{
     Result,
 };
 use multi_agent_governance::approval::ChannelApprovalGate;
+use crate::idempotency::{IdempotencyLookup, IdempotencyStore};
 
 /// Gateway configuration.
 #[derive(Debug, Clone)]
@@ -88,6 +89,8 @@ pub struct AppState {
     pub app_config: multi_agent_core::config::AppConfig,
     /// Research orchestrator for P0 workflow.
     pub research_orchestrator: Option<Arc<crate::research::ResearchOrchestrator>>,
+    /// Idempotency store for side-effect endpoints.
+    pub idempotency_store: Arc<IdempotencyStore>,
 }
 
 impl AppState {
@@ -135,6 +138,7 @@ impl GatewayServer {
                 plugin_manager: None,
                 app_config: multi_agent_core::config::AppConfig::load().unwrap_or_default(),
                 research_orchestrator: None,
+                idempotency_store: Arc::new(IdempotencyStore::new()),
             }),
             metrics_handle: None,
             admin_state: None,
@@ -246,10 +250,10 @@ impl GatewayServer {
         let agent_router = Router::new()
             .route("/chat", post(chat_handler))
             .route("/intent", post(intent_handler))
-            .route("/webhook/{event_type}", post(webhook_handler))
+            .route("/webhook/:event_type", post(webhook_handler))
             .route("/ws/approval", get(approval_ws_handler))
             .route("/ws/logs", get(logs_ws_handler))
-            .route("/approve/{request_id}", post(approve_rest_handler))
+            .route("/approve/:request_id", post(approve_rest_handler))
             .route("/onboarding/status", get(onboarding_status_handler))
             .route("/onboarding/setup", post(onboarding_setup_handler))
             .route("/research", post(research_handler))
@@ -267,6 +271,8 @@ impl GatewayServer {
             .route("/health", get(health_handler))
             .route("/v1/chat", post(chat_handler))
             .route("/v1/intent", post(intent_handler))
+            .route("/v1/webhook/:event_type", post(webhook_handler))
+            .route("/v1/approve/:request_id", post(approve_rest_handler))
             .with_state(self.state.clone());
 
         // Admin API
@@ -875,6 +881,7 @@ pub struct WebhookResponse {
 /// as system events through the normal intent routing pipeline.
 async fn webhook_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Path(event_type): Path<String>,
     Json(payload): Json<WebhookPayload>,
 ) -> impl IntoResponse {
@@ -886,11 +893,45 @@ async fn webhook_handler(
         "Received webhook event"
     );
 
+    let idempotency_key = headers
+        .get("Idempotency-Key")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let request_fingerprint = serde_json::json!({
+        "event_type": event_type,
+        "payload": payload.data,
+    });
+    let request_hash = IdempotencyStore::hash_payload(&request_fingerprint);
+    if let Some(ref key) = idempotency_key {
+        match state.idempotency_store.check("webhook", key, &request_hash) {
+            IdempotencyLookup::Replay(record) => {
+                let status = StatusCode::from_u16(record.status).unwrap_or(StatusCode::OK);
+                return (status, Json(record.body)).into_response();
+            }
+            IdempotencyLookup::Conflict => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(ApiEnvelope::success(
+                        trace_id.clone(),
+                        ApiErrorBody::new(
+                            ApiErrorCode::Conflict,
+                            "Idempotency key reused with different payload",
+                            false,
+                        ),
+                    )),
+                )
+                    .into_response();
+            }
+            IdempotencyLookup::Miss => {}
+        }
+    }
+
     // Create a normalized request from the system event
     let event_summary = format!(
         "System event: {} - {}",
         event_type,
-        serde_json::to_string(&payload.data)
+        serde_json::to_string(&request_fingerprint["payload"])
             .unwrap_or_else(|_| "invalid payload".to_string())
             .chars()
             .take(200)
@@ -902,7 +943,7 @@ async fn webhook_handler(
         content: event_summary.clone(),
         original_content: RequestContent::SystemEvent {
             event_type: event_type.clone(),
-            payload: payload.data,
+            payload: request_fingerprint["payload"].clone(),
         },
         refs: Vec::new(),
         metadata: RequestMetadata::default(),
@@ -926,14 +967,32 @@ async fn webhook_handler(
 
     // For now, just acknowledge the event
     // In full implementation, we would execute via controller
+    let response_body = ApiEnvelope::success(trace_id.clone(), WebhookResponse {
+        trace_id,
+        accepted: true,
+        message: Some(format!("Event '{}' received", event_type)),
+        intent,
+    });
+    let response_value = serde_json::to_value(&response_body).unwrap_or_else(|_| {
+        serde_json::json!({
+            "version": GATEWAY_CONTRACT_VERSION,
+            "trace_id": "",
+            "data": { "accepted": false, "message": "serialization error" },
+        })
+    });
+    if let Some(key) = idempotency_key {
+        state.idempotency_store.store(
+            "webhook",
+            &key,
+            request_hash,
+            StatusCode::OK.as_u16(),
+            response_value.clone(),
+        );
+    }
+
     (
         StatusCode::OK,
-        Json(ApiEnvelope::success(trace_id.clone(), WebhookResponse {
-            trace_id,
-            accepted: true,
-            message: Some(format!("Event '{}' received", event_type)),
-            intent,
-        })),
+        Json(response_value),
     )
         .into_response()
 }
@@ -1143,18 +1202,74 @@ async fn handle_logs_ws(state: Arc<AppState>, mut socket: WebSocket) {
 /// `POST /v1/approve/:request_id`
 async fn approve_rest_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Path(request_id): Path<String>,
     Json(payload): Json<ApproveRequest>,
 ) -> impl IntoResponse {
+    let trace_id = Uuid::new_v4().to_string();
+    let idempotency_key = headers
+        .get("Idempotency-Key")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let request_fingerprint = serde_json::json!({
+        "request_id": request_id,
+        "nonce": payload.nonce,
+        "decision": payload.decision,
+        "reason": payload.reason,
+        "reason_code": payload.reason_code,
+    });
+    let request_hash = IdempotencyStore::hash_payload(&request_fingerprint);
+    if let Some(ref key) = idempotency_key {
+        match state.idempotency_store.check("approve", key, &request_hash) {
+            IdempotencyLookup::Replay(record) => {
+                let status = StatusCode::from_u16(record.status).unwrap_or(StatusCode::OK);
+                return (status, Json(record.body)).into_response();
+            }
+            IdempotencyLookup::Conflict => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(ApiEnvelope::success(
+                        trace_id.clone(),
+                        ApiErrorBody::new(
+                            ApiErrorCode::Conflict,
+                            "Idempotency key reused with different payload",
+                            false,
+                        ),
+                    )),
+                )
+                    .into_response();
+            }
+            IdempotencyLookup::Miss => {}
+        }
+    }
+
+    let finalize = |status: StatusCode, body: ApproveResponse| -> Response {
+        let wrapped = ApiEnvelope::success(trace_id.clone(), body);
+        if let Some(ref key) = idempotency_key {
+            if let Ok(value) = serde_json::to_value(&wrapped) {
+                state.idempotency_store.store(
+                    "approve",
+                    key,
+                    request_hash.clone(),
+                    status.as_u16(),
+                    value.clone(),
+                );
+                return (status, Json(value)).into_response();
+            }
+        }
+        (status, Json(wrapped)).into_response()
+    };
+
     let gate = match &state.approval_gate {
         Some(gate) => gate.clone(),
         None => {
-            return (
+            return finalize(
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(ApproveResponse {
+                ApproveResponse {
                     accepted: false,
                     message: "Approval gate not configured".into(),
-                }),
+                },
             );
         }
     };
@@ -1178,33 +1293,33 @@ async fn approve_rest_handler(
                 .unwrap_or_else(|| "USER_DENIED".to_string()),
         },
         _ => {
-            return (
+            return finalize(
                 StatusCode::BAD_REQUEST,
-                Json(ApproveResponse {
+                ApproveResponse {
                     accepted: false,
                     message: format!(
                         "Unknown decision: '{}'. Use 'approved' or 'denied'.",
                         payload.decision
                     ),
-                }),
+                },
             );
         }
     };
 
     match gate.submit_response(&request_id, &payload.nonce, response).await {
-        Ok(()) => (
+        Ok(()) => finalize(
             StatusCode::OK,
-            Json(ApproveResponse {
+            ApproveResponse {
                 accepted: true,
                 message: format!("Response submitted for request '{}'", request_id),
-            }),
+            },
         ),
-        Err(e) => (
+        Err(e) => finalize(
             StatusCode::NOT_FOUND,
-            Json(ApproveResponse {
+            ApproveResponse {
                 accepted: false,
                 message: e,
-            }),
+            },
         ),
     }
 }
@@ -1251,6 +1366,7 @@ mod tests {
             plugin_manager: None,
             app_config: multi_agent_core::config::AppConfig::default(),
             research_orchestrator: None,
+            idempotency_store: Arc::new(IdempotencyStore::new()),
         });
 
         let app = Router::new()

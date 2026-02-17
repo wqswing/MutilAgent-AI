@@ -168,3 +168,81 @@ async fn test_gateway_schema_endpoint() {
     assert_eq!(json["version"], "v1");
     assert!(json["schema"]["$schema"].is_string());
 }
+
+#[tokio::test]
+async fn test_webhook_idempotency_replay_and_conflict() {
+    let config = GatewayConfig::default();
+    let router = Arc::new(MockRouter::complex_mission("test"));
+    let cache = Arc::new(MockSemanticCache::new());
+    let server = GatewayServer::new(config, router, cache);
+    let app = server.build_router();
+
+    let key = "idem-webhook-1";
+    let body = json!({"event":"user.created","id":"u-1"}).to_string();
+
+    let first = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/webhook/user_created")
+                .header("Content-Type", "application/json")
+                .header("Idempotency-Key", key)
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(body.clone()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_status = first.status();
+    let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+        .await
+        .unwrap();
+
+    let replay = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/webhook/user_created")
+                .header("Content-Type", "application/json")
+                .header("Idempotency-Key", key)
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(replay.status(), first_status);
+    let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(first_body, replay_body);
+
+    let conflict = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/webhook/user_created")
+                .header("Content-Type", "application/json")
+                .header("Idempotency-Key", key)
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(
+                    json!({"event":"user.deleted","id":"u-1"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+}
