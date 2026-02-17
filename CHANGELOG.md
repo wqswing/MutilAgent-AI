@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.5] - 2026-02-17
+
+### 🛡️ Egress & Policy Hardening (P0/P1)
+- **Egress Convergence**:
+    - Centralized all network egress logic in `crates/governance` -> `fetch_with_policy`.
+    - Enforced strict allow/deny list checks, IP filtering, and SSRF protection for all Research Agent requests.
+    - Added redirect safety (dropping bodies on GET redirects) and max response size limits.
+- **Policy-Driven Approval**:
+    - Replaced hardcoded approval triggers with dynamic risk scoring from `policy.yaml`.
+    - Integrated `PolicyEngine` into `ResearchOrchestrator` to evaluate plan risk before execution.
+- **Authentication & Access**:
+    - **Console Auth**: Added `x-admin-token` header and cookie support for admin API access.
+    - **Configurable External Access**: New `admin_allow_external_access` config to safely expose admin endpoints (e.g., K8s Ingress).
+- **Robustness**:
+    - Fixed `std::fs` panic in policy saving by ensuring directory existence.
+
 ## [v1.0.4] - 2026-02-17
 
 ### 🚀 Major Features

@@ -5,7 +5,7 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/wqswing/MultiAgent-AI/actions)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](Dockerfile)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Version](https://img.shields.io/badge/version-1.0.4-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v1.0.4)
+[![Version](https://img.shields.io/badge/version-1.0.5-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v1.0.5)
 
 Multiagent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching, vector memory, and circuit breakers.
 
@@ -26,7 +26,9 @@ Multiagent is a production-grade, layered AI agent framework built in Rust. It i
 - **Circuit Breaker**: Automatic failure detection and isolation for LLM providers.
 
 ### 🛡️ Governance & Security
-- **Guardrails**: Integrated PII detection, prompt injection mitigation, and custom policy enforcement.
+- **Unified Egress Control**: Centralized `fetch_with_policy` mechanism enforcing allow/deny lists, IP filtering, and SSRF protection for all outbound requests.
+- **Policy-Driven Approval**: Risk-based human-in-the-loop approval gates triggered by configurable thresholds in `policy.yaml`.
+- **Console Authentication**: Secure admin access via `x-admin-token` header or cookie, with configurable external access controls.
 - **Tamper-Evident Auditing**: SHA-256 hash chaining for all administrative actions with SQLite persistence.
 - **Airlock Networking**: Fine-grained network governance and domain allowlisting for agent tools.
 - **Sovereign Sandbox**: Secure, isolated Docker environment for executing untrusted tool code.

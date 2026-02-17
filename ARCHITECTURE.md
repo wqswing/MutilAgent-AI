@@ -113,7 +113,7 @@ This section provides a mapping of project "Selling Points" to their technical i
 | **Audit Chain** | `AuditStore`, `AdminConfig` | `/v1/admin/audit` | `ADMIN_ACTION`, `EXPORT_ZIP` | `tests/governance_test.rs` |
 | **Human Approval** | `ApprovalGate`, `Tools.risk` | `/v1/admin/approvals` | `APPROVAL_REQUEST`, `DECISION` | `tests/governance_test.rs` |
 | **PII/Guardrails** | `SecurityCapability` | *Transparent Middleware* | `PII_BLOCK`, `INJECTION_DETECT` | `tests/governance_test.rs` |
-| **Airlock (Egress)** | `DomainGovernance` | `/v1/admin/domains` | `EGRESS_REQUEST`, `EGRESS_RESULT` | `tests/governance_test.rs`* |
+| **Airlock (Egress)** | `NetworkPolicy`, `fetch_with_policy` | `/v1/admin/domains` | `EGRESS_REQUEST`, `EGRESS_RESULT` | `crates/governance/src/network.rs` |
 | **Budget Control** | `ReActConfig.budget` | `/v1/chat` | `BUDGET_EXCEEDED` | `test_budget_exceeded` |
 
-*> Note: Egress monitoring is currently implemented in `multi_agent_gateway::research` for the Research Agent.*
+*> Note: Egress control is now unified in `multi_agent_governance::network`.*
