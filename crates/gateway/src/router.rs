@@ -1,10 +1,12 @@
 //! Intent router for classifying incoming requests.
 
 use async_trait::async_trait;
+use serde::Deserialize;
 use serde_json::json;
+use std::sync::Arc;
 
 use multi_agent_core::{
-    traits::IntentRouter,
+    traits::{ChatMessage, IntentRouter, LlmClient, ToolRegistry},
     types::{NormalizedRequest, UserIntent},
     Result,
 };
@@ -47,15 +49,30 @@ const COMPLEX_MISSION_KEYWORDS: &[&str] = &[
     "generate",
 ];
 
-/// Default router implementation using keyword-based classification.
+#[derive(Debug, Deserialize)]
+struct LlmIntentDecision {
+    intent_type: String,
+    tool_name: Option<String>,
+    args: Option<serde_json::Value>,
+    goal: Option<String>,
+    confidence: Option<f32>,
+}
+
+/// Default router implementation.
 ///
-/// In a production system, this would use an LLM (e.g., GPT-4o-mini)
-/// for more accurate intent classification.
+/// If configured with an LLM + ToolRegistry, it performs capability-driven intent
+/// classification first. Keyword routing remains as deterministic fallback.
 pub struct DefaultRouter {
     /// Custom fast action patterns.
     fast_patterns: Vec<String>,
     /// Custom complex mission patterns.
     complex_patterns: Vec<String>,
+    /// Optional LLM classifier.
+    llm_client: Option<Arc<dyn LlmClient>>,
+    /// Optional runtime tool capability source.
+    tool_registry: Option<Arc<dyn ToolRegistry>>,
+    /// Minimum confidence required to trust LLM classification.
+    llm_min_confidence: f32,
 }
 
 impl DefaultRouter {
@@ -64,7 +81,27 @@ impl DefaultRouter {
         Self {
             fast_patterns: Vec::new(),
             complex_patterns: Vec::new(),
+            llm_client: None,
+            tool_registry: None,
+            llm_min_confidence: 0.6,
         }
+    }
+
+    /// Enable LLM-based intent classification.
+    pub fn with_llm_classifier(
+        mut self,
+        llm_client: Arc<dyn LlmClient>,
+        tool_registry: Arc<dyn ToolRegistry>,
+    ) -> Self {
+        self.llm_client = Some(llm_client);
+        self.tool_registry = Some(tool_registry);
+        self
+    }
+
+    /// Override the confidence threshold for LLM routing.
+    pub fn with_llm_min_confidence(mut self, threshold: f32) -> Self {
+        self.llm_min_confidence = threshold;
+        self
     }
 
     /// Add a custom fast action pattern.
@@ -83,14 +120,12 @@ impl DefaultRouter {
     fn is_fast_action(&self, content: &str) -> bool {
         let lower = content.to_lowercase();
 
-        // Check custom patterns first
         for pattern in &self.fast_patterns {
             if lower.contains(&pattern.to_lowercase()) {
                 return true;
             }
         }
 
-        // Check default keywords
         for keyword in FAST_ACTION_KEYWORDS {
             if lower.starts_with(keyword) || lower.contains(&format!(" {}", keyword)) {
                 return true;
@@ -104,27 +139,23 @@ impl DefaultRouter {
     fn is_complex_mission(&self, content: &str) -> bool {
         let lower = content.to_lowercase();
 
-        // Check custom patterns first
         for pattern in &self.complex_patterns {
             if lower.contains(&pattern.to_lowercase()) {
                 return true;
             }
         }
 
-        // Check default keywords
         for keyword in COMPLEX_MISSION_KEYWORDS {
             if lower.contains(keyword) {
                 return true;
             }
         }
 
-        // If there are visual references, it's likely complex
         false
     }
 
     /// Extract a goal from the content.
     fn extract_goal(&self, content: &str) -> String {
-        // Simple extraction: use the first sentence or first 200 chars
         let goal = content.split(['.', '!', '?']).next().unwrap_or(content);
 
         if goal.len() > 200 {
@@ -138,7 +169,6 @@ impl DefaultRouter {
     fn extract_tool_name(&self, content: &str) -> String {
         let lower = content.to_lowercase();
 
-        // Map common intents to tools
         if lower.contains("search") || lower.contains("find") {
             "search".to_string()
         } else if lower.contains("calculate") || lower.contains("compute") {
@@ -149,6 +179,158 @@ impl DefaultRouter {
             "list".to_string()
         } else {
             "generic".to_string()
+        }
+    }
+
+    fn extract_json_object(content: &str) -> Option<String> {
+        if serde_json::from_str::<serde_json::Value>(content).is_ok() {
+            return Some(content.to_string());
+        }
+
+        let start = content.find('{')?;
+        let end = content.rfind('}')?;
+        if end > start {
+            Some(content[start..=end].to_string())
+        } else {
+            None
+        }
+    }
+
+    fn build_llm_prompt(request: &NormalizedRequest, tool_context: &str) -> Vec<ChatMessage> {
+        vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "You are an intent router. Return ONLY compact JSON with keys: intent_type (fast_action|complex_mission), tool_name (optional), args (optional object), goal (optional), confidence (0..1).".to_string(),
+                tool_calls: None,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: format!(
+                    "message: {}\nrefs_count: {}\navailable_tools: {}",
+                    request.content,
+                    request.refs.len(),
+                    tool_context
+                ),
+                tool_calls: None,
+            },
+        ]
+    }
+
+    async fn classify_with_llm(
+        &self,
+        request: &NormalizedRequest,
+    ) -> std::result::Result<(UserIntent, serde_json::Value), &'static str> {
+        let llm = self.llm_client.as_ref().ok_or("llm_not_configured")?;
+        let tool_registry = self
+            .tool_registry
+            .as_ref()
+            .ok_or("tool_registry_not_configured")?;
+
+        let tools = tool_registry
+            .list()
+            .await
+            .map_err(|_| "tool_registry_list_failed")?;
+        let tool_names: std::collections::HashSet<String> =
+            tools.iter().map(|t| t.name.clone()).collect();
+        let tool_context = tools
+            .iter()
+            .map(|t| format!("{}: {}", t.name, t.description))
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        let messages = Self::build_llm_prompt(request, &tool_context);
+        let response = llm.chat(&messages).await.map_err(|_| "llm_call_failed")?;
+        let json_str = Self::extract_json_object(&response.content).ok_or("llm_invalid_json")?;
+        let decision: LlmIntentDecision =
+            serde_json::from_str(&json_str).map_err(|_| "llm_invalid_json")?;
+
+        let confidence = decision.confidence.unwrap_or(0.0);
+        if confidence < self.llm_min_confidence {
+            tracing::debug!(confidence = confidence, "LLM intent below confidence threshold");
+            return Err("llm_low_confidence");
+        }
+
+        let user_id = request.metadata.user_id.clone();
+        match decision.intent_type.as_str() {
+            "fast_action" => {
+                let tool_name = decision.tool_name.ok_or("llm_missing_tool_name")?;
+                if !tool_names.contains(&tool_name) {
+                    tracing::debug!(tool = %tool_name, "LLM selected unavailable tool; falling back");
+                    return Err("llm_unknown_tool");
+                }
+                Ok((
+                    UserIntent::FastAction {
+                        tool_name,
+                        args: decision
+                            .args
+                            .unwrap_or_else(|| json!({ "query": request.content })),
+                        user_id,
+                    },
+                    serde_json::json!({
+                        "routing": {
+                            "source": "llm",
+                            "confidence": confidence,
+                            "fallback_reason": serde_json::Value::Null
+                        }
+                    }),
+                ))
+            }
+            "complex_mission" => Ok((
+                UserIntent::ComplexMission {
+                    goal: decision
+                        .goal
+                        .unwrap_or_else(|| self.extract_goal(&request.content)),
+                    context_summary: request.content.clone(),
+                    visual_refs: request.refs.iter().map(|r| r.0.clone()).collect(),
+                    user_id,
+                },
+                serde_json::json!({
+                    "routing": {
+                        "source": "llm",
+                        "confidence": confidence,
+                        "fallback_reason": serde_json::Value::Null
+                    }
+                }),
+            )),
+            _ => Err("llm_unusable_decision"),
+        }
+    }
+
+    fn classify_with_rules(&self, request: &NormalizedRequest) -> UserIntent {
+        let content = &request.content;
+        let user_id = request.metadata.user_id.clone();
+
+        if !request.refs.is_empty() {
+            return UserIntent::ComplexMission {
+                goal: self.extract_goal(content),
+                context_summary: content.clone(),
+                visual_refs: request.refs.iter().map(|r| r.0.clone()).collect(),
+                user_id,
+            };
+        }
+
+        if self.is_complex_mission(content) {
+            return UserIntent::ComplexMission {
+                goal: self.extract_goal(content),
+                context_summary: content.clone(),
+                visual_refs: Vec::new(),
+                user_id,
+            };
+        }
+
+        if self.is_fast_action(content) {
+            return UserIntent::FastAction {
+                tool_name: self.extract_tool_name(content),
+                args: json!({ "query": content }),
+                user_id,
+            };
+        }
+
+        UserIntent::ComplexMission {
+            goal: self.extract_goal(content),
+            context_summary: content.clone(),
+            visual_refs: Vec::new(),
+            user_id,
         }
     }
 }
@@ -162,65 +344,104 @@ impl Default for DefaultRouter {
 #[async_trait]
 impl IntentRouter for DefaultRouter {
     async fn classify(&self, request: &NormalizedRequest) -> Result<UserIntent> {
-        let content = &request.content;
-        let user_id = request.metadata.user_id.clone();
+        Ok(self.classify_detailed(request).await?.0)
+    }
 
+    async fn classify_detailed(
+        &self,
+        request: &NormalizedRequest,
+    ) -> Result<(UserIntent, serde_json::Value)> {
         tracing::debug!(
             trace_id = %request.trace_id,
-            content_length = content.len(),
-            user_id = ?user_id,
+            content_length = request.content.len(),
+            user_id = ?request.metadata.user_id,
             "Classifying intent"
         );
 
-        // Check for visual references - complex by default
-        if !request.refs.is_empty() {
-            tracing::debug!(
-                refs_count = request.refs.len(),
-                "Request has references, routing as ComplexMission"
-            );
-            return Ok(UserIntent::ComplexMission {
-                goal: self.extract_goal(content),
-                context_summary: content.clone(),
-                visual_refs: request.refs.iter().map(|r| r.0.clone()).collect(),
-                user_id,
-            });
+        match self.classify_with_llm(request).await {
+            Ok((intent, diagnostics)) => {
+                tracing::debug!("Intent classified via LLM");
+                Ok((intent, diagnostics))
+            }
+            Err(fallback_reason) => {
+                tracing::debug!(fallback_reason = fallback_reason, "Intent classified via fallback rules");
+                Ok((
+                    self.classify_with_rules(request),
+                    serde_json::json!({
+                        "routing": {
+                            "source": "fallback_rules",
+                            "confidence": serde_json::Value::Null,
+                            "fallback_reason": fallback_reason
+                        }
+                    }),
+                ))
+            }
         }
-
-        // Check for complex mission first (higher priority)
-        if self.is_complex_mission(content) {
-            tracing::debug!("Routing as ComplexMission based on keywords");
-            return Ok(UserIntent::ComplexMission {
-                goal: self.extract_goal(content),
-                context_summary: content.clone(),
-                visual_refs: Vec::new(),
-                user_id,
-            });
-        }
-
-        // Check for fast action
-        if self.is_fast_action(content) {
-            tracing::debug!("Routing as FastAction based on keywords");
-            return Ok(UserIntent::FastAction {
-                tool_name: self.extract_tool_name(content),
-                args: json!({ "query": content }),
-                user_id,
-            });
-        }
-
-        // Default to complex mission for ambiguous requests
-        tracing::debug!("Defaulting to ComplexMission for ambiguous request");
-        Ok(UserIntent::ComplexMission {
-            goal: self.extract_goal(content),
-            context_summary: content.clone(),
-            visual_refs: Vec::new(),
-            user_id,
-        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use multi_agent_core::traits::{LlmResponse, LlmUsage, Tool, ToolRegistry};
+    use multi_agent_core::types::{ToolDefinition, ToolOutput};
+    use serde_json::Value;
+
+    struct MockLlm {
+        response: String,
+    }
+
+    #[async_trait]
+    impl LlmClient for MockLlm {
+        async fn complete(&self, _prompt: &str) -> multi_agent_core::Result<LlmResponse> {
+            Ok(LlmResponse {
+                content: self.response.clone(),
+                finish_reason: "stop".to_string(),
+                usage: LlmUsage::default(),
+                tool_calls: None,
+            })
+        }
+
+        async fn chat(&self, _messages: &[ChatMessage]) -> multi_agent_core::Result<LlmResponse> {
+            Ok(LlmResponse {
+                content: self.response.clone(),
+                finish_reason: "stop".to_string(),
+                usage: LlmUsage::default(),
+                tool_calls: None,
+            })
+        }
+
+        async fn embed(&self, _text: &str) -> multi_agent_core::Result<Vec<f32>> {
+            Ok(vec![0.0; 8])
+        }
+    }
+
+    struct MockRegistry {
+        tools: Vec<ToolDefinition>,
+    }
+
+    #[async_trait]
+    impl ToolRegistry for MockRegistry {
+        async fn register(&self, _tool: Box<dyn Tool>) -> multi_agent_core::Result<()> {
+            Ok(())
+        }
+
+        async fn get(&self, _name: &str) -> multi_agent_core::Result<Option<Box<dyn Tool>>> {
+            Ok(None)
+        }
+
+        async fn list(&self) -> multi_agent_core::Result<Vec<ToolDefinition>> {
+            Ok(self.tools.clone())
+        }
+
+        async fn execute(
+            &self,
+            _name: &str,
+            _args: Value,
+        ) -> multi_agent_core::Result<ToolOutput> {
+            Ok(ToolOutput::error("not implemented"))
+        }
+    }
 
     #[tokio::test]
     async fn test_fast_action_classification() {
@@ -271,4 +492,120 @@ mod tests {
             _ => panic!("Expected ComplexMission due to refs"),
         }
     }
+
+    #[tokio::test]
+    async fn test_llm_routing_fast_action_known_tool() {
+        let llm = Arc::new(MockLlm {
+            response: r#"{"intent_type":"fast_action","tool_name":"search","args":{"query":"rust"},"confidence":0.95}"#.to_string(),
+        });
+        let registry = Arc::new(MockRegistry {
+            tools: vec![ToolDefinition {
+                name: "search".to_string(),
+                description: "search web".to_string(),
+                parameters: serde_json::json!({"type":"object"}),
+                supports_streaming: false,
+            }],
+        });
+
+        let router = DefaultRouter::new().with_llm_classifier(llm, registry);
+        let request = NormalizedRequest::text("find rust async examples");
+        let intent = router.classify(&request).await.unwrap();
+
+        match intent {
+            UserIntent::FastAction { tool_name, .. } => assert_eq!(tool_name, "search"),
+            _ => panic!("Expected FastAction"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_llm_unknown_tool_falls_back() {
+        let llm = Arc::new(MockLlm {
+            response: r#"{"intent_type":"fast_action","tool_name":"nonexistent","args":{"query":"rust"},"confidence":0.99}"#.to_string(),
+        });
+        let registry = Arc::new(MockRegistry {
+            tools: vec![ToolDefinition {
+                name: "search".to_string(),
+                description: "search web".to_string(),
+                parameters: serde_json::json!({"type":"object"}),
+                supports_streaming: false,
+            }],
+        });
+
+        let router = DefaultRouter::new().with_llm_classifier(llm, registry);
+        let request = NormalizedRequest::text("search rust ownership");
+        let intent = router.classify(&request).await.unwrap();
+
+        match intent {
+            UserIntent::FastAction { tool_name, .. } => assert_eq!(tool_name, "search"),
+            _ => panic!("Expected FastAction via fallback"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_llm_low_confidence_falls_back() {
+        let llm = Arc::new(MockLlm {
+            response: r#"{"intent_type":"fast_action","tool_name":"search","args":{"query":"rust"},"confidence":0.20}"#.to_string(),
+        });
+        let registry = Arc::new(MockRegistry {
+            tools: vec![ToolDefinition {
+                name: "search".to_string(),
+                description: "search web".to_string(),
+                parameters: serde_json::json!({"type":"object"}),
+                supports_streaming: false,
+            }],
+        });
+
+        let router = DefaultRouter::new().with_llm_classifier(llm, registry);
+        let request = NormalizedRequest::text("search rust lifetimes");
+        let intent = router.classify(&request).await.unwrap();
+
+        match intent {
+            UserIntent::FastAction { tool_name, .. } => assert_eq!(tool_name, "search"),
+            _ => panic!("Expected FastAction via fallback"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_llm_diagnostics_contains_source_and_confidence() {
+        let llm = Arc::new(MockLlm {
+            response: r#"{"intent_type":"fast_action","tool_name":"search","args":{"query":"rust"},"confidence":0.91}"#.to_string(),
+        });
+        let registry = Arc::new(MockRegistry {
+            tools: vec![ToolDefinition {
+                name: "search".to_string(),
+                description: "search web".to_string(),
+                parameters: serde_json::json!({"type":"object"}),
+                supports_streaming: false,
+            }],
+        });
+        let router = DefaultRouter::new().with_llm_classifier(llm, registry);
+        let request = NormalizedRequest::text("search rust trait object");
+
+        let (_, diagnostics) = router.classify_detailed(&request).await.unwrap();
+        assert_eq!(diagnostics["routing"]["source"], "llm");
+        let conf = diagnostics["routing"]["confidence"].as_f64().unwrap();
+        assert!((conf - 0.91).abs() < 1e-3);
+    }
+
+    #[tokio::test]
+    async fn test_fallback_diagnostics_contains_reason() {
+        let llm = Arc::new(MockLlm {
+            response: r#"{"intent_type":"fast_action","tool_name":"missing_tool","confidence":0.95}"#.to_string(),
+        });
+        let registry = Arc::new(MockRegistry {
+            tools: vec![ToolDefinition {
+                name: "search".to_string(),
+                description: "search web".to_string(),
+                parameters: serde_json::json!({"type":"object"}),
+                supports_streaming: false,
+            }],
+        });
+        let router = DefaultRouter::new().with_llm_classifier(llm, registry);
+        let request = NormalizedRequest::text("search rust async");
+
+        let (_, diagnostics) = router.classify_detailed(&request).await.unwrap();
+        assert_eq!(diagnostics["routing"]["source"], "fallback_rules");
+        assert_eq!(diagnostics["routing"]["fallback_reason"], "llm_unknown_tool");
+    }
+
 }

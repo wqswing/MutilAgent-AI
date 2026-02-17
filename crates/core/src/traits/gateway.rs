@@ -9,6 +9,22 @@ use async_trait::async_trait;
 pub trait IntentRouter: Send + Sync {
     /// Classify the intent of a normalized request.
     async fn classify(&self, request: &NormalizedRequest) -> Result<UserIntent>;
+
+    /// Classify intent and return diagnostics payload for audit/observability.
+    async fn classify_detailed(
+        &self,
+        request: &NormalizedRequest,
+    ) -> Result<(UserIntent, serde_json::Value)> {
+        let intent = self.classify(request).await?;
+        Ok((
+            intent,
+            serde_json::json!({
+                "routing": {
+                    "source": "unknown"
+                }
+            }),
+        ))
+    }
 }
 
 /// Semantic cache for high-frequency queries.
