@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.9.0"
+version = "1.0.4"
 edition = "2021"
 authors = ["Multiagent Team"]
 license = "AGPL-3.0-only"
