@@ -10,6 +10,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use schemars::schema_for;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -20,8 +21,8 @@ use multi_agent_core::{
     config::TlsConfig,
     traits::{Controller, IntentRouter, SemanticCache},
     types::{
-        AgentResult, ApprovalResponse, NormalizedRequest, RequestContent, RequestMetadata,
-        UserIntent,
+        AgentResult, ApiEnvelope, ApiErrorBody, ApiErrorCode, ApprovalResponse, NormalizedRequest,
+        RequestContent, RequestMetadata, UserIntent, GATEWAY_CONTRACT_VERSION,
     },
     Result,
 };
@@ -229,6 +230,7 @@ impl GatewayServer {
             .route("/health", get(health_handler))
             .route("/healthz", get(healthz_handler))
             .route("/readyz", get(readyz_handler))
+            .route("/schema/gateway", get(gateway_schema_handler))
             .route("/metrics", get(move || {
                 let handle = metrics_handle.clone();
                 async move {
@@ -462,6 +464,15 @@ async fn health_handler() -> impl IntoResponse {
     })
 }
 
+async fn gateway_schema_handler() -> impl IntoResponse {
+    let schema = schema_for!(ApiEnvelope<serde_json::Value>);
+    Json(serde_json::json!({
+        "name": "gateway_contract",
+        "version": GATEWAY_CONTRACT_VERSION,
+        "schema": schema,
+    }))
+}
+
 /// Liveness check handler (k8s style).
 async fn healthz_handler() -> impl IntoResponse {
     StatusCode::OK
@@ -690,7 +701,7 @@ async fn chat_handler(
             tracing::info!(trace_id = %trace_id, workspace = %workspace_id, session = %session_id, "Cache hit");
             return (
                 StatusCode::OK,
-                Json(ChatResponse {
+                Json(ApiEnvelope::success(trace_id.clone(), ChatResponse {
                     trace_id,
                     intent: UserIntent::FastAction {
                         tool_name: "cache".to_string(),
@@ -699,8 +710,9 @@ async fn chat_handler(
                     },
                     result: Some(AgentResult::Text(cached_response)),
                     cached: true,
-                }),
-            );
+                })),
+            )
+                .into_response();
         }
         Ok(None) => {
             tracing::debug!(trace_id = %trace_id, "Cache miss");
@@ -747,21 +759,15 @@ async fn chat_handler(
             tracing::error!(trace_id = %trace_id, error = %e, "Failed to classify intent");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ChatResponse {
-                    trace_id,
-                    intent: UserIntent::ComplexMission {
-                        goal: "Error".to_string(),
-                        context_summary: e.to_string(),
-                        visual_refs: Vec::new(),
-                        user_id: payload.user_id.clone(),
-                    },
-                    result: Some(AgentResult::Error {
-                        message: e.to_string(),
-                        code: "ROUTING_ERROR".to_string(),
-                    }),
-                    cached: false,
-                }),
-            );
+                Json(ApiEnvelope::success(
+                    trace_id.clone(),
+                    ApiErrorBody::new(ApiErrorCode::RoutingFailed, e.to_string(), true)
+                        .with_details(serde_json::json!({
+                            "user_id": payload.user_id,
+                        })),
+                )),
+            )
+                .into_response();
         }
     };
 
@@ -801,13 +807,14 @@ async fn chat_handler(
 
     (
         StatusCode::OK,
-        Json(ChatResponse {
+        Json(ApiEnvelope::success(trace_id.clone(), ChatResponse {
             trace_id,
             intent,
             result,
             cached: false,
-        }),
+        })),
     )
+        .into_response()
 }
 
 /// Intent classification handler (for debugging/testing).
@@ -821,20 +828,23 @@ async fn intent_handler(
     match state.router.classify_detailed(&request).await {
         Ok((intent, routing_diagnostics)) => {
             tracing::debug!(trace_id = %trace_id, diagnostics = %routing_diagnostics, "Intent endpoint diagnostics");
-            (StatusCode::OK, Json(IntentResponse { trace_id, intent }))
+            (
+                StatusCode::OK,
+                Json(ApiEnvelope::success(
+                    trace_id.clone(),
+                    IntentResponse { trace_id, intent },
+                )),
+            )
+                .into_response()
         },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(IntentResponse {
+            Json(ApiEnvelope::success(
                 trace_id,
-                intent: UserIntent::ComplexMission {
-                    goal: "Error".to_string(),
-                    context_summary: e.to_string(),
-                    visual_refs: Vec::new(),
-                    user_id: None,
-                },
-            }),
-        ),
+                ApiErrorBody::new(ApiErrorCode::RoutingFailed, e.to_string(), true),
+            )),
+        )
+            .into_response(),
     }
 }
 
@@ -918,13 +928,14 @@ async fn webhook_handler(
     // In full implementation, we would execute via controller
     (
         StatusCode::OK,
-        Json(WebhookResponse {
+        Json(ApiEnvelope::success(trace_id.clone(), WebhookResponse {
             trace_id,
             accepted: true,
             message: Some(format!("Event '{}' received", event_type)),
             intent,
-        }),
+        })),
     )
+        .into_response()
 }
 
 // =============================================================================

@@ -95,7 +95,8 @@ async fn test_intent_endpoint() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["intent"]["type"], "complex_mission");
+    assert_eq!(json["version"], "v1");
+    assert_eq!(json["data"]["intent"]["type"], "complex_mission");
 }
 
 #[tokio::test]
@@ -130,6 +131,40 @@ async fn test_chat_endpoint_with_controller() {
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(json["result"]["type"], "Text");
-    assert_eq!(json["result"]["payload"], "Mock response");
+    assert_eq!(json["version"], "v1");
+    assert_eq!(json["data"]["result"]["type"], "Text");
+    assert_eq!(json["data"]["result"]["payload"], "Mock response");
+}
+
+#[tokio::test]
+async fn test_gateway_schema_endpoint() {
+    let config = GatewayConfig::default();
+    let router = Arc::new(MockRouter::complex_mission("test"));
+    let cache = Arc::new(MockSemanticCache::new());
+    let server = GatewayServer::new(config, router, cache);
+    let app = server.build_router();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/system/schema/gateway")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["name"], "gateway_contract");
+    assert_eq!(json["version"], "v1");
+    assert!(json["schema"]["$schema"].is_string());
 }
