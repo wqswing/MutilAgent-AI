@@ -35,6 +35,7 @@ async fn test_v0_8_features_integration() {
         artifact_store: None,
         session_store: None,
         app_config: multi_agent_core::config::AppConfig::default(),
+        network_policy: Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default())),
     });
 
     // Initialize Gateway

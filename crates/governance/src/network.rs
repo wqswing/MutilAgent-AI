@@ -357,7 +357,6 @@ mod tests {
 // =============================================================================
 
 use multi_agent_core::config::SafetyConfig;
-use futures::StreamExt;
 
 const MAX_REDIRECTS: usize = 5;
 

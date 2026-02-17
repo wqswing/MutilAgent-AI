@@ -14,6 +14,15 @@ pub struct UserRoles {
     pub is_admin: bool,
 }
 
+/// Context for an authenticated user session.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserContext {
+    pub user_id: String,
+    pub roles: Vec<String>,
+    pub permissions: Vec<String>,
+    pub session_id: Option<String>,
+}
+
 /// Connector for external enterprise RBAC systems (IAM/LDAP/OIDC).
 #[async_trait]
 pub trait RbacConnector: Send + Sync {

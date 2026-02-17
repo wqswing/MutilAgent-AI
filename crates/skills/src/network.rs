@@ -15,8 +15,6 @@ use sha2::{Digest, Sha256};
 
 use tokio::sync::RwLock;
 
-const MAX_REDIRECTS: usize = 5;
-
 // Local fetch_with_policy removed in favor of multi_agent_governance::network::fetch_with_policy
 
 /// Tool for fetching text/json content from a URL (GET/POST).
@@ -96,10 +94,12 @@ impl Tool for FetchTool {
             self.policy.read().await.version.clone()
         };
 
+        let policy = self.policy.read().await.clone();
+
         // Use helper
         let resp = multi_agent_governance::network::fetch_with_policy(
             &self.client,
-            &self.policy.read().await,
+            &policy,
             &self.safety,
             method,
             url,
@@ -213,10 +213,12 @@ impl Tool for DownloadTool {
             self.policy.read().await.version.clone()
         };
 
+        let policy = self.policy.read().await.clone();
+
         // Download is GET, no body, no custom headers from args (for now)
         let resp = multi_agent_governance::network::fetch_with_policy(
             &self.client,
-            &self.policy.read().await,
+            &policy,
             &self.safety,
             reqwest::Method::GET,
             url,

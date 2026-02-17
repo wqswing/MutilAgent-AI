@@ -270,7 +270,7 @@ impl GatewayServer {
         // Admin API
         if let Some(admin_state) = &self.admin_state {
             let admin_api = multi_agent_admin::admin_api_router(admin_state.clone())
-                .route_layer(axum::middleware::from_fn(restrict_to_localhost))
+                .route_layer(axum::middleware::from_fn_with_state(self.state.clone(), restrict_to_localhost))
                 .route_layer(axum::middleware::from_fn_with_state(self.state.clone(), bearer_auth_middleware));
             router = router.nest("/v1/admin", admin_api);
 
@@ -726,8 +726,8 @@ async fn chat_handler(
     };
 
     // Classify intent
-    let intent = match state.router.classify(&request).await {
-        Ok(intent) => {
+    let intent = match state.router.classify_detailed(&request).await {
+        Ok((intent, routing_diagnostics)) => {
             // Emit INTENT_RESOLVED
             {
                 use multi_agent_core::events::{EventEnvelope, EventType};
@@ -735,7 +735,7 @@ async fn chat_handler(
                     EventType::IntentResolved,
                     serde_json::json!({
                         "intent_type": format!("{:?}", intent),
-                        "router": "default" // Placeholder
+                        "routing": routing_diagnostics.get("routing").cloned().unwrap_or_else(|| serde_json::json!({"source":"unknown"}))
                     }),
                 )
                 .with_trace(&trace_id);
@@ -818,8 +818,11 @@ async fn intent_handler(
     let trace_id = Uuid::new_v4().to_string();
     let request = NormalizedRequest::text(&payload.message);
 
-    match state.router.classify(&request).await {
-        Ok(intent) => (StatusCode::OK, Json(IntentResponse { trace_id, intent })),
+    match state.router.classify_detailed(&request).await {
+        Ok((intent, routing_diagnostics)) => {
+            tracing::debug!(trace_id = %trace_id, diagnostics = %routing_diagnostics, "Intent endpoint diagnostics");
+            (StatusCode::OK, Json(IntentResponse { trace_id, intent }))
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(IntentResponse {
@@ -896,8 +899,11 @@ async fn webhook_handler(
     };
 
     // Classify the event
-    let intent = match state.router.classify(&request).await {
-        Ok(intent) => Some(intent),
+    let intent = match state.router.classify_detailed(&request).await {
+        Ok((intent, routing_diagnostics)) => {
+            tracing::debug!(trace_id = %trace_id, diagnostics = %routing_diagnostics, "Webhook intent diagnostics");
+            Some(intent)
+        },
         Err(e) => {
             tracing::warn!(
                 trace_id = %trace_id,
@@ -1229,9 +1235,11 @@ mod tests {
                 artifact_store: None,
                 session_store: None,
                 app_config: multi_agent_core::config::AppConfig::default(),
+                network_policy: Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default())),
             })),
             plugin_manager: None,
             app_config: multi_agent_core::config::AppConfig::default(),
+            research_orchestrator: None,
         });
 
         let app = Router::new()

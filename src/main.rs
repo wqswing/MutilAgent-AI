@@ -252,7 +252,6 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // Initialize L0: Gateway
     // =========================================================================
-    let router = Arc::new(DefaultRouter::new());
     let approval_gate = Arc::new(multi_agent_governance::approval::ChannelApprovalGate::new(
         multi_agent_core::types::ToolRiskLevel::High,
     ));
@@ -323,6 +322,11 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     };
+
+    let router = Arc::new(DefaultRouter::new().with_llm_classifier(
+        llm_client.clone(),
+        tools.clone() as Arc<dyn ToolRegistry>,
+    ));
 
     let cache = Arc::new(InMemorySemanticCache::new(llm_client));
 
@@ -472,6 +476,8 @@ async fn main() -> anyhow::Result<()> {
         admin_state.clone(),
         approval_gate.clone(),
         network_policy.clone(),
+        None,
+        app_config.safety.clone(),
         store.clone(),
         knowledge_store.clone(),
         Some(logs_tx.clone()),

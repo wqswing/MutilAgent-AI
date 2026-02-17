@@ -17,12 +17,13 @@ sha2 = "0.10"
 tokio.workspace = true
 axum = { workspace = true, features = ["ws"] }
 chrono = { version = "0.4", features = ["serde"] }
-axum-extra.workspace = true
+axum-extra = { workspace = true, features = ["cookie"] }
 tower.workspace = true
 tower-http.workspace = true
 async-trait.workspace = true
 bytes.workspace = true
 uuid.workspace = true
+url.workspace = true
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -44,7 +45,7 @@ governor = "0.6"
 # WebSocket + stream utilities
 futures.workspace = true
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
-secrecy = "0.10.3"
+secrecy = "0.8"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
