@@ -28,6 +28,7 @@ use multi_agent_core::{
 };
 use multi_agent_governance::approval::ChannelApprovalGate;
 use crate::idempotency::{IdempotencyLookup, IdempotencyStore};
+use crate::scheduler::ControllerScheduler;
 
 /// Gateway configuration.
 #[derive(Debug, Clone)]
@@ -91,6 +92,8 @@ pub struct AppState {
     pub research_orchestrator: Option<Arc<crate::research::ResearchOrchestrator>>,
     /// Idempotency store for side-effect endpoints.
     pub idempotency_store: Arc<IdempotencyStore>,
+    /// Scheduler for controller execution lanes.
+    pub controller_scheduler: Arc<ControllerScheduler>,
 }
 
 impl AppState {
@@ -139,6 +142,7 @@ impl GatewayServer {
                 app_config: multi_agent_core::config::AppConfig::load().unwrap_or_default(),
                 research_orchestrator: None,
                 idempotency_store: Arc::new(IdempotencyStore::new()),
+                controller_scheduler: Arc::new(ControllerScheduler::default()),
             }),
             metrics_handle: None,
             admin_state: None,
@@ -779,7 +783,17 @@ async fn chat_handler(
 
     // Execute via controller if available
     let result = if let Some(ref controller) = state.controller {
-        match controller.execute(intent.clone(), trace_id.clone()).await {
+        let controller = controller.clone();
+        let intent_for_exec = intent.clone();
+        let trace_for_exec = trace_id.clone();
+        let session_lane = request.metadata.session_id.clone();
+        let execution = state
+            .controller_scheduler
+            .run(session_lane.as_deref(), move || async move {
+                controller.execute(intent_for_exec, trace_for_exec).await
+            })
+            .await;
+        match execution {
             Ok(result) => {
                 // Cache successful text responses
                 if let AgentResult::Text(ref text) = result {
@@ -1367,6 +1381,7 @@ mod tests {
             app_config: multi_agent_core::config::AppConfig::default(),
             research_orchestrator: None,
             idempotency_store: Arc::new(IdempotencyStore::new()),
+            controller_scheduler: Arc::new(ControllerScheduler::default()),
         });
 
         let app = Router::new()
