@@ -133,3 +133,35 @@
 **Step 3: Commit**
 - `git add docs/plans/2026-02-17-enterprise-platform-p0-execution.md`
 - `git commit -m "docs: record p0 verification and next-stage backlog"`
+
+## Execution Result (2026-02-17)
+
+### Completed P0 Scope
+- Typed Gateway contract introduced in Core (`ApiEnvelope`, `ApiErrorBody`, `ApiErrorCode`, `v1` version marker).
+- Gateway handlers (`/v1/chat`, `/v1/intent`, `/v1/webhook`) now return typed envelope responses.
+- Schema endpoint added: `GET /v1/system/schema/gateway`.
+- Idempotency introduced for side-effect endpoints using `Idempotency-Key`:
+- `POST /v1/webhook/:event_type`
+- `POST /v1/approve/:request_id`
+- Dual-lane scheduler introduced in Gateway:
+- per-session serialization lane
+- global concurrency lane
+
+### Verification Output
+- `cargo check --workspace --exclude cratesapp` -> PASS
+- `cargo test -p multi_agent_core` -> PASS (12 passed)
+- `cargo test -p multi_agent_gateway` -> PASS (all unit + integration tests)
+
+### Residual Backlog (P1/P2)
+- P1 Memory Writeback Loop:
+- Add persistent writeback to `YYYY-MM-DD.md` and canonical `MEMORY.md` merge policy.
+- Add quality gates (memory hit-rate, contamination-rate, staleness-rate).
+- P1 Compaction Pipeline:
+- Introduce pre-compaction flush and compaction scheduling hooks in runtime loop.
+- Expose compaction telemetry and audit events.
+- P2 Multi-Agent Routing Policy:
+- Explicit policy model for `channel/account/peer` precedence and conflict resolution.
+- Add deterministic policy simulator tests.
+- P2 Skill Ecosystem Governance:
+- Layered skill loading policy + versioned distribution manifests.
+- Signature and compatibility gate for third-party skills.
