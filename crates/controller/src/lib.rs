@@ -11,6 +11,7 @@ pub mod dag;
 pub mod delegation;
 pub mod executor;
 pub mod memory;
+pub mod memory_writeback;
 pub mod parser;
 pub mod persistence;
 pub mod planning;
@@ -24,6 +25,7 @@ pub use capability::{
     ReflectionCapability, SecurityCapability,
 };
 pub use memory::MemoryCapability;
+pub use memory_writeback::MemoryWritebackCapability;
 pub use multi_agent_core::traits::SessionStore;
 pub use parser::{ActionParser, ReActAction};
 pub use persistence::InMemorySessionStore;
