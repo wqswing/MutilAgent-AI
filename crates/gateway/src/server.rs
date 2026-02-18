@@ -28,6 +28,7 @@ use multi_agent_core::{
 };
 use multi_agent_governance::approval::ChannelApprovalGate;
 use crate::idempotency::{IdempotencyLookup, IdempotencyStore};
+use crate::routing_policy::{RoutingContext, RoutingPolicyEngine, RoutingPolicyRelease, RoutingPolicyStore, RoutingRule};
 use crate::scheduler::ControllerScheduler;
 
 /// Gateway configuration.
@@ -94,6 +95,8 @@ pub struct AppState {
     pub idempotency_store: Arc<IdempotencyStore>,
     /// Scheduler for controller execution lanes.
     pub controller_scheduler: Arc<ControllerScheduler>,
+    /// Shared versioned routing policy store.
+    pub routing_policy_store: Option<Arc<RoutingPolicyStore>>,
 }
 
 impl AppState {
@@ -143,6 +146,7 @@ impl GatewayServer {
                 research_orchestrator: None,
                 idempotency_store: Arc::new(IdempotencyStore::new()),
                 controller_scheduler: Arc::new(ControllerScheduler::default()),
+                routing_policy_store: None,
             }),
             metrics_handle: None,
             admin_state: None,
@@ -230,6 +234,14 @@ impl GatewayServer {
         self
     }
 
+    /// Set shared versioned routing policy store.
+    pub fn with_routing_policy_store(mut self, store: Arc<RoutingPolicyStore>) -> Self {
+        if let Some(state) = Arc::get_mut(&mut self.state) {
+            state.routing_policy_store = Some(store);
+        }
+        self
+    }
+
     /// Build the Axum router.
     pub fn build_router(&self) -> Router {
         // System Routes
@@ -285,6 +297,21 @@ impl GatewayServer {
                 .route_layer(axum::middleware::from_fn_with_state(self.state.clone(), restrict_to_localhost))
                 .route_layer(axum::middleware::from_fn_with_state(self.state.clone(), bearer_auth_middleware));
             router = router.nest("/v1/admin", admin_api);
+
+            let routing_admin_api = Router::new()
+                .route("/simulate", post(admin_routing_simulate_handler))
+                .route("/publish", post(admin_routing_publish_handler))
+                .route("/policies", get(admin_routing_policies_handler))
+                .route_layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    restrict_to_localhost,
+                ))
+                .route_layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    bearer_auth_middleware,
+                ))
+                .with_state(self.state.clone());
+            router = router.nest("/v1/admin/routing", routing_admin_api);
 
             // Management Console (Static assets)
             router = router.nest("/console", multi_agent_admin::admin_static_router());
@@ -635,6 +662,111 @@ async fn put_policy_handler(
         )
             .into_response(),
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoutingPublishRequest {
+    pub version: String,
+    pub name: Option<String>,
+    pub rules: Vec<RoutingRule>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoutingSimulateRequest {
+    pub scenarios: Vec<RoutingContext>,
+    pub rules: Option<Vec<RoutingRule>>,
+}
+
+async fn admin_routing_publish_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<RoutingPublishRequest>,
+) -> impl IntoResponse {
+    let Some(store) = &state.routing_policy_store else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"Routing policy store not configured"})),
+        )
+            .into_response();
+    };
+
+    let release = RoutingPolicyRelease {
+        version: payload.version,
+        name: payload.name,
+        published_at: chrono::Utc::now().timestamp(),
+        rules: payload.rules,
+    };
+
+    match store.publish(release).await {
+        Ok(()) => {
+            let active = store.active_release().await;
+            (StatusCode::OK, Json(serde_json::json!({"published": true, "active": active})))
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"published": false, "error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn admin_routing_simulate_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<RoutingSimulateRequest>,
+) -> impl IntoResponse {
+    let Some(store) = &state.routing_policy_store else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"Routing policy store not configured"})),
+        )
+            .into_response();
+    };
+
+    let result = if let Some(rules) = payload.rules {
+        let engine = RoutingPolicyEngine::new(rules);
+        engine.simulate(&payload.scenarios)
+    } else {
+        match store.simulate_active(&payload.scenarios).await {
+            Some(sim) => sim,
+            None => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error":"No active routing policy"})),
+                )
+                    .into_response();
+            }
+        }
+    };
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "simulated": true,
+            "count": result.len(),
+            "result": result
+        })),
+    )
+        .into_response()
+}
+
+async fn admin_routing_policies_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let Some(store) = &state.routing_policy_store else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"Routing policy store not configured"})),
+        )
+            .into_response();
+    };
+    let active = store.active_release().await;
+    let history = store.list_versions().await;
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "active": active,
+            "history": history
+        })),
+    )
+        .into_response()
 }
 
 /// Research agent handler.
@@ -1382,6 +1514,7 @@ mod tests {
             research_orchestrator: None,
             idempotency_store: Arc::new(IdempotencyStore::new()),
             controller_scheduler: Arc::new(ControllerScheduler::default()),
+            routing_policy_store: None,
         });
 
         let app = Router::new()

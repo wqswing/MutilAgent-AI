@@ -1,6 +1,10 @@
+use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RouteScope {
     Channel,
     Account,
@@ -8,6 +12,7 @@ pub enum RouteScope {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum RouteTarget {
     FastAction { tool_name: String },
     ComplexMission { goal_hint: String },
@@ -60,21 +65,21 @@ impl RoutingRule {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingContext {
     pub channel: Option<String>,
     pub account: Option<String>,
     pub peer: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingDecision {
     pub rule_id: String,
     pub scope: RouteScope,
     pub target: RouteTarget,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingSimulation {
     pub matched_rule_id: Option<String>,
     pub scope: Option<RouteScope>,
@@ -152,3 +157,84 @@ impl RoutingPolicyEngine {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingPolicyRelease {
+    pub version: String,
+    pub name: Option<String>,
+    pub published_at: i64,
+    pub rules: Vec<RoutingRule>,
+}
+
+#[derive(Default)]
+pub struct RoutingPolicyStore {
+    active: RwLock<Option<RoutingPolicyRelease>>,
+    history: RwLock<Vec<RoutingPolicyRelease>>,
+}
+
+impl RoutingPolicyStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn publish(&self, mut release: RoutingPolicyRelease) -> multi_agent_core::Result<()> {
+        let version = Version::parse(&release.version).map_err(|e| {
+            multi_agent_core::Error::invalid_request(format!("Invalid policy version: {}", e))
+        })?;
+        if release.published_at <= 0 {
+            release.published_at = chrono::Utc::now().timestamp();
+        }
+
+        let mut history = self.history.write().await;
+        if history.iter().any(|p| p.version == release.version) {
+            return Err(multi_agent_core::Error::invalid_request(format!(
+                "Policy version '{}' already exists",
+                release.version
+            )));
+        }
+        if let Some(last) = history.last() {
+            let last_version = Version::parse(&last.version).map_err(|e| {
+                multi_agent_core::Error::invalid_request(format!(
+                    "Stored policy version parse failed: {}",
+                    e
+                ))
+            })?;
+            if version <= last_version {
+                return Err(multi_agent_core::Error::invalid_request(format!(
+                    "Policy version '{}' must be greater than current '{}'",
+                    release.version, last.version
+                )));
+            }
+        }
+
+        history.push(release.clone());
+        drop(history);
+        let mut active = self.active.write().await;
+        *active = Some(release);
+        Ok(())
+    }
+
+    pub async fn active_release(&self) -> Option<RoutingPolicyRelease> {
+        self.active.read().await.clone()
+    }
+
+    pub async fn list_versions(&self) -> Vec<RoutingPolicyRelease> {
+        self.history.read().await.clone()
+    }
+
+    pub async fn resolve(&self, context: &RoutingContext) -> Option<RoutingDecision> {
+        let active = self.active.read().await.clone()?;
+        let engine = RoutingPolicyEngine::new(active.rules);
+        engine.resolve(context)
+    }
+
+    pub async fn simulate_active(
+        &self,
+        scenarios: &[RoutingContext],
+    ) -> Option<Vec<RoutingSimulation>> {
+        let active = self.active.read().await.clone()?;
+        let engine = RoutingPolicyEngine::new(active.rules);
+        Some(engine.simulate(scenarios))
+    }
+}
+
+pub type SharedRoutingPolicyStore = Arc<RoutingPolicyStore>;

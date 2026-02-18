@@ -52,10 +52,12 @@ async fn test_v0_8_features_integration() {
     let router = Arc::new(DefaultRouter::new());
     let llm_client = Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy"));
     let cache = Arc::new(InMemorySemanticCache::new(llm_client));
+    let routing_policy_store = Arc::new(multi_agent_gateway::routing_policy::RoutingPolicyStore::new());
 
     let server = GatewayServer::new(config, router, cache)
         .with_admin(admin_state)
-        .with_metrics(metrics_handle.expect("Metrics handler must be available for this test"));
+        .with_metrics(metrics_handle.expect("Metrics handler must be available for this test"))
+        .with_routing_policy_store(routing_policy_store);
 
     let app = server.build_router();
 
@@ -190,6 +192,76 @@ async fn test_v0_8_features_integration() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+
+    // Case G: Publish versioned routing policy
+    let publish_payload = serde_json::json!({
+        "version": "1.0.0",
+        "name": "default-routing",
+        "rules": [
+            {
+                "id": "channel-support",
+                "scope": "channel",
+                "scope_value": "support",
+                "target": {
+                    "type": "fast_action",
+                    "payload": { "tool_name": "search" }
+                },
+                "priority": 1
+            }
+        ]
+    });
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/admin/routing/publish")
+                .header("Authorization", "Bearer admin")
+                .header("Content-Type", "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(publish_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Case H: Simulate routing policy
+    let simulate_payload = serde_json::json!({
+        "scenarios": [
+            {
+                "channel": "support",
+                "account": "a1",
+                "peer": "u1"
+            }
+        ]
+    });
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/admin/routing/simulate")
+                .header("Authorization", "Bearer admin")
+                .header("Content-Type", "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(simulate_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["result"][0]["matched_rule_id"], "channel-support");
 
     // 3. Cleanup
     let _ = std::fs::remove_file(audit_file);

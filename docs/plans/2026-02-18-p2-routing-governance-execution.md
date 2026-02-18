@@ -96,3 +96,18 @@
 - Policy simulation endpoint for admin plane (`/v1/admin/routing/simulate`).
 - Policy storage/versioning and staged rollout controls.
 - Signature verification against trusted keyring (actual cryptographic verification, not prefix format gate).
+
+## Extension Result (Admin Routing APIs)
+
+### Delivered
+- Added admin management API for routing policy lifecycle:
+- `POST /v1/admin/routing/publish`
+- `POST /v1/admin/routing/simulate`
+- `GET /v1/admin/routing/policies`
+- Added versioned routing policy store with release history and monotonic semver publish checks.
+- Wired shared store between runtime router and admin API so published policy is live immediately.
+
+### Verification
+- `cargo test -p multi_agent_gateway -- --nocapture` -> PASS
+- `cargo test -p multi_agent_ecosystem -- --nocapture` -> PASS
+- `cargo check --workspace --exclude cratesapp` -> PASS

@@ -33,6 +33,7 @@ anyhow.workspace = true
 dashmap.workspace = true
 image.workspace = true
 base64.workspace = true
+semver = "1"
 
 # Observability
 metrics.workspace = true

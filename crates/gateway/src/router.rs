@@ -10,7 +10,9 @@ use multi_agent_core::{
     types::{NormalizedRequest, UserIntent},
     Result,
 };
-use crate::routing_policy::{RouteScope, RouteTarget, RoutingContext, RoutingPolicyEngine};
+use crate::routing_policy::{
+    RouteScope, RouteTarget, RoutingContext, RoutingPolicyEngine, SharedRoutingPolicyStore,
+};
 
 /// Keywords that suggest a fast action (direct tool call).
 const FAST_ACTION_KEYWORDS: &[&str] = &[
@@ -76,6 +78,8 @@ pub struct DefaultRouter {
     llm_min_confidence: f32,
     /// Optional explicit routing policy.
     routing_policy: Option<Arc<RoutingPolicyEngine>>,
+    /// Optional versioned policy store.
+    routing_policy_store: Option<SharedRoutingPolicyStore>,
 }
 
 impl DefaultRouter {
@@ -88,6 +92,7 @@ impl DefaultRouter {
             tool_registry: None,
             llm_min_confidence: 0.6,
             routing_policy: None,
+            routing_policy_store: None,
         }
     }
 
@@ -111,6 +116,12 @@ impl DefaultRouter {
     /// Configure explicit routing policy engine.
     pub fn with_routing_policy(mut self, policy: RoutingPolicyEngine) -> Self {
         self.routing_policy = Some(Arc::new(policy));
+        self
+    }
+
+    /// Configure shared, versioned policy store for runtime routing updates.
+    pub fn with_routing_policy_store(mut self, store: SharedRoutingPolicyStore) -> Self {
+        self.routing_policy_store = Some(store);
         self
     }
 
@@ -364,9 +375,12 @@ impl DefaultRouter {
         &self,
         request: &NormalizedRequest,
     ) -> Option<(UserIntent, serde_json::Value)> {
-        let policy = self.routing_policy.as_ref()?;
         let context = Self::routing_context_from_request(request);
-        let decision = policy.resolve(&context)?;
+        let decision = if let Some(store) = &self.routing_policy_store {
+            store.resolve(&context).await
+        } else {
+            self.routing_policy.as_ref().and_then(|policy| policy.resolve(&context))
+        }?;
         let user_id = request.metadata.user_id.clone();
 
         let intent = match decision.target {

@@ -329,10 +329,13 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let router = Arc::new(DefaultRouter::new().with_llm_classifier(
-        llm_client.clone(),
-        tools.clone() as Arc<dyn ToolRegistry>,
-    ));
+    let routing_policy_store = Arc::new(multi_agent_gateway::routing_policy::RoutingPolicyStore::new());
+    let router = Arc::new(DefaultRouter::new()
+        .with_llm_classifier(
+            llm_client.clone(),
+            tools.clone() as Arc<dyn ToolRegistry>,
+        )
+        .with_routing_policy_store(routing_policy_store.clone()));
 
     let cache = Arc::new(InMemorySemanticCache::new(llm_client));
 
@@ -351,7 +354,8 @@ async fn main() -> anyhow::Result<()> {
         GatewayServer::new(gateway_config.clone(), router, cache)
             .with_controller(controller)
             .with_logs_channel(logs_tx.clone())
-            .with_approval_gate(approval_gate.clone());
+            .with_approval_gate(approval_gate.clone())
+            .with_routing_policy_store(routing_policy_store.clone());
 
     tracing::info!(
         host = %gateway_config.host,
