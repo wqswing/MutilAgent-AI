@@ -16,3 +16,10 @@
 # Temporary files
 *.tmp
 *.temp
+
+# Runtime/generated state
+/.sovereign_claw/
+/network_policy.json
+/audit.db
+/audit.db-shm
+/audit.db-wal
