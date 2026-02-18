@@ -44,6 +44,16 @@ jobs:
             sudo apt-get install -y libwebkit2gtk-4.0-dev libjavascriptcoregtk-4.0-dev
           fi
 
+          # Ensure pkg-config can locate system .pc files in CI.
+          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Verify Linux native deps (ubuntu only)
+        if: startsWith(matrix.platform, 'ubuntu-')
+        run: |
+          pkg-config --version
+          pkg-config --modversion libsoup-3.0
+          pkg-config --modversion webkit2gtk-4.1 || pkg-config --modversion webkit2gtk-4.0
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
