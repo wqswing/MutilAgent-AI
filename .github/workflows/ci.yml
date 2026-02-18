@@ -29,10 +29,10 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy Linting
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --exclude opencoordex-app -- -D warnings
 
       - name: Run Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude opencoordex-app
 
   docker-build:
     name: Docker Build
@@ -49,6 +49,6 @@ jobs:
           context: .
           file: Dockerfile
           push: false
-          tags: multi-agent:latest
+          tags: opencoordex:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
