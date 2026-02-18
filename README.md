@@ -55,7 +55,7 @@ OpenCoordex is a production-grade, layered multi-agent platform built in Rust. I
 OpenCoordex follows a strict 6-layer architecture for separation of concerns and scalability.
 
 ### Layer Architecture
-![OpenCoordex Architecture](assets/multiagent_ai_architecture_v3.svg)
+![OpenCoordex Architecture](assets/opencoordex_1.05_architecture_expanded_en_fixed.svg)
 
 
 
