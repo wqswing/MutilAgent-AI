@@ -1,8 +1,8 @@
-# Multiagent  Architecture Overview
+# OpenCoordex Architecture Overview
 
 ## 1. System Overview
 
-Multiagent follows a strict layered architecture (`L0` to `L4`) to separate concerns between connectivity, orchestration, execution, storage, and governance.
+OpenCoordex follows a strict layered architecture (`L0` to `L4`) to separate concerns between connectivity, orchestration, execution, storage, and governance.
 
 As of `v1.0.5/1.05`, the architecture is optimized for enterprise multi-agent operations:
 - Gateway uses typed contracts (req/res/event + schema + error code).
@@ -99,7 +99,7 @@ As of `v1.0.5/1.05`, the architecture is optimized for enterprise multi-agent op
 
 ## 5. Directory Structure
 ```
-Multiagent/
+OpenCoordex/
 ├── crates/
 │   ├── core/         # Shared traits/types
 │   ├── controller/   # ReAct loop, Capabilities

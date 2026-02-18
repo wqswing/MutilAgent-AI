@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased] - 2026-02-18
 
+### Branding
+- Product/project name standardized to **OpenCoordex** for external positioning.
+- Historical internal crate namespace (`multi_agent_*`) kept for compatibility.
+
 ### ✅ Release Closure (P0/P1/P2 convergence)
 - **Configuration reliability**:
   - Fixed `config/default.toml` required schema coverage for runtime startup.

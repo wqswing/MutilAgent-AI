@@ -100,7 +100,7 @@ pub async fn start_server() -> Result<()> {
         eprintln!("Tracing init warning: {}", e);
     }
 
-    tracing::info!("Starting Multiagent Backend (Tauri Embedded)");
+    tracing::info!("Starting OpenCoordex Backend (Tauri Embedded)");
 
     // =========================================================================
     // Initialize L3: Artifact Store
@@ -535,7 +535,7 @@ thresholds:
     );
 
     println!(
-        "✓ Multiagent Gateway running on http://{}:{}",
+        "✓ OpenCoordex Gateway running on http://{}:{}",
         app_config.server.host, app_config.server.port
     );
 

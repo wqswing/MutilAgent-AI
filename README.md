@@ -1,4 +1,4 @@
-# Multiagent: Advanced Multi-Agent AI System
+# OpenCoordex: Enterprise Open Multi-Agent Platform
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![Language](https://img.shields.io/badge/rust-1.75%2B-blue.svg)](https://www.rust-lang.org)
@@ -7,7 +7,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Version](https://img.shields.io/badge/version-1.0.5-orange.svg)](https://github.com/wqswing/MultiAgent-AI/releases/tag/v1.0.5)
 
-Multiagent is a production-grade, layered AI agent framework built in Rust. It is designed for high-performance orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust enterprise features like semantic caching, vector memory, and circuit breakers.
+OpenCoordex is a production-grade, layered multi-agent platform built in Rust. It is designed for enterprise orchestration of LLM capabilities, supporting multi-modal inputs, autonomous reasoning (ReAct), complex workflow automation (DAG/SOP), and robust governance features such as semantic caching, vector memory, and circuit breakers.
 
 ## 🚀 Key Capabilities
 
@@ -52,10 +52,10 @@ Multiagent is a production-grade, layered AI agent framework built in Rust. It i
 
 ## 🏗️ Architecture
 
-Multiagent follows a strict 6-layer architecture for separation of concerns and scalability.
+OpenCoordex follows a strict 6-layer architecture for separation of concerns and scalability.
 
 ### Layer Architecture
-![Multiagent Architecture](assets/multiagent_ai_architecture_v3.svg)
+![OpenCoordex Architecture](assets/multiagent_ai_architecture_v3.svg)
 
 
 
@@ -191,7 +191,7 @@ curl -X POST http://localhost:3000/v1/admin/routing/publish \
 
 ## 🧪 Testing
 
-Multiagent includes comprehensive testing infrastructure:
+OpenCoordex includes comprehensive testing infrastructure:
 
 ```rust
 use multi_agent_core::mocks::{MockLlm, MockToolRegistry, MockMemoryStore};
@@ -210,4 +210,9 @@ let tool = RecordingTool::new("search", "Search the web", "Results...");
 
 AGPLv3 License - See [LICENSE](LICENSE) for details.
 
-Copyright (c) 2024-2026 Multiagent Contributors
+Copyright (c) 2024-2026 OpenCoordex Contributors
+
+## Naming Note
+
+`OpenCoordex` is the product and project brand name.  
+Internal Rust crate identifiers keep the historical `multi_agent_*` naming for compatibility.

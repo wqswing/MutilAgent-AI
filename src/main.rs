@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! Multiagent - Multi-Agent AI System
+//! OpenCoordex - Multi-Agent AI Platform
 //!
 //! A layered, Rust-based multi-agent architecture supporting multi-modal ingestion,
 //! intelligent routing, ReAct-based orchestration, and production-grade resilience.
@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
         app_config.governance.json_logs,
     )?;
 
-    tracing::info!("Starting Multiagent v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("Starting OpenCoordex v{}", env!("CARGO_PKG_VERSION"));
 
     // =========================================================================
     // Initialize L3: Artifact Store
@@ -431,11 +431,11 @@ async fn main() -> anyhow::Result<()> {
     println!();
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!(
-        "║                     Multiagent v{}                       ║",
+        "║                    OpenCoordex v{}                       ║",
         env!("CARGO_PKG_VERSION")
     );
     println!("╠══════════════════════════════════════════════════════════════╣");
-    println!("║  Multi-Agent AI System - Phase 1 (Core Foundation)           ║");
+    println!("║  Enterprise Open Multi-Agent Platform                         ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║  Endpoints:                                                   ║");
     println!("║    GET  /health      - Health check                          ║");
