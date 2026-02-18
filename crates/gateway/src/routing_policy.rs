@@ -183,6 +183,12 @@ pub struct RoutingPolicyStore {
     persistence_path: Option<PathBuf>,
 }
 
+impl Default for RoutingPolicyStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RoutingPolicyStore {
     pub fn new() -> Self {
         Self {
@@ -368,7 +374,9 @@ impl RoutingPolicyStore {
         }
     }
 
-    pub async fn active_channels(&self) -> (Option<RoutingPolicyRelease>, Option<RoutingPolicyRelease>) {
+    pub async fn active_channels(
+        &self,
+    ) -> (Option<RoutingPolicyRelease>, Option<RoutingPolicyRelease>) {
         (
             self.active_stable.read().await.clone(),
             self.active_canary.read().await.clone(),
@@ -420,10 +428,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_persistent_store_publish_and_reload() {
-        let path = std::env::temp_dir().join(format!(
-            "routing_policy_{}.json",
-            uuid::Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("routing_policy_{}.json", uuid::Uuid::new_v4()));
         let store = RoutingPolicyStore::new_persistent(&path).expect("create store");
         store
             .publish(RoutingPolicyRelease {

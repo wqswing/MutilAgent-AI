@@ -498,22 +498,22 @@ async fn rotate_secrets_handler(
 
     match state.secrets.rotate_key(new_key).await {
         Ok(()) => {
-             let _ = state
-            .audit_store
-            .log(multi_agent_governance::AuditEntry {
-                id: uuid::Uuid::new_v4().to_string(),
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                user_id: "admin".to_string(),
-                action: "ROTATE_SECRETS".to_string(),
-                resource: "secrets".to_string(),
-                outcome: multi_agent_governance::AuditOutcome::Success,
-                metadata: None,
-                previous_hash: None,
-                hash: None,
-            })
-            .await;
+            let _ = state
+                .audit_store
+                .log(multi_agent_governance::AuditEntry {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    user_id: "admin".to_string(),
+                    action: "ROTATE_SECRETS".to_string(),
+                    resource: "secrets".to_string(),
+                    outcome: multi_agent_governance::AuditOutcome::Success,
+                    metadata: None,
+                    previous_hash: None,
+                    hash: None,
+                })
+                .await;
             StatusCode::OK.into_response()
-        },
+        }
         Err(e) => {
             tracing::error!("Failed to rotate secrets: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -792,9 +792,10 @@ async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
                 for entry in &entries {
                     // Extract artifact IDs from metadata
                     if let Some(meta) = &entry.metadata {
-                         if let Some(artifact_id) = meta.get("artifact_id").and_then(|v| v.as_str()) {
-                             artifact_ids.insert(artifact_id.to_string());
-                         }
+                        if let Some(artifact_id) = meta.get("artifact_id").and_then(|v| v.as_str())
+                        {
+                            artifact_ids.insert(artifact_id.to_string());
+                        }
                     }
 
                     if let Ok(line) = serde_json::to_string(entry) {
@@ -809,13 +810,14 @@ async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
                 let mut hasher = Sha256::new();
                 hasher.update(events_content.as_bytes());
                 let events_hash = format!("{:x}", hasher.finalize());
-                
+
                 let hashes = serde_json::json!({
                     "events_jsonl_sha256": events_hash,
                     "integrity_version": "v1",
                     "cumulative_hash": entries.last().and_then(|e| e.hash.clone()).unwrap_or_default()
                 });
-                zip.write_all(serde_json::to_string_pretty(&hashes).unwrap().as_bytes()).unwrap();
+                zip.write_all(serde_json::to_string_pretty(&hashes).unwrap().as_bytes())
+                    .unwrap();
 
                 // 3. manifest.json
                 zip.start_file("manifest.json", options).unwrap();
@@ -825,16 +827,17 @@ async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
                     "filter_applied": "limit=10000",
                     "artifacts_included": artifact_ids.len()
                 });
-                zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes()).unwrap();
+                zip.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+                    .unwrap();
 
                 // 4. artifacts/
                 if let Some(store) = &state.artifact_store {
                     for artifact_id in artifact_ids {
                         let ref_id = RefId::from_string(&artifact_id);
                         if let Ok(Some(content)) = store.load(&ref_id).await {
-                             let filename = format!("artifacts/{}.txt", artifact_id);
-                             zip.start_file(filename, options).unwrap();
-                             zip.write_all(&content).unwrap();
+                            let filename = format!("artifacts/{}.txt", artifact_id);
+                            zip.start_file(filename, options).unwrap();
+                            zip.write_all(&content).unwrap();
                         }
                     }
                 }
@@ -842,11 +845,18 @@ async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
                 zip.finish().unwrap();
             }
 
-            let filename = format!("audit_bundle_{}.zip", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+            let filename = format!(
+                "audit_bundle_{}.zip",
+                chrono::Utc::now().format("%Y%m%d_%H%M%S")
+            );
             let mut headers = axum::http::HeaderMap::new();
             headers.insert(
-                axum::http::header::CONTENT_DISPOSITION, 
-                axum::http::header::HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename)).unwrap()
+                axum::http::header::CONTENT_DISPOSITION,
+                axum::http::header::HeaderValue::from_str(&format!(
+                    "attachment; filename=\"{}\"",
+                    filename
+                ))
+                .unwrap(),
             );
             headers.insert(
                 axum::http::header::CONTENT_TYPE,
@@ -854,11 +864,11 @@ async fn export_audit_log(State(state): State<Arc<AdminState>>) -> Response {
             );
 
             (headers, buf).into_response()
-        },
+        }
         Err(e) => {
             tracing::error!("Failed to export audit logs: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        },
+        }
     }
 }
 
@@ -992,7 +1002,10 @@ pub fn admin_api_router(state: Arc<AdminState>) -> Router {
         .route("/mcp/servers", get(get_mcp_servers).post(register_mcp))
         .route("/mcp/servers/:id", delete(remove_mcp))
         .route("/sessions", get(list_sessions_admin))
-        .route("/sessions/:id", get(get_session_admin).delete(delete_session_admin))
+        .route(
+            "/sessions/:id",
+            get(get_session_admin).delete(delete_session_admin),
+        )
         .route("/privacy/forget-user", post(forget_user))
         .route("/secrets/rotate", post(rotate_secrets_handler));
 
@@ -1023,10 +1036,7 @@ async fn dashboard_assets(Path(file): Path<String>) -> impl IntoResponse {
     match Asset::get(filename) {
         Some(content) => {
             let mime = mime_guess::from_path(filename).first_or_octet_stream();
-            (
-                [(header::CONTENT_TYPE, mime.as_ref())],
-                content.data,
-            ).into_response()
+            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
         }
         None => StatusCode::NOT_FOUND.into_response(),
     }
@@ -1051,14 +1061,14 @@ async fn update_network_policy(
     if let Ok(json) = serde_json::to_string_pretty(&policy) {
         if let Err(e) = tokio::fs::write(path, json).await {
             tracing::error!("Failed to persist network policy: {}", e);
-             // Verify if we should return error? 
-             // Ideally yes, but in-memory is updated.
-             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            // Verify if we should return error?
+            // Ideally yes, but in-memory is updated.
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     }
 
     // 3. Log Audit
-     let _ = state
+    let _ = state
         .audit_store
         .log(multi_agent_governance::AuditEntry {
             id: uuid::Uuid::new_v4().to_string(),

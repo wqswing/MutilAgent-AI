@@ -1,12 +1,12 @@
-use async_trait::async_trait;
-use multi_agent_core::traits::{ArtifactMetadata, ArtifactStore};
-use multi_agent_core::types::RefId;
-use multi_agent_core::Result;
-use bytes::Bytes;
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
+use async_trait::async_trait;
+use bytes::Bytes;
+use multi_agent_core::traits::{ArtifactMetadata, ArtifactStore};
+use multi_agent_core::types::RefId;
+use multi_agent_core::Result;
 use rand::{RngCore, SeedableRng};
 use std::sync::Arc;
 
@@ -17,8 +17,12 @@ pub struct EncryptedArtifactStore {
 }
 
 impl EncryptedArtifactStore {
-    pub fn new(inner: Arc<dyn ArtifactStore>, master_key_hex: &str) -> std::result::Result<Self, String> {
-        let key_bytes = hex::decode(master_key_hex).map_err(|e| format!("Invalid hex key: {}", e))?;
+    pub fn new(
+        inner: Arc<dyn ArtifactStore>,
+        master_key_hex: &str,
+    ) -> std::result::Result<Self, String> {
+        let key_bytes =
+            hex::decode(master_key_hex).map_err(|e| format!("Invalid hex key: {}", e))?;
         if key_bytes.len() != 32 {
             return Err("Master key must be 32 bytes (64 hex chars)".to_string());
         }
@@ -34,8 +38,9 @@ impl EncryptedArtifactStore {
         rng.fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = self.cipher.encrypt(nonce, data)
-            .map_err(|e| multi_agent_core::error::Error::Governance(format!("Encryption failed: {}", e)))?;
+        let ciphertext = self.cipher.encrypt(nonce, data).map_err(|e| {
+            multi_agent_core::error::Error::Governance(format!("Encryption failed: {}", e))
+        })?;
 
         // Prepend nonce to ciphertext
         let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
@@ -46,14 +51,17 @@ impl EncryptedArtifactStore {
 
     fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
         if data.len() < 12 {
-            return Err(multi_agent_core::error::Error::Governance("Data too short for decryption".to_string()));
+            return Err(multi_agent_core::error::Error::Governance(
+                "Data too short for decryption".to_string(),
+            ));
         }
 
         let (nonce_bytes, ciphertext) = data.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = self.cipher.decrypt(nonce, ciphertext)
-            .map_err(|e| multi_agent_core::error::Error::Governance(format!("Decryption failed: {}", e)))?;
+        let plaintext = self.cipher.decrypt(nonce, ciphertext).map_err(|e| {
+            multi_agent_core::error::Error::Governance(format!("Decryption failed: {}", e))
+        })?;
 
         Ok(plaintext)
     }
@@ -73,7 +81,9 @@ impl ArtifactStore for EncryptedArtifactStore {
 
     async fn save_with_type(&self, data: Bytes, content_type: &str) -> Result<RefId> {
         let encrypted = self.encrypt(&data)?;
-        self.inner.save_with_type(Bytes::from(encrypted), content_type).await
+        self.inner
+            .save_with_type(Bytes::from(encrypted), content_type)
+            .await
     }
 
     async fn load(&self, id: &RefId) -> Result<Option<Bytes>> {
@@ -112,7 +122,7 @@ mod tests {
     #[tokio::test]
     async fn test_encryption_roundtrip() {
         let base_store = Arc::new(InMemoryStore::new());
-        
+
         // 32-byte key in hex
         let key = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
         let store = EncryptedArtifactStore::new(base_store.clone(), key).unwrap();

@@ -268,8 +268,7 @@ impl PluginManager {
                 if manifest_path.exists() {
                     match PluginManifest::load(&manifest_path) {
                         Ok(manifest) => {
-                            if let Err(e) =
-                                manifest.validate_for_runtime(env!("CARGO_PKG_VERSION"))
+                            if let Err(e) = manifest.validate_for_runtime(env!("CARGO_PKG_VERSION"))
                             {
                                 tracing::warn!(
                                     "Skipping incompatible plugin manifest in {:?}: {}",

@@ -76,17 +76,26 @@ impl AesGcmSecretsManager {
         for (k, v) in storage.iter_mut() {
             // Decrypt with old key
             let nonce_bytes = BASE64.decode(&v.nonce).map_err(|e| {
-                multi_agent_core::error::Error::SecurityViolation(format!("Invalid nonce for {}: {}", k, e))
+                multi_agent_core::error::Error::SecurityViolation(format!(
+                    "Invalid nonce for {}: {}",
+                    k, e
+                ))
             })?;
             let ciphertext_bytes = BASE64.decode(&v.ciphertext).map_err(|e| {
-                multi_agent_core::error::Error::SecurityViolation(format!("Invalid ciphertext for {}: {}", k, e))
+                multi_agent_core::error::Error::SecurityViolation(format!(
+                    "Invalid ciphertext for {}: {}",
+                    k, e
+                ))
             })?;
             let nonce = Nonce::from_slice(&nonce_bytes);
 
             let plaintext_bytes = old_cipher
                 .decrypt(nonce, ciphertext_bytes.as_ref())
                 .map_err(|e| {
-                    multi_agent_core::error::Error::SecurityViolation(format!("Decryption failed during rotation for {}: {}", k, e))
+                    multi_agent_core::error::Error::SecurityViolation(format!(
+                        "Decryption failed during rotation for {}: {}",
+                        k, e
+                    ))
                 })?;
 
             // Encrypt with new key
@@ -97,7 +106,10 @@ impl AesGcmSecretsManager {
             let new_ciphertext = new_cipher
                 .encrypt(new_nonce, plaintext_bytes.as_ref())
                 .map_err(|e| {
-                    multi_agent_core::error::Error::SecurityViolation(format!("Encryption failed during rotation for {}: {}", k, e))
+                    multi_agent_core::error::Error::SecurityViolation(format!(
+                        "Encryption failed during rotation for {}: {}",
+                        k, e
+                    ))
                 })?;
 
             v.ciphertext = BASE64.encode(new_ciphertext);
@@ -180,7 +192,9 @@ impl SecretsManager for AesGcmSecretsManager {
     }
 
     async fn rotate_key(&self, new_key: Vec<u8>) -> Result<()> {
-        let key: [u8; 32] = new_key.try_into().map_err(|_| multi_agent_core::error::Error::SecurityViolation("Key must be 32 bytes".into()))?;
+        let key: [u8; 32] = new_key.try_into().map_err(|_| {
+            multi_agent_core::error::Error::SecurityViolation("Key must be 32 bytes".into())
+        })?;
         self.rotate_key(key)
     }
 }
@@ -195,19 +209,27 @@ impl FilePersistentSecretsManager {
     pub async fn new(path: impl Into<std::path::PathBuf>, key: Option<[u8; 32]>) -> Result<Self> {
         let path = path.into();
         let inner = AesGcmSecretsManager::new(key);
-        
+
         // Load existing if available
         if path.exists() {
-            let encoded = tokio::fs::read_to_string(&path)
-                .await
-                .map_err(|e| multi_agent_core::error::Error::storage(format!("Failed to read secrets file: {}", e)))?;
-            
+            let encoded = tokio::fs::read_to_string(&path).await.map_err(|e| {
+                multi_agent_core::error::Error::storage(format!(
+                    "Failed to read secrets file: {}",
+                    e
+                ))
+            })?;
+
             // Decrypt the whole file content if needed, but here we store as JSON of EncryptedSecret
             // For simplicity in this iteration, we store the HashMap directly in the AesGcmSecretsManager
             // In a real system, the file itself would be encrypted with a master key.
             let storage: HashMap<String, EncryptedSecret> = serde_json::from_str(&encoded)
-                .map_err(|e| multi_agent_core::error::Error::storage(format!("Failed to parse secrets: {}", e)))?;
-            
+                .map_err(|e| {
+                    multi_agent_core::error::Error::storage(format!(
+                        "Failed to parse secrets: {}",
+                        e
+                    ))
+                })?;
+
             *inner.storage.lock().unwrap() = storage;
         }
 
@@ -217,14 +239,18 @@ impl FilePersistentSecretsManager {
     async fn flush(&self) -> Result<()> {
         let encoded = {
             let storage = self.inner.storage.lock().unwrap();
-            serde_json::to_string(&*storage)
-                .map_err(|e| multi_agent_core::error::Error::storage(format!("Failed to serialize secrets: {}", e)))?
+            serde_json::to_string(&*storage).map_err(|e| {
+                multi_agent_core::error::Error::storage(format!(
+                    "Failed to serialize secrets: {}",
+                    e
+                ))
+            })?
         };
-        
-        tokio::fs::write(&self.path, encoded)
-            .await
-            .map_err(|e| multi_agent_core::error::Error::storage(format!("Failed to write secrets file: {}", e)))?;
-        
+
+        tokio::fs::write(&self.path, encoded).await.map_err(|e| {
+            multi_agent_core::error::Error::storage(format!("Failed to write secrets file: {}", e))
+        })?;
+
         Ok(())
     }
 
@@ -256,7 +282,9 @@ impl SecretsManager for FilePersistentSecretsManager {
     }
 
     async fn rotate_key(&self, new_key: Vec<u8>) -> Result<()> {
-        let key: [u8; 32] = new_key.try_into().map_err(|_| multi_agent_core::error::Error::SecurityViolation("Key must be 32 bytes".into()))?;
+        let key: [u8; 32] = new_key.try_into().map_err(|_| {
+            multi_agent_core::error::Error::SecurityViolation("Key must be 32 bytes".into())
+        })?;
         self.inner.rotate_key(key)?;
         self.flush().await
     }
@@ -274,13 +302,17 @@ mod tests {
         let key = [0u8; 32];
 
         {
-            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key)).await.unwrap();
-            let _ : () = manager.store("test_key", "secret_value").await.unwrap();
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key))
+                .await
+                .unwrap();
+            let _: () = manager.store("test_key", "secret_value").await.unwrap();
         }
 
         // New manager, same file
         {
-            let manager = FilePersistentSecretsManager::new(path, Some(key)).await.unwrap();
+            let manager = FilePersistentSecretsManager::new(path, Some(key))
+                .await
+                .unwrap();
             let val: Option<String> = manager.retrieve("test_key").await.unwrap();
             assert_eq!(val, Some("secret_value".to_string()));
         }
@@ -295,19 +327,25 @@ mod tests {
 
         // 1. Store with key1
         {
-            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1)).await.unwrap();
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1))
+                .await
+                .unwrap();
             manager.store("my_secret", "top_secret_data").await.unwrap();
         }
 
         // 2. Load with key1, rotate to key2
         {
-            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1)).await.unwrap();
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1))
+                .await
+                .unwrap();
             manager.rotate_key(key2).await.unwrap();
         }
 
         // 3. Load with key2, retrieve
         {
-            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key2)).await.unwrap();
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key2))
+                .await
+                .unwrap();
             let val = manager.retrieve("my_secret").await.unwrap();
             assert_eq!(val, Some("top_secret_data".to_string()));
         }
@@ -315,10 +353,11 @@ mod tests {
         // 4. Load with key1, should fail (or return garbage/error)
         {
             // Note: AesGcm decryption with wrong key usually fails due to auth tag mismatch
-            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1)).await.unwrap();
+            let manager = FilePersistentSecretsManager::new(path.clone(), Some(key1))
+                .await
+                .unwrap();
             let result = manager.retrieve("my_secret").await;
             assert!(result.is_err());
         }
     }
 }
-

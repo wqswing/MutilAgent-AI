@@ -7,7 +7,13 @@ fn test_precedence_channel_over_account_and_peer() {
     let engine = RoutingPolicyEngine::new(vec![
         RoutingRule::force_complex("peer-rule", RouteScope::Peer, "peer-a", "peer path", 99),
         RoutingRule::force_fast("account-rule", RouteScope::Account, "acct-a", "search", 99),
-        RoutingRule::force_fast("channel-rule", RouteScope::Channel, "chan-a", "calculator", 1),
+        RoutingRule::force_fast(
+            "channel-rule",
+            RouteScope::Channel,
+            "chan-a",
+            "calculator",
+            1,
+        ),
     ]);
 
     let ctx = RoutingContext {
@@ -68,4 +74,3 @@ fn test_simulation_returns_deterministic_output() {
     assert_eq!(sim[0].matched_rule_id.as_deref(), Some("channel-rule"));
     assert_eq!(sim[1].matched_rule_id, None);
 }
-

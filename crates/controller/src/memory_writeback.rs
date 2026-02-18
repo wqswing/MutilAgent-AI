@@ -70,7 +70,13 @@ fn init_sqlite(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn append_sqlite_record(db_path: &Path, date: &str, session_id: &str, kind: &str, line: &str) -> Result<()> {
+fn append_sqlite_record(
+    db_path: &Path,
+    date: &str,
+    session_id: &str,
+    kind: &str,
+    line: &str,
+) -> Result<()> {
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| Error::controller(format!("create memory sqlite dir failed: {}", e)))?;
@@ -95,14 +101,16 @@ fn project_markdown_from_sqlite(db_path: &Path, base_dir: &Path) -> Result<()> {
         .prepare("SELECT date, line FROM memory_records ORDER BY date ASC, line ASC")
         .map_err(|e| Error::controller(format!("prepare memory sqlite query failed: {}", e)))?;
     let rows = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| Error::controller(format!("query memory sqlite failed: {}", e)))?;
 
     let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut merged = Vec::new();
     for row in rows {
-        let (date, line) = row
-            .map_err(|e| Error::controller(format!("scan memory sqlite row failed: {}", e)))?;
+        let (date, line) =
+            row.map_err(|e| Error::controller(format!("scan memory sqlite row failed: {}", e)))?;
         grouped.entry(date).or_default().push(line.clone());
         merged.push(line);
     }
@@ -141,7 +149,13 @@ fn project_markdown_from_sqlite(db_path: &Path, base_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn append_memory_record(base_dir: &Path, date: &str, session_id: &str, kind: &str, line: &str) -> Result<()> {
+fn append_memory_record(
+    base_dir: &Path,
+    date: &str,
+    session_id: &str,
+    kind: &str,
+    line: &str,
+) -> Result<()> {
     if let Some(db_path) = sqlite_memory_path() {
         append_sqlite_record(&db_path, date, session_id, kind, line)?;
         project_markdown_from_sqlite(&db_path, base_dir)?;

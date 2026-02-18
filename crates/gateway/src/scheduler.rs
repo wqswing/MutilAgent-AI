@@ -44,4 +44,3 @@ impl Default for ControllerScheduler {
         Self::new(32)
     }
 }
-

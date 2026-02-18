@@ -4,6 +4,13 @@
 
 Multiagent follows a strict layered architecture (`L0` to `L4`) to separate concerns between connectivity, orchestration, execution, storage, and governance.
 
+As of `v1.0.5/1.05`, the architecture is optimized for enterprise multi-agent operations:
+- Gateway uses typed contracts (req/res/event + schema + error code).
+- Intent recognition is LLM-based (no hard-coded route table required for primary path).
+- Scheduling is lane-based (`session lane` + `global lane`) for fairness and backpressure.
+- Side-effecting endpoints enforce idempotency keys.
+- Routing strategy is explicit and versioned (`channel/account/peer`) with simulation before publish.
+
 ### High-Level Layers
 
 | Layer | Name | Responsibility | Key Crates |
@@ -24,8 +31,9 @@ Multiagent follows a strict layered architecture (`L0` to `L4`) to separate conc
 - **Entry Point**: `GatewayServer` (Axum).
 - **Responsibility**: Accepts HTTP/WS requests, checks `SemanticCache`, parses requests into `NormalizedRequest`.
 - **Associations**:
-  - Uses `IntentRouter` (Trait) to classify user intent.
+  - Uses `IntentRouter` (Trait) to classify user intent (LLM-first, policy-constrained).
   - Wraps `Controller` (Trait) to execute complex tasks.
+  - Exposes routing admin endpoints: `/v1/admin/routing/simulate`, `/v1/admin/routing/publish`.
   - **Decoupling**: Does not know about specific controller implementations (e.g., ReAct).
 
 ### L1: Controller (`crates/controller`)
@@ -38,6 +46,8 @@ Multiagent follows a strict layered architecture (`L0` to `L4`) to separate conc
   - Holds `Arc<dyn ToolRegistry>` to execute tools (L2).
   - Holds `Arc<dyn SessionStore>` to save state (L3).
   - Holds `Arc<dyn LlmClient>` to reason (L-M).
+  - Runs lane-aware scheduling to balance per-session order and global throughput.
+  - Handles memory writeback loop (`YYYY-MM-DD.md` + `MEMORY.md`) and pre-compaction flush hooks.
 
 ### L2: Skills (`crates/skills`)
 - **Tooling**: `DefaultToolRegistry` (runtime) and `McpRegistry` (remote).
@@ -109,11 +119,13 @@ This section provides a mapping of project "Selling Points" to their technical i
 
 | Capability | Configuration Item | API Endpoint | Audit Log Entry | Integration Test |
 | :--- | :--- | :--- | :--- | :--- |
-| **RBAC** | `AppConfig.admin.auth` | `/v1/admin/*` | `ACCESS_GRANTED`, `AUTH_FAIL` | `tests/governance_test.rs` |
+| **RBAC/Auth** | `governance.admin_token` | `/v1/admin/*` | `ACCESS_GRANTED`, `AUTH_FAIL` | `tests/governance_test.rs` |
 | **Audit Chain** | `AuditStore`, `AdminConfig` | `/v1/admin/audit` | `ADMIN_ACTION`, `EXPORT_ZIP` | `tests/governance_test.rs` |
 | **Human Approval** | `ApprovalGate`, `Tools.risk` | `/v1/admin/approvals` | `APPROVAL_REQUEST`, `DECISION` | `tests/governance_test.rs` |
 | **PII/Guardrails** | `SecurityCapability` | *Transparent Middleware* | `PII_BLOCK`, `INJECTION_DETECT` | `tests/governance_test.rs` |
 | **Airlock (Egress)** | `NetworkPolicy`, `fetch_with_policy` | `/v1/admin/domains` | `EGRESS_REQUEST`, `EGRESS_RESULT` | `crates/governance/src/network.rs` |
 | **Budget Control** | `ReActConfig.budget` | `/v1/chat` | `BUDGET_EXCEEDED` | `test_budget_exceeded` |
+| **Routing Policy Simulation** | `routing strategy version` | `/v1/admin/routing/simulate` | `ROUTING_SIMULATE` | `tests/routing_simulate_test.rs` |
+| **Routing Policy Publish** | `routing strategy version` | `/v1/admin/routing/publish` | `ROUTING_PUBLISH` | `tests/routing_simulate_test.rs` |
 
 *> Note: Egress control is now unified in `multi_agent_governance::network`.*

@@ -4,9 +4,7 @@ use axum::{
 };
 use multi_agent_admin::AdminState;
 use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
-use multi_agent_governance::{
-    setup_metrics_recorder, NoOpRbacConnector, SqliteAuditStore,
-};
+use multi_agent_governance::{setup_metrics_recorder, NoOpRbacConnector, SqliteAuditStore};
 use std::sync::Arc;
 use tower::ServiceExt; // for oneshot
 
@@ -35,7 +33,9 @@ async fn test_v0_8_features_integration() {
         artifact_store: None,
         session_store: None,
         app_config: multi_agent_core::config::AppConfig::default(),
-        network_policy: Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default())),
+        network_policy: Arc::new(tokio::sync::RwLock::new(
+            multi_agent_governance::network::NetworkPolicy::default(),
+        )),
     });
 
     // Initialize Gateway
@@ -52,7 +52,8 @@ async fn test_v0_8_features_integration() {
     let router = Arc::new(DefaultRouter::new());
     let llm_client = Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy"));
     let cache = Arc::new(InMemorySemanticCache::new(llm_client));
-    let routing_policy_store = Arc::new(multi_agent_gateway::routing_policy::RoutingPolicyStore::new());
+    let routing_policy_store =
+        Arc::new(multi_agent_gateway::routing_policy::RoutingPolicyStore::new());
 
     let server = GatewayServer::new(config, router, cache)
         .with_admin(admin_state)

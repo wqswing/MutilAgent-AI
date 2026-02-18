@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use multi_agent_core::{
-    traits::{KnowledgeEntry, KnowledgeStore, Erasable},
+    traits::{Erasable, KnowledgeEntry, KnowledgeStore},
     Result,
 };
 
@@ -138,13 +138,20 @@ impl SqliteKnowledgeStore {
                 created_at INTEGER NOT NULL
             )",
             [],
-        ).map_err(|e| multi_agent_core::error::Error::Internal(format!("Schema error: {}", e)))?;
+        )
+        .map_err(|e| multi_agent_core::error::Error::Internal(format!("Schema error: {}", e)))?;
 
         // Index for tag and user search
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_session ON knowledge (session_id)", [])
-            .map_err(|e| multi_agent_core::error::Error::Internal(format!("Index error: {}", e)))?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_user ON knowledge (user_id)", [])
-            .map_err(|e| multi_agent_core::error::Error::Internal(format!("Index error: {}", e)))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_session ON knowledge (session_id)",
+            [],
+        )
+        .map_err(|e| multi_agent_core::error::Error::Internal(format!("Index error: {}", e)))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_knowledge_user ON knowledge (user_id)",
+            [],
+        )
+        .map_err(|e| multi_agent_core::error::Error::Internal(format!("Index error: {}", e)))?;
 
         Ok(Self {
             conn: Arc::new(tokio::sync::Mutex::new(conn)),
@@ -157,7 +164,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
     async fn store(&self, entry: KnowledgeEntry) -> Result<String> {
         let conn = self.conn.clone();
         let id = entry.id.clone();
-        
+
         // Convert vectors to JSON strings for storage
         let embedding_json = serde_json::to_string(&entry.embedding)
             .map_err(|e| multi_agent_core::error::Error::Internal(e.to_string()))?;
@@ -199,7 +206,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
             let entries = stmt.query_map([], |row| {
                 let embedding_str: String = row.get(5)?;
                 let tags_str: String = row.get(6)?;
-                
+
                 Ok(KnowledgeEntry {
                     id: row.get(0)?,
                     summary: row.get(1)?,
@@ -246,7 +253,7 @@ impl KnowledgeStore for SqliteKnowledgeStore {
             let entries = stmt.query_map([], |row| {
                 let embedding_str: String = row.get(5)?;
                 let tags_str: String = row.get(6)?;
-                
+
                 Ok(KnowledgeEntry {
                     id: row.get(0)?,
                     summary: row.get(1)?,
@@ -278,7 +285,9 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         tokio::task::spawn_blocking(move || {
             let conn = conn.blocking_lock();
             conn.execute("DELETE FROM knowledge WHERE id = ?1", params![target_id])
-                .map_err(|e| multi_agent_core::error::Error::Internal(format!("Delete error: {}", e)))?;
+                .map_err(|e| {
+                    multi_agent_core::error::Error::Internal(format!("Delete error: {}", e))
+                })?;
             Ok(())
         })
         .await
@@ -289,8 +298,11 @@ impl KnowledgeStore for SqliteKnowledgeStore {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || {
             let conn = conn.blocking_lock();
-            let count: usize = conn.query_row("SELECT COUNT(*) FROM knowledge", [], |row| row.get(0))
-                .map_err(|e| multi_agent_core::error::Error::Internal(format!("Count error: {}", e)))?;
+            let count: usize = conn
+                .query_row("SELECT COUNT(*) FROM knowledge", [], |row| row.get(0))
+                .map_err(|e| {
+                    multi_agent_core::error::Error::Internal(format!("Count error: {}", e))
+                })?;
             Ok(count)
         })
         .await
@@ -305,8 +317,11 @@ impl Erasable for SqliteKnowledgeStore {
         let uid = user_id.to_string();
         tokio::task::spawn_blocking(move || {
             let conn = conn.blocking_lock();
-            let count = conn.execute("DELETE FROM knowledge WHERE user_id = ?", params![uid])
-                .map_err(|e| multi_agent_core::error::Error::Internal(format!("Delete error: {}", e)))?;
+            let count = conn
+                .execute("DELETE FROM knowledge WHERE user_id = ?", params![uid])
+                .map_err(|e| {
+                    multi_agent_core::error::Error::Internal(format!("Delete error: {}", e))
+                })?;
             Ok(count)
         })
         .await
@@ -473,7 +488,12 @@ mod tests {
         assert_eq!(store.count().await.unwrap(), 0);
 
         store
-            .store(make_entry("k1", "Sqlite is persistent", vec![1.0], vec!["db"]))
+            .store(make_entry(
+                "k1",
+                "Sqlite is persistent",
+                vec![1.0],
+                vec!["db"],
+            ))
             .await
             .unwrap();
         assert_eq!(store.count().await.unwrap(), 1);

@@ -10,6 +10,9 @@ routing_timeout_ms = 500
 semantic_cache_threshold = 0.95
 allowed_origins = ["*"]
 
+[gateway.tls]
+enabled = false
+
 [controller]
 # L1 Controller settings
 max_react_iterations = 10
@@ -22,6 +25,9 @@ large_content_threshold = 1000
 # Storage tier (memory, redis, s3)
 default_tier = "memory"
 
+[store.encryption]
+enabled = false
+
 [governance]
 # L4 Governance settings
 default_token_budget = 50000
@@ -31,6 +37,9 @@ audit_log_storage_path = ".sovereign_claw/audit.log.jsonl"
 multiagent_env = "development"
 # Allow external access to admin API (default: false, localhost only)
 admin_allow_external_access = false
+allow_domains = ["*.openai.com", "*.anthropic.com"]
+deny_domains = []
+json_logs = false
 
 [model_gateway]
 # L-M Model Gateway settings
@@ -45,3 +54,15 @@ models = ["gpt-4o", "gpt-4o-mini"]
 [model_gateway.providers.anthropic]
 enabled = true
 models = ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
+
+[safety]
+max_download_size_bytes = 10485760
+allowed_content_types = [
+  "text/html",
+  "text/plain",
+  "application/json",
+  "application/pdf",
+  "text/csv",
+  "text/xml",
+  "application/xhtml+xml",
+]

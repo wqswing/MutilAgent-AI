@@ -7,7 +7,11 @@ use opentelemetry_sdk::{runtime, trace as sdktrace, Resource};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Configure distributed tracing with OpenTelemetry and stdout logging.
-pub fn configure_tracing(rust_log: Option<&str>, otel_endpoint: Option<&str>, json_logs: bool) -> Result<()> {
+pub fn configure_tracing(
+    rust_log: Option<&str>,
+    otel_endpoint: Option<&str>,
+    json_logs: bool,
+) -> Result<()> {
     // Basic EnvFilter
     let env_filter =
         tracing_subscriber::EnvFilter::new(rust_log.unwrap_or("info,multiagent=debug"));

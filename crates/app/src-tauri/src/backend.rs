@@ -8,16 +8,16 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 use multi_agent_controller::ReActController;
 use multi_agent_core::traits::{ArtifactStore, SessionStore, ToolRegistry};
 use multi_agent_core::types::ToolRiskLevel;
-use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
 use multi_agent_gateway::research::ResearchOrchestrator;
+use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
 use multi_agent_governance::approval::ChannelApprovalGate;
 use multi_agent_skills::{
     load_mcp_config, CalculatorTool, CompositeToolRegistry, DefaultToolRegistry, EchoTool,
     McpRegistry,
 };
 use multi_agent_store::{
-    InMemorySessionStore, InMemoryStore, RedisSessionStore, S3ArtifactStore, TieredStore,
-    knowledge::InMemoryKnowledgeStore,
+    knowledge::InMemoryKnowledgeStore, InMemorySessionStore, InMemoryStore, RedisSessionStore,
+    S3ArtifactStore, TieredStore,
 };
 
 /// A writer that broadcasts log lines to a channel.
@@ -218,7 +218,9 @@ pub async fn start_server() -> Result<()> {
                         "Failed to parse network policy: {}. Using Deny-All default.",
                         e
                     );
-                    Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default()))
+                    Arc::new(tokio::sync::RwLock::new(
+                        multi_agent_governance::network::NetworkPolicy::default(),
+                    ))
                 }
             },
             Err(e) => {
@@ -226,7 +228,9 @@ pub async fn start_server() -> Result<()> {
                     "Failed to read network policy: {}. Using Deny-All default.",
                     e
                 );
-                Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default()))
+                Arc::new(tokio::sync::RwLock::new(
+                    multi_agent_governance::network::NetworkPolicy::default(),
+                ))
             }
         }
     } else {
@@ -242,7 +246,9 @@ pub async fn start_server() -> Result<()> {
                 let _ = std::fs::write(policy_path, yaml);
             }
         }
-        Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default()))
+        Arc::new(tokio::sync::RwLock::new(
+            multi_agent_governance::network::NetworkPolicy::default(),
+        ))
     };
 
     local_registry
@@ -290,7 +296,9 @@ pub async fn start_server() -> Result<()> {
     if let Some(parent) = std::path::Path::new(&audit_log_path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let audit_store = Arc::new(multi_agent_governance::SqliteAuditStore::new(&audit_log_path)?);
+    let audit_store = Arc::new(multi_agent_governance::SqliteAuditStore::new(
+        &audit_log_path,
+    )?);
 
     // Onboarding Keys
     if let Some(key) = &app_config.model_gateway.openai_api_key {

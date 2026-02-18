@@ -64,17 +64,10 @@ impl NetworkPolicy {
     /// Check if a URL is allowed by the policy.
     ///
     /// Rules:
-    /// 1. IP addresses are currently DENIED (enforce DNS usage).
-    /// 2. Port must be in `allow_ports`.
+    /// 1. Port must be in `allow_ports`.
+    /// 2. Host must not be a direct IP (enforce DNS usage).
     /// 3. Domain must NOT be in `deny_domains`.
     /// 4. Domain MUST be in `allow_domains`.
-    /// Check if a URL is allowed by the policy.
-    ///
-    /// Rules:
-    /// 1. Port must be in `allow_ports`.
-    /// 2. Domain must NOT be in `deny_domains`.
-    /// 3. Domain MUST be in `allow_domains`.
-    /// 4. If Host is an IP, it must be public (not loopback/private).
     pub fn check(&self, url_str: &str) -> Result<NetworkDecision, NetworkError> {
         let url = Url::parse(url_str).map_err(|e| NetworkError::InvalidUrl(e.to_string()))?;
 
@@ -93,40 +86,6 @@ impl NetworkPolicy {
             None => return Ok(NetworkDecision::Denied("URL has no host".to_string())),
         };
 
-        // If it parses as IP, check it immediately using check_ip
-        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-             match self.check_ip(ip) {
-                 Ok(_) => {}, // IP is safe, but we still need to check allow/deny lists if we treat IPs as domains? 
-                              // Actually, if it's an IP, we probably just want to check if it's private.
-                              // But wait, the previous logic said "Direct IP access is prohibited". 
-                              // Use domain names.
-                              // Let's stick to "Direct IP access is prohibited" for now as per M6.1 plan?
-                              // "Implement logic to block... Private...". 
-                              // Actually, the plan says "Add check_ip method... Implement logic to block...".
-                              // If I allow public IPs, I should check them.
-                              // But the previous code explicitly blocked ALL IPs. 
-                              // "Direct IP access is prohibited. Use domain names."
-                              // Use domain names implies we DO NOT want users hitting 1.1.1.1 directly?
-                              // If so, `check` handles the URL string check.
-                              // `check_ip` will be used by the caller (FetchTool) AFTER DNS resolution.
-                 Err(e) => return Ok(NetworkDecision::Denied(e.to_string())),
-             }
-             // Fall through to deny/allow lists? IP usually won't match "google.com".
-             // If allow list has "*", it might match.
-        }
-        
-        // Re-implement existing logic but maybe lift the "Block IP addresses" restriction if we want to allow public IPs?
-        // The original code:
-        /*
-        if host.parse::<std::net::IpAddr>().is_ok() {
-            return Ok(NetworkDecision::Denied(
-                "Direct IP access is prohibited. Use domain names.".to_string(),
-            ));
-        }
-        */
-        // I will Keep this restriction for `check(url)` because we want to enforce DNS usage for visibility/policy.
-        // `check_ip` is a helper for the Tool to use AFTER resolving the domain.
-        
         if host.parse::<std::net::IpAddr>().is_ok() {
             return Ok(NetworkDecision::Denied(
                 "Direct IP access is prohibited. Use domain names.".to_string(),
@@ -166,10 +125,10 @@ impl NetworkPolicy {
                     return Self::check_ipv4(ipv4);
                 }
 
-                if ipv6.is_loopback() 
-                    || ipv6.is_unspecified() 
+                if ipv6.is_loopback()
+                    || ipv6.is_unspecified()
                     // unique local: fc00::/7
-                    || (ipv6.segments()[0] & 0xfe00) == 0xfc00 
+                    || (ipv6.segments()[0] & 0xfe00) == 0xfc00
                     // link local: fe80::/10
                     || (ipv6.segments()[0] & 0xffc0) == 0xfe80
                     // discarded: 100::/64
@@ -185,45 +144,45 @@ impl NetworkPolicy {
     }
 
     fn check_ipv4(ipv4: std::net::Ipv4Addr) -> Result<(), String> {
-        if ipv4.is_loopback() 
-            || ipv4.is_private() 
-            || ipv4.is_link_local() 
-            || ipv4.is_broadcast() 
-            || ipv4.is_documentation() 
+        if ipv4.is_loopback()
+            || ipv4.is_private()
+            || ipv4.is_link_local()
+            || ipv4.is_broadcast()
+            || ipv4.is_documentation()
             || ipv4.is_unspecified()
         {
             return Err(format!("Blocked internal/private IPv4: {}", ipv4));
         }
 
         let octets = ipv4.octets();
-        
+
         // Carrier-grade NAT (100.64.0.0/10)
         // 100.64.0.0 to 100.127.255.255
         if octets[0] == 100 && (octets[1] & 0xC0) == 0x40 {
-             return Err(format!("Blocked Carrier-Grade NAT IPv4: {}", ipv4));
+            return Err(format!("Blocked Carrier-Grade NAT IPv4: {}", ipv4));
         }
 
         // IETF Protocol Assignments (192.0.0.0/24)
         if octets[0] == 192 && octets[1] == 0 && octets[2] == 0 {
-             return Err(format!("Blocked IETF Protocol Assignment IPv4: {}", ipv4));
+            return Err(format!("Blocked IETF Protocol Assignment IPv4: {}", ipv4));
         }
 
         // Benchmarking (198.18.0.0/15)
         // 198.18.0.0 to 198.19.255.255
         if octets[0] == 198 && (octets[1] & 0xFE) == 18 {
-             return Err(format!("Blocked Benchmarking IPv4: {}", ipv4));
+            return Err(format!("Blocked Benchmarking IPv4: {}", ipv4));
         }
 
         // Reserved (240.0.0.0/4) - Class E (except broadcast 255.255.255.255 which is covered)
         // 240.0.0.0 to 255.255.255.254
         if octets[0] >= 240 {
-             // 255.255.255.255 is broadcast, already checked. 
-             // But let's block the rest of Class E just in case.
-             if ipv4 != std::net::Ipv4Addr::BROADCAST {
-                 return Err(format!("Blocked Reserved/Class E IPv4: {}", ipv4));
-             }
+            // 255.255.255.255 is broadcast, already checked.
+            // But let's block the rest of Class E just in case.
+            if ipv4 != std::net::Ipv4Addr::BROADCAST {
+                return Err(format!("Blocked Reserved/Class E IPv4: {}", ipv4));
+            }
         }
-        
+
         Ok(())
     }
 
@@ -317,14 +276,20 @@ mod tests {
     #[test]
     fn test_ssrf_blocks() {
         let policy = NetworkPolicy::default();
-        
+
         // IPv4-mapped IPv6 Loopback
         let ip: std::net::IpAddr = "::ffff:127.0.0.1".parse().unwrap();
-        assert!(policy.check_ip(ip).is_err(), "Should block IPv4-mapped loopback");
+        assert!(
+            policy.check_ip(ip).is_err(),
+            "Should block IPv4-mapped loopback"
+        );
 
         // IPv4-mapped IPv6 Private
         let ip: std::net::IpAddr = "::ffff:10.0.0.1".parse().unwrap();
-        assert!(policy.check_ip(ip).is_err(), "Should block IPv4-mapped private");
+        assert!(
+            policy.check_ip(ip).is_err(),
+            "Should block IPv4-mapped private"
+        );
 
         // Carrier-Grade NAT
         let ip: std::net::IpAddr = "100.64.0.1".parse().unwrap();
@@ -344,7 +309,10 @@ mod tests {
 
         // IPv6 Unique Local
         let ip: std::net::IpAddr = "fc00::1".parse().unwrap();
-        assert!(policy.check_ip(ip).is_err(), "Should block IPv6 Unique Local");
+        assert!(
+            policy.check_ip(ip).is_err(),
+            "Should block IPv6 Unique Local"
+        );
 
         // Public IP (Cloudflare DNS) - Should Pass
         let ip: std::net::IpAddr = "1.1.1.1".parse().unwrap();
@@ -381,66 +349,96 @@ pub async fn fetch_with_policy(
                     url, reason
                 )));
             }
-            Err(e) => return Err(multi_agent_core::Error::governance(format!("Policy check failed: {}", e))),
+            Err(e) => {
+                return Err(multi_agent_core::Error::governance(format!(
+                    "Policy check failed: {}",
+                    e
+                )))
+            }
         }
 
         // 2. Resolve IP & Check
-        let host = url.host_str().ok_or_else(|| multi_agent_core::Error::governance("URL has no host".to_string()))?;
+        let host = url
+            .host_str()
+            .ok_or_else(|| multi_agent_core::Error::governance("URL has no host".to_string()))?;
         let port = url.port_or_known_default().unwrap_or(80);
         let addr_str = format!("{}:{}", host, port);
-        
-        let mut addrs = tokio::net::lookup_host(&addr_str).await
-            .map_err(|e| multi_agent_core::Error::governance(format!("DNS resolution failed for {}: {}", host, e)))?;
-        
+
+        let mut addrs = tokio::net::lookup_host(&addr_str).await.map_err(|e| {
+            multi_agent_core::Error::governance(format!(
+                "DNS resolution failed for {}: {}",
+                host, e
+            ))
+        })?;
+
         // Use first IP
-        let target_socket = addrs.next().ok_or_else(|| multi_agent_core::Error::governance(format!("No IP addresses found for {}", host)))?;
+        let target_socket = addrs.next().ok_or_else(|| {
+            multi_agent_core::Error::governance(format!("No IP addresses found for {}", host))
+        })?;
         let target_ip = target_socket.ip();
 
         // Validate IP
         if let Err(e) = policy.check_ip(target_ip) {
-            return Err(multi_agent_core::Error::governance(format!("Network policy denied IP {}: {}", target_ip, e)));
+            return Err(multi_agent_core::Error::governance(format!(
+                "Network policy denied IP {}: {}",
+                target_ip, e
+            )));
         }
 
         // 3. Prepare Request (IP Pinning)
         let mut safe_url = url.clone();
         if safe_url.set_host(Some(&target_ip.to_string())).is_err() {
-            return Err(multi_agent_core::Error::governance(format!("Failed to set safe IP host: {}", target_ip)));
+            return Err(multi_agent_core::Error::governance(format!(
+                "Failed to set safe IP host: {}",
+                target_ip
+            )));
         }
 
-        let mut req_builder = client.request(method.clone(), safe_url)
+        let mut req_builder = client
+            .request(method.clone(), safe_url)
             .header("Host", host);
-        
+
         if let Some(h) = headers {
             req_builder = req_builder.headers(h.clone());
         }
 
         // Only attach body if method allows AND we aren't redirected to GET
         if method != reqwest::Method::GET {
-             if let Some(b) = body {
-                 req_builder = req_builder.body(b.clone());
-             }
+            if let Some(b) = body {
+                req_builder = req_builder.body(b.clone());
+            }
         }
 
-        let resp = req_builder.send().await
+        let resp = req_builder
+            .send()
+            .await
             .map_err(|e| multi_agent_core::Error::governance(format!("Request failed: {}", e)))?;
 
         // 4. Handle Redirects
         if resp.status().is_redirection() {
             if let Some(loc) = resp.headers().get(reqwest::header::LOCATION) {
-                let loc_str = loc.to_str().map_err(|e| multi_agent_core::Error::governance(format!("Invalid Location header: {}", e)))?;
+                let loc_str = loc.to_str().map_err(|e| {
+                    multi_agent_core::Error::governance(format!("Invalid Location header: {}", e))
+                })?;
                 // Parse relative or absolute
-                let next_url = url.join(loc_str)
-                    .map_err(|e| multi_agent_core::Error::governance(format!("Invalid redirect URL {}: {}", loc_str, e)))?;
-                
+                let next_url = url.join(loc_str).map_err(|e| {
+                    multi_agent_core::Error::governance(format!(
+                        "Invalid redirect URL {}: {}",
+                        loc_str, e
+                    ))
+                })?;
+
                 // Determine next method
                 let status = resp.status();
                 if status == reqwest::StatusCode::MOVED_PERMANENTLY || // 301
                    status == reqwest::StatusCode::FOUND ||             // 302
-                   status == reqwest::StatusCode::SEE_OTHER {          // 303
+                   status == reqwest::StatusCode::SEE_OTHER
+                {
+                    // 303
                     method = reqwest::Method::GET;
                     // Body will be dropped in next iteration due to check above
                 }
-                
+
                 url = next_url;
                 continue;
             }
@@ -472,13 +470,19 @@ pub async fn fetch_with_policy(
                     }
                 }
                 if !allowed {
-                     return Err(multi_agent_core::Error::governance(format!("Content-Type '{}' not allowed", ct_str)));
+                    return Err(multi_agent_core::Error::governance(format!(
+                        "Content-Type '{}' not allowed",
+                        ct_str
+                    )));
                 }
             }
         }
 
         return Ok(resp);
     }
-    
-    Err(multi_agent_core::Error::governance(format!("Too many redirects (max {})", MAX_REDIRECTS)))
+
+    Err(multi_agent_core::Error::governance(format!(
+        "Too many redirects (max {})",
+        MAX_REDIRECTS
+    )))
 }

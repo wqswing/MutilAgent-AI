@@ -125,7 +125,7 @@ impl SqliteAuditStore {
     pub fn new(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let conn = Connection::open(path)
             .map_err(|e| multi_agent_core::error::Error::Governance(format!("DB error: {}", e)))?;
-        
+
         // Initialize schema
         conn.execute(
             "CREATE TABLE IF NOT EXISTS audit_logs (
@@ -140,11 +140,15 @@ impl SqliteAuditStore {
                 hash TEXT NOT NULL
             )",
             [],
-        ).map_err(|e| multi_agent_core::error::Error::Governance(format!("Schema error: {}", e)))?;
+        )
+        .map_err(|e| multi_agent_core::error::Error::Governance(format!("Schema error: {}", e)))?;
 
         // Index for performance
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs (user_id)", [])
-            .map_err(|e| multi_agent_core::error::Error::Governance(format!("Index error: {}", e)))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs (user_id)",
+            [],
+        )
+        .map_err(|e| multi_agent_core::error::Error::Governance(format!("Index error: {}", e)))?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -159,7 +163,13 @@ impl SqliteAuditStore {
         hasher.update(&entry.action);
         hasher.update(&entry.resource);
         hasher.update(serde_json::to_string(&entry.outcome).unwrap_or_default());
-        hasher.update(entry.metadata.as_ref().map(|m| m.to_string()).unwrap_or_default());
+        hasher.update(
+            entry
+                .metadata
+                .as_ref()
+                .map(|m| m.to_string())
+                .unwrap_or_default(),
+        );
         if let Some(ph) = prev_hash {
             hasher.update(ph);
         }
@@ -271,8 +281,11 @@ impl Erasable for SqliteAuditStore {
         let uid = user_id.to_string();
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
-            let count = conn.execute("DELETE FROM audit_logs WHERE user_id = ?", params![uid])
-                .map_err(|e| multi_agent_core::error::Error::Governance(format!("Delete error: {}", e)))?;
+            let count = conn
+                .execute("DELETE FROM audit_logs WHERE user_id = ?", params![uid])
+                .map_err(|e| {
+                    multi_agent_core::error::Error::Governance(format!("Delete error: {}", e))
+                })?;
             Ok(count)
         })
         .await
@@ -350,13 +363,13 @@ mod tests {
 
         let results = store.query(AuditFilter::default()).await.unwrap();
         assert_eq!(results.len(), 2);
-        
+
         // results is ordered by timestamp DESC
         let e2 = &results[0]; // test-2
         let e1 = &results[1]; // test-1
 
         assert_eq!(e2.previous_hash, e1.hash);
-        
+
         // Verify e2 hash
         let expected_hash = SqliteAuditStore::calculate_hash(e2, e1.hash.as_deref());
         assert_eq!(e2.hash.as_deref(), Some(expected_hash.as_str()));

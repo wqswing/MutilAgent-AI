@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.6-rc1] - 2026-02-18
+
+### ✅ Release Closure (P0/P1/P2 convergence)
+- **Configuration reliability**:
+  - Fixed `config/default.toml` required schema coverage for runtime startup.
+  - Added required governance/safety/encryption/tls default sections to avoid boot-time decode failures.
+- **Quality gates**:
+  - Resolved rustfmt/clippy blockers in governance modules.
+  - Revalidated release gate sequence: `fmt -> clippy -> test -> smoke`.
+- **Gateway and orchestration hardening**:
+  - Typed gateway contract alignment (request/response/event/error-code stability).
+  - Side-effect idempotency key support retained as release baseline.
+  - Lane-based scheduling (`session lane + global lane`) retained as controller baseline.
+- **Enterprise routing strategy (P2-first block)**:
+  - Explicit routing policy dimensions: `channel/account/peer`.
+  - Added simulation and publish admin APIs for safe strategy rollout.
+- **Memory writeback loop (P1)**:
+  - Session memory writeback loop maintained (`YYYY-MM-DD.md` + `MEMORY.md`).
+  - Pre-compaction flush integrated into governance/capability lifecycle.
+- **Release docs**:
+  - Updated `README.md` and `ARCHITECTURE.md` to reflect current production architecture and operations endpoints.
+
 ## [v1.0.5] - 2026-02-17
 
 ### 🛡️ Egress & Policy Hardening (P0/P1)

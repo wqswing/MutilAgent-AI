@@ -8,10 +8,10 @@ use multi_agent_core::traits::Controller;
 use multi_agent_core::types::{AgentResult, UserIntent};
 use multi_agent_gateway::{GatewayConfig, GatewayServer};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tower::ServiceExt;
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
+use tower::ServiceExt;
 
 struct MockController;
 

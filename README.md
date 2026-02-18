@@ -28,6 +28,8 @@ Multiagent is a production-grade, layered AI agent framework built in Rust. It i
 ### 🛡️ Governance & Security
 - **Unified Egress Control**: Centralized `fetch_with_policy` mechanism enforcing allow/deny lists, IP filtering, and SSRF protection for all outbound requests.
 - **Policy-Driven Approval**: Risk-based human-in-the-loop approval gates triggered by configurable thresholds in `policy.yaml`.
+- **Typed Gateway Contracts**: Stable request/response/event schemas with explicit error codes for public APIs.
+- **Idempotent Side Effects**: Mutation flows support idempotency keys to prevent duplicate writes.
 - **Console Authentication**: Secure admin access via `x-admin-token` header or cookie, with configurable external access controls.
 - **Tamper-Evident Auditing**: SHA-256 hash chaining for all administrative actions with SQLite persistence.
 - **Airlock Networking**: Fine-grained network governance and domain allowlisting for agent tools.
@@ -37,6 +39,8 @@ Multiagent is a production-grade, layered AI agent framework built in Rust. It i
 
 ### 📊 Management & Observability
 - **Admin Dashboard**: Web-based console for managing providers, MCP servers, and session state.
+- **Routing Policy Simulation**: Evaluate `channel/account/peer` routes before rollout.
+- **Routing Policy Versioning**: Publish and rollback routing strategy versions through admin APIs.
 - **System Doctor**: Automated self-diagnosis for connectivity, storage, and security health.
 - **Distributed Rate Limiting**: Global sliding window rate limiter backed by Redis.
 - **Privacy & Retention**: Automated background pruning and one-click user data erasure (GDPR ready).
@@ -92,12 +96,12 @@ export QDRANT_URL=http://localhost:6334
 
 # Observability
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
 
 ### Kubernetes (Production)
 ```bash
 # Deploy using Helm
 helm install multi-agent ./charts/multi-agent -f values.yaml
-```
 ```
 
 ### Running Locally
@@ -114,6 +118,26 @@ cargo test --workspace
 ```
 
 The server listens on `http://0.0.0.0:3000`.
+
+### Release Gate Checks
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+cargo test --workspace
+```
+
+```bash
+# startup smoke: binary + health + intent
+cargo run > /tmp/multiagent-run.log 2>&1 &
+PID=$!
+sleep 6
+curl -sf http://127.0.0.1:3000/health
+curl -sf -X POST http://127.0.0.1:3000/v1/intent \
+  -H "Content-Type: application/json" \
+  -d '{"message":"ping"}'
+kill $PID
+```
 
 ## 📖 Usage Examples
 
@@ -135,6 +159,7 @@ curl -X POST http://localhost:3000/v1/intent \
 ```bash
 curl http://localhost:3000/health
 curl http://localhost:3000/metrics
+```
 
 ### System Doctor (Self-Diagnosis)
 ```bash
@@ -147,6 +172,21 @@ curl -X POST http://localhost:3000/v1/admin/doctor \
 curl "http://localhost:3000/v1/admin/audit?action=DELETE_PROVIDER" \
   -H "Authorization: Bearer <admin_token>"
 ```
+
+### Routing Strategy Simulation
+```bash
+curl -X POST http://localhost:3000/v1/admin/routing/simulate \
+  -H "Content-Type: application/json" \
+  -H "x-admin-token: <admin_token>" \
+  -d '{"channel":"web","account":"acme","peer":"peer-a","model":"gpt-4o-mini"}'
+```
+
+### Routing Strategy Publish
+```bash
+curl -X POST http://localhost:3000/v1/admin/routing/publish \
+  -H "Content-Type: application/json" \
+  -H "x-admin-token: <admin_token>" \
+  -d '{"version":"2026-02-18","rules":[{"scope":"channel","key":"web","route":"openai"}]}'
 ```
 
 ## 🧪 Testing

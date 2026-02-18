@@ -5,13 +5,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use multi_agent_core::{traits::Tool, types::ToolOutput, Error, Result};
-use multi_agent_core::config::SafetyConfig;
-use multi_agent_governance::network::NetworkPolicy;
 use futures::StreamExt;
+use multi_agent_core::config::SafetyConfig;
+use multi_agent_core::{traits::Tool, types::ToolOutput, Error, Result};
+use multi_agent_governance::network::NetworkPolicy;
 use sha2::{Digest, Sha256};
-
-
 
 use tokio::sync::RwLock;
 
@@ -31,7 +29,7 @@ impl FetchTool {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-            
+
         Self {
             policy,
             safety,
@@ -77,7 +75,10 @@ impl Tool for FetchTool {
         let url = url::Url::parse(&args.url)
             .map_err(|e| Error::tool_execution(format!("Invalid URL: {}", e)))?;
 
-        let method = args.method.to_uppercase().parse::<reqwest::Method>()
+        let method = args
+            .method
+            .to_uppercase()
+            .parse::<reqwest::Method>()
             .map_err(|_| Error::tool_execution(format!("Invalid HTTP method: {}", args.method)))?;
 
         let mut headers = reqwest::header::HeaderMap::new();
@@ -90,9 +91,7 @@ impl Tool for FetchTool {
         }
 
         // Use helper
-        let policy_version = {
-            self.policy.read().await.version.clone()
-        };
+        let policy_version = { self.policy.read().await.version.clone() };
 
         let policy = self.policy.read().await.clone();
 
@@ -104,11 +103,13 @@ impl Tool for FetchTool {
             method,
             url,
             Some(&headers),
-            args.body.as_ref()
-        ).await.map_err(|e| Error::tool_execution(e.to_string()))?;
-        
+            args.body.as_ref(),
+        )
+        .await
+        .map_err(|e| Error::tool_execution(e.to_string()))?;
+
         let status = resp.status();
-        
+
         // Read body with limit
         let mut stream = resp.bytes_stream();
         let mut buffer = Vec::new();
@@ -116,31 +117,38 @@ impl Tool for FetchTool {
         let limit = self.safety.max_download_size_bytes;
 
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| Error::tool_execution(format!("Download failed: {}", e)))?;
+            let chunk =
+                chunk.map_err(|e| Error::tool_execution(format!("Download failed: {}", e)))?;
             total_size += chunk.len() as u64;
             if total_size > limit {
-                return Err(Error::tool_execution(format!("Response size exceeded limit ({} bytes)", limit)));
+                return Err(Error::tool_execution(format!(
+                    "Response size exceeded limit ({} bytes)",
+                    limit
+                )));
             }
             buffer.extend_from_slice(&chunk);
         }
-        
+
         let mut hasher = Sha256::new();
         hasher.update(&buffer);
         let body_hash = format!("{:x}", hasher.finalize());
 
         let content = String::from_utf8(buffer)
-             .map_err(|e| Error::tool_execution(format!("Invalid UTF-8 content: {}", e)))?;
+            .map_err(|e| Error::tool_execution(format!("Invalid UTF-8 content: {}", e)))?;
 
         if !status.is_success() {
-             return Ok(ToolOutput::text(format!("HTTP Error {}: {}", status, content))
-                .with_data(serde_json::json!({
-                    "policy_version": policy_version,
-                    "status": status.as_u16(),
-                    "url": args.url,
-                    "body_hash": body_hash
-                })));
+            return Ok(
+                ToolOutput::text(format!("HTTP Error {}: {}", status, content)).with_data(
+                    serde_json::json!({
+                        "policy_version": policy_version,
+                        "status": status.as_u16(),
+                        "url": args.url,
+                        "body_hash": body_hash
+                    }),
+                ),
+            );
         }
-        
+
         Ok(ToolOutput::text(content).with_data(serde_json::json!({
             "policy_version": policy_version,
             "status": status.as_u16(),
@@ -209,9 +217,7 @@ impl Tool for DownloadTool {
         let url = url::Url::parse(&args.url)
             .map_err(|e| Error::tool_execution(format!("Invalid URL: {}", e)))?;
 
-        let policy_version = {
-            self.policy.read().await.version.clone()
-        };
+        let policy_version = { self.policy.read().await.version.clone() };
 
         let policy = self.policy.read().await.clone();
 
@@ -223,11 +229,16 @@ impl Tool for DownloadTool {
             reqwest::Method::GET,
             url,
             None,
-            None
-        ).await.map_err(|e| Error::tool_execution(e.to_string()))?;
+            None,
+        )
+        .await
+        .map_err(|e| Error::tool_execution(e.to_string()))?;
 
         if !resp.status().is_success() {
-             return Err(Error::tool_execution(format!("HTTP Error {}", resp.status())));
+            return Err(Error::tool_execution(format!(
+                "HTTP Error {}",
+                resp.status()
+            )));
         }
 
         let mut stream = resp.bytes_stream();
@@ -236,34 +247,46 @@ impl Tool for DownloadTool {
         let limit = self.safety.max_download_size_bytes;
 
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| Error::tool_execution(format!("Download failed: {}", e)))?;
+            let chunk =
+                chunk.map_err(|e| Error::tool_execution(format!("Download failed: {}", e)))?;
             total_size += chunk.len() as u64;
             if total_size > limit {
-                 return Err(Error::tool_execution(format!("Download size limit exceeded ({} bytes)", limit)));
+                return Err(Error::tool_execution(format!(
+                    "Download size limit exceeded ({} bytes)",
+                    limit
+                )));
             }
             buffer.extend_from_slice(&chunk);
         }
 
-        let sandbox_id: multi_agent_sandbox::SandboxId = self.sandbox_manager.get_or_create().await
-             .map_err(|e| Error::tool_execution(format!("Failed to get sandbox: {}", e)))?;
-        
+        let sandbox_id: multi_agent_sandbox::SandboxId = self
+            .sandbox_manager
+            .get_or_create()
+            .await
+            .map_err(|e| Error::tool_execution(format!("Failed to get sandbox: {}", e)))?;
+
         let mut hasher = Sha256::new();
         hasher.update(&buffer);
         let body_hash = format!("{:x}", hasher.finalize());
 
-        self.sandbox_manager.engine()
-            .write_file(&sandbox_id, &args.destination_path, &buffer).await
+        self.sandbox_manager
+            .engine()
+            .write_file(&sandbox_id, &args.destination_path, &buffer)
+            .await
             .map_err(|e| Error::tool_execution(format!("Failed to write to sandbox: {}", e)))?;
 
-        Ok(ToolOutput::text(format!("Successfully downloaded {} bytes to {}", buffer.len(), args.destination_path))
-            .with_data(serde_json::json!({
-                "policy_version": policy_version,
-                "url": args.url,
-                "destination": args.destination_path,
-                "bytes": buffer.len(),
-                "body_hash": body_hash
-            }))
-        )
+        Ok(ToolOutput::text(format!(
+            "Successfully downloaded {} bytes to {}",
+            buffer.len(),
+            args.destination_path
+        ))
+        .with_data(serde_json::json!({
+            "policy_version": policy_version,
+            "url": args.url,
+            "destination": args.destination_path,
+            "bytes": buffer.len(),
+            "body_hash": body_hash
+        })))
     }
 }
 

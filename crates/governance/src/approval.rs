@@ -13,6 +13,8 @@ use multi_agent_core::{
     Error, Result,
 };
 
+type PendingRequest = (oneshot::Sender<ApprovalResponse>, String);
+
 // =============================================================================
 // Channel-Based Approval Gate
 // =============================================================================
@@ -26,7 +28,7 @@ pub struct ChannelApprovalGate {
     /// Minimum risk level that triggers approval.
     threshold: ToolRiskLevel,
     /// Pending approval requests, keyed by request_id.
-    pending: Arc<Mutex<HashMap<String, (oneshot::Sender<ApprovalResponse>, String)>>>,
+    pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
     /// Broadcast channel for notifying listeners about new requests.
     request_tx: broadcast::Sender<ApprovalRequest>,
     /// Timeout for waiting for approval (default: 5 minutes).

@@ -215,7 +215,12 @@ impl ArtifactStore for S3ArtifactStore {
             .bucket(&self.bucket)
             .send()
             .await
-            .map_err(|e| Error::storage(format!("S3 health check failed for bucket '{}': {}", self.bucket, e)))?;
+            .map_err(|e| {
+                Error::storage(format!(
+                    "S3 health check failed for bucket '{}': {}",
+                    self.bucket, e
+                ))
+            })?;
 
         Ok(())
     }

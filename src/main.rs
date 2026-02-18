@@ -12,8 +12,8 @@ use multi_agent_core::traits::{ArtifactStore, SessionStore, ToolRegistry};
 use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
 use multi_agent_skills::{CalculatorTool, DefaultToolRegistry, EchoTool};
 use multi_agent_store::{
-    InMemorySessionStore, InMemoryStore, RedisSessionStore, S3ArtifactStore, TieredStore,
-    knowledge::SqliteKnowledgeStore,
+    knowledge::SqliteKnowledgeStore, InMemorySessionStore, InMemoryStore, RedisSessionStore,
+    S3ArtifactStore, TieredStore,
 };
 use secrecy::ExposeSecret;
 
@@ -40,28 +40,46 @@ async fn main() -> anyhow::Result<()> {
     // =========================================================================
     // Initialize L3: Artifact Store
     // =========================================================================
-    let (store_raw, store): (Arc<dyn multi_agent_core::traits::Erasable>, Arc<dyn ArtifactStore>) = if let Some(bucket) = &app_config.store.s3_bucket {
+    let (store_raw, store): (
+        Arc<dyn multi_agent_core::traits::Erasable>,
+        Arc<dyn ArtifactStore>,
+    ) = if let Some(bucket) = &app_config.store.s3_bucket {
         let endpoint = app_config.store.s3_endpoint.as_deref();
         tracing::info!(bucket = %bucket, endpoint = ?endpoint, "Initializing S3 Artifact Store (Tiered)");
 
         let s3 = Arc::new(S3ArtifactStore::new(bucket, "", endpoint).await);
         let hot = Arc::new(InMemoryStore::new());
         let tiered = Arc::new(TieredStore::new(hot).with_cold(s3));
-        (tiered.clone() as Arc<dyn multi_agent_core::traits::Erasable>, tiered as Arc<dyn ArtifactStore>)
+        (
+            tiered.clone() as Arc<dyn multi_agent_core::traits::Erasable>,
+            tiered as Arc<dyn ArtifactStore>,
+        )
     } else {
         tracing::info!("Initializing In-Memory Artifact Store");
         let memory = Arc::new(InMemoryStore::new());
-        (memory.clone() as Arc<dyn multi_agent_core::traits::Erasable>, memory as Arc<dyn ArtifactStore>)
+        (
+            memory.clone() as Arc<dyn multi_agent_core::traits::Erasable>,
+            memory as Arc<dyn ArtifactStore>,
+        )
     };
 
     // Data-at-rest Encryption
     let store = if app_config.store.encryption.enabled {
         if let Some(key) = &app_config.store.encryption.master_key {
             tracing::info!("🔒 Artifact Store Encryption ENABLED");
-            Arc::new(multi_agent_governance::EncryptedArtifactStore::new(store, key.expose_secret())
-                .map_err(|e| multi_agent_core::Error::governance(format!("Encryption init failed: {}", e)))?)
+            Arc::new(
+                multi_agent_governance::EncryptedArtifactStore::new(store, key.expose_secret())
+                    .map_err(|e| {
+                        multi_agent_core::Error::governance(format!(
+                            "Encryption init failed: {}",
+                            e
+                        ))
+                    })?,
+            )
         } else {
-            tracing::warn!("Encryption enabled but no master key provided - falling back to plaintext");
+            tracing::warn!(
+                "Encryption enabled but no master key provided - falling back to plaintext"
+            );
             store
         }
     } else {
@@ -83,8 +101,13 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let secrets_manager: Arc<dyn multi_agent_governance::SecretsManager> =
-        Arc::new(multi_agent_governance::secrets::FilePersistentSecretsManager::new(secrets_path, master_key_bytes).await?);
+    let secrets_manager: Arc<dyn multi_agent_governance::SecretsManager> = Arc::new(
+        multi_agent_governance::secrets::FilePersistentSecretsManager::new(
+            secrets_path,
+            master_key_bytes,
+        )
+        .await?,
+    );
 
     // M11.2: Secrets Migration
     // Check for legacy onboarding.json and migrate to SecretsManager
@@ -119,9 +142,12 @@ async fn main() -> anyhow::Result<()> {
                 if migrated {
                     let new_path = legacy_path.with_extension("json.migrated");
                     if let Err(e) = tokio::fs::rename(&legacy_path, &new_path).await {
-                         tracing::error!("Failed to rename legacy onboarding file: {}", e);
+                        tracing::error!("Failed to rename legacy onboarding file: {}", e);
                     } else {
-                        tracing::info!("Secrets migrated successfully. Renamed legacy file to {:?}", new_path);
+                        tracing::info!(
+                            "Secrets migrated successfully. Renamed legacy file to {:?}",
+                            new_path
+                        );
                     }
                 }
             }
@@ -130,19 +156,27 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Initialize Session Store
-    let (session_store_raw, session_store): (Arc<dyn multi_agent_core::traits::Erasable>, Arc<dyn SessionStore>) = if let Some(redis_url) = &app_config.store.redis_url
-    {
+    let (session_store_raw, session_store): (
+        Arc<dyn multi_agent_core::traits::Erasable>,
+        Arc<dyn SessionStore>,
+    ) = if let Some(redis_url) = &app_config.store.redis_url {
         tracing::info!(url = %redis_url, "Initializing Redis Session Store");
         let redis = Arc::new(RedisSessionStore::new(
             redis_url,
             "multiagent:session",
             3600 * 24,
         )?);
-        (redis.clone() as Arc<dyn multi_agent_core::traits::Erasable>, redis as Arc<dyn SessionStore>)
+        (
+            redis.clone() as Arc<dyn multi_agent_core::traits::Erasable>,
+            redis as Arc<dyn SessionStore>,
+        )
     } else {
         tracing::info!("Initializing In-Memory Session Store");
         let memory = Arc::new(InMemorySessionStore::new());
-        (memory.clone() as Arc<dyn multi_agent_core::traits::Erasable>, memory as Arc<dyn SessionStore>)
+        (
+            memory.clone() as Arc<dyn multi_agent_core::traits::Erasable>,
+            memory as Arc<dyn SessionStore>,
+        )
     };
 
     // =========================================================================
@@ -206,7 +240,10 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Loading network policy from network_policy.json");
         let content = tokio::fs::read_to_string(&policy_path).await?;
         serde_json::from_str(&content).unwrap_or_else(|e| {
-            tracing::error!("Failed to parse network_policy.json: {}. Using default config.", e);
+            tracing::error!(
+                "Failed to parse network_policy.json: {}. Using default config.",
+                e
+            );
             multi_agent_governance::network::NetworkPolicy::new(
                 app_config.governance.allow_domains.clone(),
                 app_config.governance.deny_domains.clone(),
@@ -224,14 +261,21 @@ async fn main() -> anyhow::Result<()> {
     let network_policy = Arc::new(tokio::sync::RwLock::new(initial_policy));
 
     // Register Network tools
-    tools.register(Box::new(multi_agent_skills::network::FetchTool::new(network_policy.clone(), app_config.safety.clone())) as Box<dyn multi_agent_core::traits::Tool>).await?;
-
-    if let Some(sm) = &sandbox_manager {
-        tools.register(Box::new(multi_agent_skills::network::DownloadTool::new(
+    tools
+        .register(Box::new(multi_agent_skills::network::FetchTool::new(
             network_policy.clone(),
             app_config.safety.clone(),
-            sm.clone(),
-        )) as Box<dyn multi_agent_core::traits::Tool>).await?;
+        )) as Box<dyn multi_agent_core::traits::Tool>)
+        .await?;
+
+    if let Some(sm) = &sandbox_manager {
+        tools
+            .register(Box::new(multi_agent_skills::network::DownloadTool::new(
+                network_policy.clone(),
+                app_config.safety.clone(),
+                sm.clone(),
+            )) as Box<dyn multi_agent_core::traits::Tool>)
+            .await?;
     }
 
     let _sandbox_manager = sandbox_manager; // keep alive
@@ -271,26 +315,33 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Loading LLM config from providers.json");
             match multi_agent_model_gateway::config::ProviderConfig::load(providers_path).await {
                 Ok(cfg) => {
-                        match {
-                            let openai_key = if let Some(k) = app_config.model_gateway.openai_api_key.clone() {
+                    let client_result = {
+                        let openai_key =
+                            if let Some(k) = app_config.model_gateway.openai_api_key.clone() {
                                 Some(k)
                             } else {
-                                secrets_manager.retrieve("openai_api_key").await?
-                                    .map(|s| secrecy::Secret::new(s))
+                                secrets_manager
+                                    .retrieve("openai_api_key")
+                                    .await?
+                                    .map(secrecy::Secret::new)
                             };
-                            let anthropic_key = if let Some(k) = app_config.model_gateway.anthropic_api_key.clone() {
+                        let anthropic_key =
+                            if let Some(k) = app_config.model_gateway.anthropic_api_key.clone() {
                                 Some(k)
                             } else {
-                                secrets_manager.retrieve("anthropic_api_key").await?
-                                    .map(|s| secrecy::Secret::new(s))
+                                secrets_manager
+                                    .retrieve("anthropic_api_key")
+                                    .await?
+                                    .map(secrecy::Secret::new)
                             };
 
-                            multi_agent_model_gateway::create_client_from_config(
-                                &cfg,
-                                openai_key,
-                                anthropic_key,
-                            )
-                        } {
+                        multi_agent_model_gateway::create_client_from_config(
+                            &cfg,
+                            openai_key,
+                            anthropic_key,
+                        )
+                    };
+                    match client_result {
                         Ok(client) => Arc::new(client),
                         Err(e) => {
                             tracing::warn!(
@@ -343,12 +394,11 @@ async fn main() -> anyhow::Result<()> {
             }
         },
     );
-    let router = Arc::new(DefaultRouter::new()
-        .with_llm_classifier(
-            llm_client.clone(),
-            tools.clone() as Arc<dyn ToolRegistry>,
-        )
-        .with_routing_policy_store(routing_policy_store.clone()));
+    let router = Arc::new(
+        DefaultRouter::new()
+            .with_llm_classifier(llm_client.clone(), tools.clone() as Arc<dyn ToolRegistry>)
+            .with_routing_policy_store(routing_policy_store.clone()),
+    );
 
     let cache = Arc::new(InMemorySemanticCache::new(llm_client));
 
@@ -363,12 +413,11 @@ async fn main() -> anyhow::Result<()> {
 
     let (logs_tx, _logs_rx) = tokio::sync::broadcast::channel(100);
 
-    let server =
-        GatewayServer::new(gateway_config.clone(), router, cache)
-            .with_controller(controller)
-            .with_logs_channel(logs_tx.clone())
-            .with_approval_gate(approval_gate.clone())
-            .with_routing_policy_store(routing_policy_store.clone());
+    let server = GatewayServer::new(gateway_config.clone(), router, cache)
+        .with_controller(controller)
+        .with_logs_channel(logs_tx.clone())
+        .with_approval_gate(approval_gate.clone())
+        .with_routing_policy_store(routing_policy_store.clone());
 
     tracing::info!(
         host = %gateway_config.host,
@@ -406,11 +455,18 @@ async fn main() -> anyhow::Result<()> {
     let metrics_handle = multi_agent_governance::setup_metrics_recorder()?;
 
     // Initialize Governance Components
+    if let Some(parent) = std::path::Path::new(&app_config.governance.audit_log_path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            multi_agent_core::Error::storage(format!(
+                "Failed to create audit log directory '{}': {}",
+                parent.display(),
+                e
+            ))
+        })?;
+    }
     let audit_store = Arc::new(multi_agent_governance::SqliteAuditStore::new(
         &app_config.governance.audit_log_path,
     )?);
-
-
 
     // RBAC: Check environment for production mode
     let is_production = app_config.governance.multiagent_env.to_lowercase() == "production";
@@ -463,9 +519,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Initialize Knowledge Store (M10.3)
-    let knowledge_db_path = app_config.governance.audit_log_path.replace("audit.db", "knowledge.db");
+    let knowledge_db_path = app_config
+        .governance
+        .audit_log_path
+        .replace("audit.db", "knowledge.db");
     let knowledge_store_raw = Arc::new(SqliteKnowledgeStore::new(knowledge_db_path)?);
-    let knowledge_store: Arc<dyn multi_agent_core::traits::KnowledgeStore> = knowledge_store_raw.clone();
+    let knowledge_store: Arc<dyn multi_agent_core::traits::KnowledgeStore> =
+        knowledge_store_raw.clone();
 
     // Initialize Privacy Controller (M10.4)
     let erasable_stores: Vec<Arc<dyn multi_agent_core::traits::Erasable>> = vec![

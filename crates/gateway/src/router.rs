@@ -5,14 +5,14 @@ use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
+use crate::routing_policy::{
+    RouteScope, RouteTarget, RoutingContext, RoutingPolicyChannel, RoutingPolicyEngine,
+    SharedRoutingPolicyStore,
+};
 use multi_agent_core::{
     traits::{ChatMessage, IntentRouter, LlmClient, ToolRegistry},
     types::{NormalizedRequest, UserIntent},
     Result,
-};
-use crate::routing_policy::{
-    RouteScope, RouteTarget, RoutingContext, RoutingPolicyChannel, RoutingPolicyEngine,
-    SharedRoutingPolicyStore,
 };
 
 /// Keywords that suggest a fast action (direct tool call).
@@ -268,7 +268,10 @@ impl DefaultRouter {
 
         let confidence = decision.confidence.unwrap_or(0.0);
         if confidence < self.llm_min_confidence {
-            tracing::debug!(confidence = confidence, "LLM intent below confidence threshold");
+            tracing::debug!(
+                confidence = confidence,
+                "LLM intent below confidence threshold"
+            );
             return Err("llm_low_confidence");
         }
 
@@ -385,15 +388,21 @@ impl DefaultRouter {
         let decision = if let Some(store) = &self.routing_policy_store {
             match requested_channel.as_deref() {
                 Some("canary") => {
-                    store.resolve_for_channel(&context, RoutingPolicyChannel::Canary).await
+                    store
+                        .resolve_for_channel(&context, RoutingPolicyChannel::Canary)
+                        .await
                 }
                 Some("stable") => {
-                    store.resolve_for_channel(&context, RoutingPolicyChannel::Stable).await
+                    store
+                        .resolve_for_channel(&context, RoutingPolicyChannel::Stable)
+                        .await
                 }
                 _ => store.resolve(&context).await,
             }
         } else {
-            self.routing_policy.as_ref().and_then(|policy| policy.resolve(&context))
+            self.routing_policy
+                .as_ref()
+                .and_then(|policy| policy.resolve(&context))
         }?;
         let user_id = request.metadata.user_id.clone();
 
@@ -461,7 +470,10 @@ impl IntentRouter for DefaultRouter {
                 Ok((intent, diagnostics))
             }
             Err(fallback_reason) => {
-                tracing::debug!(fallback_reason = fallback_reason, "Intent classified via fallback rules");
+                tracing::debug!(
+                    fallback_reason = fallback_reason,
+                    "Intent classified via fallback rules"
+                );
                 Ok((
                     self.classify_with_rules(request),
                     serde_json::json!({
@@ -480,9 +492,9 @@ impl IntentRouter for DefaultRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::routing_policy::{RouteScope, RoutingPolicyEngine, RoutingRule};
     use multi_agent_core::traits::{LlmResponse, LlmUsage, Tool, ToolRegistry};
     use multi_agent_core::types::{ToolDefinition, ToolOutput};
-    use crate::routing_policy::{RouteScope, RoutingPolicyEngine, RoutingRule};
     use serde_json::Value;
 
     struct MockLlm {
@@ -532,11 +544,7 @@ mod tests {
             Ok(self.tools.clone())
         }
 
-        async fn execute(
-            &self,
-            _name: &str,
-            _args: Value,
-        ) -> multi_agent_core::Result<ToolOutput> {
+        async fn execute(&self, _name: &str, _args: Value) -> multi_agent_core::Result<ToolOutput> {
             Ok(ToolOutput::error("not implemented"))
         }
     }
@@ -688,7 +696,9 @@ mod tests {
     #[tokio::test]
     async fn test_fallback_diagnostics_contains_reason() {
         let llm = Arc::new(MockLlm {
-            response: r#"{"intent_type":"fast_action","tool_name":"missing_tool","confidence":0.95}"#.to_string(),
+            response:
+                r#"{"intent_type":"fast_action","tool_name":"missing_tool","confidence":0.95}"#
+                    .to_string(),
         });
         let registry = Arc::new(MockRegistry {
             tools: vec![ToolDefinition {
@@ -703,7 +713,10 @@ mod tests {
 
         let (_, diagnostics) = router.classify_detailed(&request).await.unwrap();
         assert_eq!(diagnostics["routing"]["source"], "fallback_rules");
-        assert_eq!(diagnostics["routing"]["fallback_reason"], "llm_unknown_tool");
+        assert_eq!(
+            diagnostics["routing"]["fallback_reason"],
+            "llm_unknown_tool"
+        );
     }
 
     #[tokio::test]
@@ -775,5 +788,4 @@ mod tests {
         assert_eq!(diagnostics["routing"]["scope"], "peer");
         assert_eq!(diagnostics["routing"]["rule_id"], "peer-complex");
     }
-
 }

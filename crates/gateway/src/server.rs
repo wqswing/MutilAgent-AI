@@ -17,6 +17,12 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
+use crate::idempotency::{IdempotencyLookup, IdempotencyStore};
+use crate::routing_policy::{
+    RoutingContext, RoutingPolicyChannel, RoutingPolicyEngine, RoutingPolicyRelease,
+    RoutingPolicyStore, RoutingRule,
+};
+use crate::scheduler::ControllerScheduler;
 use multi_agent_core::{
     config::TlsConfig,
     traits::{Controller, IntentRouter, SemanticCache},
@@ -28,12 +34,6 @@ use multi_agent_core::{
 };
 use multi_agent_governance::approval::ChannelApprovalGate;
 use multi_agent_governance::{AuditEntry, AuditFilter, AuditOutcome};
-use crate::idempotency::{IdempotencyLookup, IdempotencyStore};
-use crate::routing_policy::{
-    RoutingContext, RoutingPolicyChannel, RoutingPolicyEngine, RoutingPolicyRelease,
-    RoutingPolicyStore, RoutingRule,
-};
-use crate::scheduler::ControllerScheduler;
 
 /// Gateway configuration.
 #[derive(Debug, Clone)]
@@ -255,16 +255,19 @@ impl GatewayServer {
             .route("/healthz", get(healthz_handler))
             .route("/readyz", get(readyz_handler))
             .route("/schema/gateway", get(gateway_schema_handler))
-            .route("/metrics", get(move || {
-                let handle = metrics_handle.clone();
-                async move {
-                    if let Some(h) = handle {
-                        h.render()
-                    } else {
-                        "Metrics not enabled".to_string()
+            .route(
+                "/metrics",
+                get(move || {
+                    let handle = metrics_handle.clone();
+                    async move {
+                        if let Some(h) = handle {
+                            h.render()
+                        } else {
+                            "Metrics not enabled".to_string()
+                        }
                     }
-                }
-            }));
+                }),
+            );
 
         // Agent Routes
         let agent_router = Router::new()
@@ -281,7 +284,10 @@ impl GatewayServer {
             .route("/plugins", get(get_plugins_handler))
             .route("/plugins/{plugin_id}", get(get_plugin_details_handler))
             .route("/plugins/{plugin_id}/toggle", post(toggle_plugin_handler))
-            .layer(axum::middleware::from_fn_with_state(self.state.clone(), bearer_auth_middleware));
+            .layer(axum::middleware::from_fn_with_state(
+                self.state.clone(),
+                bearer_auth_middleware,
+            ));
 
         let mut router = Router::new()
             // Consolidated v1 namespace
@@ -298,8 +304,14 @@ impl GatewayServer {
         // Admin API
         if let Some(admin_state) = &self.admin_state {
             let admin_api = multi_agent_admin::admin_api_router(admin_state.clone())
-                .route_layer(axum::middleware::from_fn_with_state(self.state.clone(), restrict_to_localhost))
-                .route_layer(axum::middleware::from_fn_with_state(self.state.clone(), bearer_auth_middleware));
+                .route_layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    restrict_to_localhost,
+                ))
+                .route_layer(axum::middleware::from_fn_with_state(
+                    self.state.clone(),
+                    bearer_auth_middleware,
+                ));
             router = router.nest("/v1/admin", admin_api);
 
             let routing_admin_api = Router::new()
@@ -383,25 +395,31 @@ impl GatewayServer {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         if self.config.tls.enabled {
             use axum_server::tls_rustls::RustlsConfig;
-            
-            let cert_path = self.config.tls.cert_path.as_ref()
-                .ok_or_else(|| multi_agent_core::Error::gateway("TLS enabled but cert_path missing"))?;
-            let key_path = self.config.tls.key_path.as_ref()
-                .ok_or_else(|| multi_agent_core::Error::gateway("TLS enabled but key_path missing"))?;
+
+            let cert_path = self.config.tls.cert_path.as_ref().ok_or_else(|| {
+                multi_agent_core::Error::gateway("TLS enabled but cert_path missing")
+            })?;
+            let key_path = self.config.tls.key_path.as_ref().ok_or_else(|| {
+                multi_agent_core::Error::gateway("TLS enabled but key_path missing")
+            })?;
 
             tracing::info!(addr = %addr, "Gateway server starting (TLS ENABLED)");
 
-            let config = RustlsConfig::from_pem_file(
-                cert_path,
-                key_path,
-            )
-            .await
-            .map_err(|e| multi_agent_core::Error::gateway(format!("TLS config error: {}", e)))?;
+            let config = RustlsConfig::from_pem_file(cert_path, key_path)
+                .await
+                .map_err(|e| {
+                    multi_agent_core::Error::gateway(format!("TLS config error: {}", e))
+                })?;
 
             axum_server::bind_rustls(addr.parse::<std::net::SocketAddr>().unwrap(), config)
-                .serve(self.build_router().into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .serve(
+                    self.build_router()
+                        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
                 .await
-                .map_err(|e| multi_agent_core::Error::gateway(format!("TLS Server error: {}", e)))?;
+                .map_err(|e| {
+                    multi_agent_core::Error::gateway(format!("TLS Server error: {}", e))
+                })?;
         } else {
             tracing::info!(addr = %addr, "Gateway server starting (PLAIN HTTP)");
             let listener = tokio::net::TcpListener::bind(&addr)
@@ -574,19 +592,29 @@ pub struct OnboardingSetup {
 async fn onboarding_status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let sm = match &state.admin_state {
         Some(s) => &s.secrets,
-        None => return Json(OnboardingStatus {
-            openai_key_set: false,
-            anthropic_key_set: false,
-            onboarding_completed: false,
-        }),
+        None => {
+            return Json(OnboardingStatus {
+                openai_key_set: false,
+                anthropic_key_set: false,
+                onboarding_completed: false,
+            })
+        }
     };
 
-    let openai_key_set = sm.retrieve("openai_api_key").await.unwrap_or(None).is_some() 
+    let openai_key_set = sm
+        .retrieve("openai_api_key")
+        .await
+        .unwrap_or(None)
+        .is_some()
         || state.app_config.model_gateway.openai_api_key.is_some();
-        
-    let anthropic_key_set = sm.retrieve("anthropic_api_key").await.unwrap_or(None).is_some()
+
+    let anthropic_key_set = sm
+        .retrieve("anthropic_api_key")
+        .await
+        .unwrap_or(None)
+        .is_some()
         || state.app_config.model_gateway.anthropic_api_key.is_some();
-        
+
     let onboarding_completed = openai_key_set || anthropic_key_set;
 
     Json(OnboardingStatus {
@@ -613,9 +641,9 @@ async fn onboarding_setup_handler(
             }
         }
     }
-    
+
     if let Some(key) = payload.anthropic_key {
-         if !key.is_empty() {
+        if !key.is_empty() {
             if let Err(e) = sm.store("anthropic_api_key", &key).await {
                 tracing::error!("Failed to store Anthropic key: {}", e);
                 return StatusCode::INTERNAL_SERVER_ERROR;
@@ -774,7 +802,10 @@ async fn admin_routing_publish_handler(
             )
             .await;
             let active = store.active_release().await;
-            (StatusCode::OK, Json(serde_json::json!({"published": true, "active": active})))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"published": true, "active": active})),
+            )
                 .into_response()
         }
         Err(e) => {
@@ -849,7 +880,10 @@ async fn admin_routing_promote_handler(
             .into_response();
     };
 
-    match store.promote_canary_to_stable(payload.version.as_deref()).await {
+    match store
+        .promote_canary_to_stable(payload.version.as_deref())
+        .await
+    {
         Ok(()) => {
             let active_stable = store
                 .active_release_for_channel(RoutingPolicyChannel::Stable)
@@ -1072,23 +1106,37 @@ async fn research_handler(
 ) -> impl IntoResponse {
     let orchestrator = match &state.research_orchestrator {
         Some(o) => o,
-        None => return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"error": "Research orchestrator not enabled"}))
-        ).into_response(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({"error": "Research orchestrator not enabled"})),
+            )
+                .into_response()
+        }
     };
 
     let session_id = format!("sync-rs-{}", Uuid::new_v4());
     let user_id = req.user_id.unwrap_or_else(|| "anonymous".to_string());
 
-    match orchestrator.run_research(&session_id, &user_id, &req.query).await {
-        Ok(report) => (StatusCode::OK, Json(serde_json::json!({
-            "report": report,
-            "session_id": session_id,
-        }))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-            "error": format!("Research failed: {}", e)
-        }))).into_response(),
+    match orchestrator
+        .run_research(&session_id, &user_id, &req.query)
+        .await
+    {
+        Ok(report) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "report": report,
+                "session_id": session_id,
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": format!("Research failed: {}", e)
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -1139,16 +1187,19 @@ async fn chat_handler(
             tracing::info!(trace_id = %trace_id, workspace = %workspace_id, session = %session_id, "Cache hit");
             return (
                 StatusCode::OK,
-                Json(ApiEnvelope::success(trace_id.clone(), ChatResponse {
-                    trace_id,
-                    intent: UserIntent::FastAction {
-                        tool_name: "cache".to_string(),
-                        args: serde_json::json!({}),
-                        user_id: payload.user_id.clone(),
+                Json(ApiEnvelope::success(
+                    trace_id.clone(),
+                    ChatResponse {
+                        trace_id,
+                        intent: UserIntent::FastAction {
+                            tool_name: "cache".to_string(),
+                            args: serde_json::json!({}),
+                            user_id: payload.user_id.clone(),
+                        },
+                        result: Some(AgentResult::Text(cached_response)),
+                        cached: true,
                     },
-                    result: Some(AgentResult::Text(cached_response)),
-                    cached: true,
-                })),
+                )),
             )
                 .into_response();
         }
@@ -1255,12 +1306,15 @@ async fn chat_handler(
 
     (
         StatusCode::OK,
-        Json(ApiEnvelope::success(trace_id.clone(), ChatResponse {
-            trace_id,
-            intent,
-            result,
-            cached: false,
-        })),
+        Json(ApiEnvelope::success(
+            trace_id.clone(),
+            ChatResponse {
+                trace_id,
+                intent,
+                result,
+                cached: false,
+            },
+        )),
     )
         .into_response()
 }
@@ -1284,7 +1338,7 @@ async fn intent_handler(
                 )),
             )
                 .into_response()
-        },
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ApiEnvelope::success(
@@ -1396,7 +1450,7 @@ async fn webhook_handler(
         Ok((intent, routing_diagnostics)) => {
             tracing::debug!(trace_id = %trace_id, diagnostics = %routing_diagnostics, "Webhook intent diagnostics");
             Some(intent)
-        },
+        }
         Err(e) => {
             tracing::warn!(
                 trace_id = %trace_id,
@@ -1409,12 +1463,15 @@ async fn webhook_handler(
 
     // For now, just acknowledge the event
     // In full implementation, we would execute via controller
-    let response_body = ApiEnvelope::success(trace_id.clone(), WebhookResponse {
-        trace_id,
-        accepted: true,
-        message: Some(format!("Event '{}' received", event_type)),
-        intent,
-    });
+    let response_body = ApiEnvelope::success(
+        trace_id.clone(),
+        WebhookResponse {
+            trace_id,
+            accepted: true,
+            message: Some(format!("Event '{}' received", event_type)),
+            intent,
+        },
+    );
     let response_value = serde_json::to_value(&response_body).unwrap_or_else(|_| {
         serde_json::json!({
             "version": GATEWAY_CONTRACT_VERSION,
@@ -1432,11 +1489,7 @@ async fn webhook_handler(
         );
     }
 
-    (
-        StatusCode::OK,
-        Json(response_value),
-    )
-        .into_response()
+    (StatusCode::OK, Json(response_value)).into_response()
 }
 
 // =============================================================================
@@ -1748,7 +1801,10 @@ async fn approve_rest_handler(
         }
     };
 
-    match gate.submit_response(&request_id, &payload.nonce, response).await {
+    match gate
+        .submit_response(&request_id, &payload.nonce, response)
+        .await
+    {
         Ok(()) => finalize(
             StatusCode::OK,
             ApproveResponse {
@@ -1776,16 +1832,18 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    use axum::body::Body;
     use axum::middleware::from_fn_with_state;
     use multi_agent_governance::StaticTokenRbacConnector;
-    use axum::body::Body;
 
     #[tokio::test]
     async fn test_bearer_auth_middleware_unauthorized() {
         let rbac = Arc::new(StaticTokenRbacConnector::new("secret-token"));
         let state = Arc::new(AppState {
             router: Arc::new(crate::DefaultRouter::new()),
-            cache: Arc::new(crate::InMemorySemanticCache::new(Arc::new(multi_agent_model_gateway::MockLlmClient::new("dummy")))),
+            cache: Arc::new(crate::InMemorySemanticCache::new(Arc::new(
+                multi_agent_model_gateway::MockLlmClient::new("dummy"),
+            ))),
             controller: None,
             rate_limiter: None,
             approval_gate: None,
@@ -1803,7 +1861,9 @@ mod tests {
                 artifact_store: None,
                 session_store: None,
                 app_config: multi_agent_core::config::AppConfig::default(),
-                network_policy: Arc::new(tokio::sync::RwLock::new(multi_agent_governance::network::NetworkPolicy::default())),
+                network_policy: Arc::new(tokio::sync::RwLock::new(
+                    multi_agent_governance::network::NetworkPolicy::default(),
+                )),
             })),
             plugin_manager: None,
             app_config: multi_agent_core::config::AppConfig::default(),
@@ -1899,7 +1959,8 @@ async fn bearer_auth_middleware(
         let admin_token_str = admin_secret.expose_secret();
 
         // 1. Check Header: x-admin-token
-        let header_token = req.headers()
+        let header_token = req
+            .headers()
             .get("x-admin-token")
             .and_then(|h| h.to_str().ok());
 
@@ -1923,7 +1984,7 @@ async fn bearer_auth_middleware(
                     permissions: vec!["*".to_string()], // Superuser
                     session_id: None,
                 };
-                
+
                 let mut req = req;
                 req.extensions_mut().insert(user);
                 return next.run(req).await;
@@ -1940,7 +2001,11 @@ async fn bearer_auth_middleware(
     let token = match auth_header {
         Some(h) if h.starts_with("Bearer ") => &h[7..],
         _ => {
-            return (StatusCode::UNAUTHORIZED, "Missing or invalid authorization header").into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                "Missing or invalid authorization header",
+            )
+                .into_response();
         }
     };
 
@@ -1948,22 +2013,24 @@ async fn bearer_auth_middleware(
     let rbac = state.admin_state.as_ref().map(|s| s.rbac.clone());
 
     match rbac {
-        Some(rbac) => {
-            match rbac.validate(token).await {
-                Ok(user) => {
-                    let mut req = req;
-                    req.extensions_mut().insert(user);
-                    next.run(req).await
-                }
-                Err(e) => {
-                    tracing::warn!("Auth validation failed: {}", e);
-                    (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
-                }
+        Some(rbac) => match rbac.validate(token).await {
+            Ok(user) => {
+                let mut req = req;
+                req.extensions_mut().insert(user);
+                next.run(req).await
             }
-        }
+            Err(e) => {
+                tracing::warn!("Auth validation failed: {}", e);
+                (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
+            }
+        },
         None => {
             tracing::error!("Auth middleware active but no RBAC connector configured");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Authentication system misconfigured").into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Authentication system misconfigured",
+            )
+                .into_response()
         }
     }
 }

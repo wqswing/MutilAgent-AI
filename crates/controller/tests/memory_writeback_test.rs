@@ -35,7 +35,10 @@ async fn test_memory_writeback_creates_daily_and_memory_files() {
     let capability = MemoryWritebackCapability::new(dir.clone());
     let mut session = make_session("sess-a", "Generate architecture review");
     capability
-        .on_finish(&mut session, &AgentResult::Text("Review completed".to_string()))
+        .on_finish(
+            &mut session,
+            &AgentResult::Text("Review completed".to_string()),
+        )
         .await
         .unwrap();
 

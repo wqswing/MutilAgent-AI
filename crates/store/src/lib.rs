@@ -219,7 +219,7 @@ impl ArtifactStore for TieredStore {
 impl multi_agent_core::traits::Erasable for TieredStore {
     async fn erase_user(&self, _user_id: &str) -> Result<usize> {
         let total = 0;
-        
+
         // Use a dynamic cast or assumed implementation for Erasable
         // Note: ArtifactStore doesn't inherit Erasable, but concrete types do.
         // For simplicity in TieredStore, we attempt to cast or just ignore if not erasable.
@@ -227,17 +227,17 @@ impl multi_agent_core::traits::Erasable for TieredStore {
         // For now, since we know InMemoryStore and S3ArtifactStore are Erasable,
         // we can try to cast them.
 
-        // Wait, self.hot is Arc<dyn ArtifactStore>. 
+        // Wait, self.hot is Arc<dyn ArtifactStore>.
         // We need a way to call erase_user on it.
         // Since we know our implementations, let's just cast.
-        
+
         // This is a bit hacky but works for now as all our stores implement Erasable.
         // In a real system, we'd add Erasable as a supertrait or use a registry.
-        
+
         // Note: Rust doesn't support casting between unrelated traits easily.
         // But we can add it to the ArtifactStore trait if we want,
         // or just accept that TieredStore only erases from stores that we know are erasable.
-        
+
         // Actually, let's just assume they are erasable for now or ignore errors.
         Ok(total)
     }
