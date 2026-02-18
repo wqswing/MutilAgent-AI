@@ -80,3 +80,25 @@
 - Append pass/fail evidence and residual backlog into this plan doc.
 - `git add src/main.rs docs/plans/2026-02-18-p1-memory-compaction-execution.md`
 - `git commit -m "feat(runtime): wire memory writeback and record p1 verification"`
+
+## Execution Result (2026-02-18)
+
+### Delivered
+- Added `MemoryWritebackCapability` to persist session outcomes into:
+- `.memory/YYYY-MM-DD.md`
+- `.memory/MEMORY.md`
+- Implemented merge policy for `MEMORY.md` with deduplication on identical normalized entries.
+- Added pre-compaction flush hook that writes `PRE-COMPACTION` checkpoints before history compression.
+- Upgraded `CompressionCapability` to apply compressed messages back into `session.history` (effective compaction, no longer no-op).
+- Wired runtime defaults in `src/main.rs`:
+- `MemoryWritebackCapability::from_env()`
+- `TruncationCompressor`
+- Fixed legacy HITL test fixture to include `nonce` and `expires_at` in `ApprovalRequest`.
+
+### Verification
+- `cargo test -p multi_agent_controller -- --nocapture` -> PASS
+- `cargo check --workspace --exclude cratesapp` -> PASS
+
+### Residual for P2
+- Explicit multi-agent routing policy model (`channel/account/peer`) and deterministic simulation tests.
+- Skill ecosystem version/distribution governance (signature + compatibility gate).

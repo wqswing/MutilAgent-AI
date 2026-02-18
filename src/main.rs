@@ -245,6 +245,12 @@ async fn main() -> anyhow::Result<()> {
         ReActController::builder()
             .with_store(store.clone())
             .with_session_store(session_store.clone())
+            .with_capability(Arc::new(
+                multi_agent_controller::MemoryWritebackCapability::from_env(),
+            ))
+            .with_compressor(Arc::new(
+                multi_agent_controller::context::TruncationCompressor::new(),
+            ))
             .build(),
     );
     tracing::info!("L1 Controller initialized (mock ReAct)");

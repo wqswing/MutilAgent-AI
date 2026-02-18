@@ -248,6 +248,8 @@ async fn test_channel_gate_timeout_auto_deny() {
         risk_level: ToolRiskLevel::High,
         context: "test".into(),
         timeout_secs: None,
+        nonce: "timeout-nonce".into(),
+        expires_at: chrono::Utc::now().timestamp() + 60,
     };
 
     // No response submitted → should timeout and auto-deny
