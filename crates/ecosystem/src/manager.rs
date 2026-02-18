@@ -77,6 +77,9 @@ impl PluginManager {
     pub async fn install(&self, source_path: impl AsRef<Path>) -> Result<String> {
         let manifest_path = source_path.as_ref().join("manifest.yaml");
         let manifest = PluginManifest::load(&manifest_path)?;
+        manifest
+            .validate_for_runtime(env!("CARGO_PKG_VERSION"))
+            .context("Plugin manifest runtime validation failed")?;
 
         let target_dir = self.plugins_dir.join(&manifest.id);
         if target_dir.exists() {
@@ -265,6 +268,16 @@ impl PluginManager {
                 if manifest_path.exists() {
                     match PluginManifest::load(&manifest_path) {
                         Ok(manifest) => {
+                            if let Err(e) =
+                                manifest.validate_for_runtime(env!("CARGO_PKG_VERSION"))
+                            {
+                                tracing::warn!(
+                                    "Skipping incompatible plugin manifest in {:?}: {}",
+                                    entry.path(),
+                                    e
+                                );
+                                continue;
+                            }
                             self.manifests.insert(manifest.id.clone(), manifest);
                         }
                         Err(e) => {
