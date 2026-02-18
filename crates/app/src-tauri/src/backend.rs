@@ -84,7 +84,8 @@ pub async fn start_server() -> Result<()> {
         tx: tx_for_logs.clone(),
     };
 
-    let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "info,multi_agent=debug".into());
+    let rust_log = std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| "info,opencoordex=debug,multi_agent=debug".into());
     let env_filter = tracing_subscriber::EnvFilter::new(rust_log);
 
     if let Err(e) = tracing_subscriber::registry()
@@ -142,7 +143,7 @@ pub async fn start_server() -> Result<()> {
         tracing::info!(url = %redis_url, "Initializing Redis Session Store");
         let s = Arc::new(RedisSessionStore::new(
             redis_url,
-            "multiagent:session",
+            "opencoordex:session",
             3600 * 24,
         )?);
         (s.clone(), s.clone(), s)

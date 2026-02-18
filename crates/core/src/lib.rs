@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! Core types, traits, and error definitions for Multiagent.
+//! Core types, traits, and error definitions for OpenCoordex.
 //!
 //! This crate provides the foundational building blocks shared across all layers
 //! of the multi-agent system.

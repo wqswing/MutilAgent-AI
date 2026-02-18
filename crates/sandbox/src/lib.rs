@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! Sovereign Sandbox for Multiagent.
+//! Sovereign Sandbox for OpenCoordex.
 //!
 //! This crate provides an isolated execution environment for the agent using
 //! Docker containers. All code execution, file I/O, and shell commands are

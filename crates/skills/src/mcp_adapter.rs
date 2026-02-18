@@ -1,6 +1,6 @@
 //! MCP (Model Context Protocol) adapter for connecting to external tool servers.
 //!
-//! This module provides an adapter for the MCP protocol, allowing Multiagent to
+//! This module provides an adapter for the MCP protocol, allowing OpenCoordex to
 //! connect to external MCP servers and use their tools as if they were local.
 
 use async_trait::async_trait;
@@ -50,7 +50,7 @@ pub struct McpServerConnection {
 
 /// MCP tool adapter for managing connections to MCP servers.
 ///
-/// This adapter allows Multiagent to:
+/// This adapter allows OpenCoordex to:
 /// - Connect to multiple MCP servers
 /// - Discover tools from each server
 /// - Execute tools on remote servers

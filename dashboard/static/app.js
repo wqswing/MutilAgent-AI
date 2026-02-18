@@ -1,4 +1,4 @@
-// Multiagent Admin Dashboard JS (v0.9)
+// OpenCoordex Admin Dashboard JS (v1.0)
 
 const API_BASE = '/admin';
 

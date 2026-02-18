@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L-M Model Gateway for Multiagent.
+//! L-M Model Gateway for OpenCoordex.
 //!
 //! This crate provides:
 //! - Model selection and load balancing

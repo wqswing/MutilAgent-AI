@@ -1,4 +1,4 @@
-//! Core traits for Multiagent.
+//! Core traits for OpenCoordex.
 //!
 //! Traits are organized by architectural layer:
 //! - `gateway`: L0 Gateway traits (IntentRouter, SemanticCache)

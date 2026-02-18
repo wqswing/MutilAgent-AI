@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L2 Skills & Workers for Multiagent.
+//! L2 Skills & Workers for OpenCoordex.
 //!
 //! This crate provides:
 //! - Tool registry for managing available tools

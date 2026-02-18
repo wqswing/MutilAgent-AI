@@ -1,4 +1,4 @@
-//! Admin API for Multiagent management dashboard.
+//! Admin API for OpenCoordex management dashboard.
 //!
 //! Provides endpoints for:
 //! - LLM Provider management

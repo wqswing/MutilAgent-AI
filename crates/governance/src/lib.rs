@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L4 Governance for Multiagent.
+//! L4 Governance for OpenCoordex.
 //!
 //! This crate provides:
 //! - Budget control (token limits)

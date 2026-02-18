@@ -14,7 +14,7 @@ pub fn configure_tracing(
 ) -> Result<()> {
     // Basic EnvFilter
     let env_filter =
-        tracing_subscriber::EnvFilter::new(rust_log.unwrap_or("info,multiagent=debug"));
+        tracing_subscriber::EnvFilter::new(rust_log.unwrap_or("info,opencoordex=debug"));
 
     // Registry with env filter
     let registry = tracing_subscriber::registry().with(env_filter);
@@ -29,7 +29,7 @@ pub fn configure_tracing(
             .build_span_exporter()
             .map_err(|e| Error::governance(format!("Failed to create OTLP exporter: {}", e)))?;
 
-        let resource = Resource::new(vec![KeyValue::new("service.name", "multiagent-gateway")]);
+        let resource = Resource::new(vec![KeyValue::new("service.name", "opencoordex-gateway")]);
 
         let provider = sdktrace::TracerProvider::builder()
             .with_batch_exporter(exporter, runtime::Tokio)
@@ -37,7 +37,7 @@ pub fn configure_tracing(
             .build();
 
         use opentelemetry::trace::TracerProvider;
-        Some(provider.tracer("multiagent-gateway"))
+        Some(provider.tracer("opencoordex-gateway"))
     } else {
         None
     };

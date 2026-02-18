@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    cratesapp_lib::run()
+    opencoordex_app_lib::run()
 }

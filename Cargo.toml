@@ -17,7 +17,7 @@ members = [
 [workspace.package]
 version = "1.0.5"
 edition = "2021"
-authors = ["Multiagent Team"]
+authors = ["OpenCoordex Team"]
 license = "AGPL-3.0-only"
 repository = "https://github.com/wqswing/MultiAgent-AI"
 
@@ -116,7 +116,7 @@ multi_agent_sandbox = { path = "crates/sandbox" }
 multi_agent_ecosystem = { path = "crates/ecosystem" }
 
 [package]
-name = "multi_agent"
+name = "opencoordex"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -124,7 +124,7 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "multiagent"
+name = "opencoordex"
 path = "src/main.rs"
 
 [dependencies]

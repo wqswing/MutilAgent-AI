@@ -42,7 +42,7 @@ pub enum NetworkProfile {
 /// Configuration for creating a sandbox.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SandboxConfig {
-    /// Docker image to use (default: "multiagent-sandbox:latest").
+    /// Docker image to use (default: "opencoordex-sandbox:latest").
     pub image: String,
     /// Maximum memory in bytes (default: 512MB).
     pub memory_limit: i64,
@@ -59,7 +59,7 @@ pub struct SandboxConfig {
 impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
-            image: "multiagent-sandbox:latest".to_string(),
+            image: "opencoordex-sandbox:latest".to_string(),
             memory_limit: 512 * 1024 * 1024, // 512MB
             cpu_quota: 100_000,              // 1 CPU core
             default_timeout: Duration::from_secs(30),
@@ -219,7 +219,7 @@ impl SandboxEngine for DockerSandbox {
             host_config: Some(host_config),
             labels: Some(std::collections::HashMap::from([(
                 "managed-by".to_string(),
-                "multiagent-sandbox".to_string(),
+                "opencoordex-sandbox".to_string(),
             )])),
             ..Default::default()
         };
@@ -571,7 +571,7 @@ mod tests {
     #[tokio::test]
     async fn test_sandbox_config_defaults() {
         let config = SandboxConfig::default();
-        assert_eq!(config.image, "multiagent-sandbox:latest");
+        assert_eq!(config.image, "opencoordex-sandbox:latest");
         assert_eq!(config.memory_limit, 512 * 1024 * 1024);
         assert!(matches!(config.network_profile, NetworkProfile::None));
         assert_eq!(config.workdir, "/workspace");

@@ -163,7 +163,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!(url = %redis_url, "Initializing Redis Session Store");
         let redis = Arc::new(RedisSessionStore::new(
             redis_url,
-            "multiagent:session",
+            "opencoordex:session",
             3600 * 24,
         )?);
         (

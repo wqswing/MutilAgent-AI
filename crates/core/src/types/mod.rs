@@ -1,4 +1,4 @@
-//! Core type definitions for Multiagent.
+//! Core type definitions for OpenCoordex.
 //!
 //! This module contains all the fundamental data structures used across
 //! the multi-agent system.

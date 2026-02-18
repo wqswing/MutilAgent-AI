@@ -1,11 +1,11 @@
-//! Error types for Multiagent.
+//! Error types for OpenCoordex.
 
 use thiserror::Error;
 
-/// Result type alias using Multiagent's Error type.
+/// Result type alias using OpenCoordex's Error type.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Core error type for Multiagent.
+/// Core error type for OpenCoordex.
 #[derive(Error, Debug)]
 pub enum Error {
     // =========================================================================

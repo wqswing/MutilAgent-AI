@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L1 Controller for Multiagent.
+//! L1 Controller for OpenCoordex.
 //!
 //! This crate provides the ReAct loop, DAG orchestration, and SOP engine
 //! for executing complex tasks.

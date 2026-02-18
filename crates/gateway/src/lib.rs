@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L0 Gateway & Router for Multiagent.
+//! L0 Gateway & Router for OpenCoordex.
 //!
 //! This crate provides the HTTP entry point for the system,
 //! including semantic caching and intent routing.

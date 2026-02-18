@@ -129,7 +129,7 @@ cargo test --workspace
 
 ```bash
 # startup smoke: binary + health + intent
-cargo run > /tmp/multiagent-run.log 2>&1 &
+cargo run > /tmp/opencoordex-run.log 2>&1 &
 PID=$!
 sleep 6
 curl -sf http://127.0.0.1:3000/health

@@ -1,5 +1,5 @@
 #![deny(unused)]
-//! L3 Artifact Store for Multiagent.
+//! L3 Artifact Store for OpenCoordex.
 //!
 //! This crate provides tiered storage (Hot/Warm/Cold) for artifacts,
 //! implementing the pass-by-reference pattern to prevent context explosion.
