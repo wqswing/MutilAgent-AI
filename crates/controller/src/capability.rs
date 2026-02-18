@@ -91,14 +91,31 @@ impl AgentCapability for CompressionCapability {
         let messages = crate::react::ReActController::build_messages_static(session);
         if self.compressor.needs_compression(&messages, &self.config) {
             tracing::info!("Capability triggering context compression");
-            let _result = self.compressor.compress(messages, &self.config).await?;
+            let estimated_tokens = self.compressor.estimate_tokens(&messages);
+            if let Err(e) = crate::memory_writeback::flush_pre_compaction(session, estimated_tokens)
+            {
+                tracing::warn!(error = %e, "Pre-compaction flush failed");
+            }
 
-            // Reconstruct history from compressed messages
-            // This is complex because we need to map back to HistoryEntry
-            // For now, simpler approach: just log it happened, as true integration
-            // requires deep controller changes.
-            // BETTER: The compressor should modify the session directly in v0.3 refactor.
-            // For now, we'll keep the logic in the controller until we refactor build_messages.
+            let result = self.compressor.compress(messages, &self.config).await?;
+            let now = Utc::now().timestamp();
+            session.history = result
+                .messages
+                .into_iter()
+                .map(|msg| HistoryEntry {
+                    role: msg.role,
+                    content: Arc::new(msg.content),
+                    tool_call: None,
+                    timestamp: now,
+                })
+                .collect();
+
+            tracing::info!(
+                estimated_tokens = result.estimated_tokens,
+                messages_compressed = result.messages_compressed,
+                history_len = session.history.len(),
+                "Context compression applied to session history"
+            );
         }
         Ok(())
     }
