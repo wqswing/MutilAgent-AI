@@ -28,7 +28,19 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libayatana-appindicator3-dev
+
+          # Tauri/WebKit package name differs across Ubuntu images.
+          if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
+            sudo apt-get install -y libwebkit2gtk-4.1-dev
+          else
+            sudo apt-get install -y libwebkit2gtk-4.0-dev
+          fi
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -57,6 +69,7 @@ jobs:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
+          projectPath: crates/app
           tagName: app-v__VERSION__ 
           releaseName: 'App v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
