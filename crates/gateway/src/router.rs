@@ -11,7 +11,8 @@ use multi_agent_core::{
     Result,
 };
 use crate::routing_policy::{
-    RouteScope, RouteTarget, RoutingContext, RoutingPolicyEngine, SharedRoutingPolicyStore,
+    RouteScope, RouteTarget, RoutingContext, RoutingPolicyChannel, RoutingPolicyEngine,
+    SharedRoutingPolicyStore,
 };
 
 /// Keywords that suggest a fast action (direct tool call).
@@ -376,8 +377,21 @@ impl DefaultRouter {
         request: &NormalizedRequest,
     ) -> Option<(UserIntent, serde_json::Value)> {
         let context = Self::routing_context_from_request(request);
+        let requested_channel = request
+            .metadata
+            .custom
+            .get("routing_channel")
+            .map(|v| v.to_ascii_lowercase());
         let decision = if let Some(store) = &self.routing_policy_store {
-            store.resolve(&context).await
+            match requested_channel.as_deref() {
+                Some("canary") => {
+                    store.resolve_for_channel(&context, RoutingPolicyChannel::Canary).await
+                }
+                Some("stable") => {
+                    store.resolve_for_channel(&context, RoutingPolicyChannel::Stable).await
+                }
+                _ => store.resolve(&context).await,
+            }
         } else {
             self.routing_policy.as_ref().and_then(|policy| policy.resolve(&context))
         }?;
@@ -404,6 +418,7 @@ impl DefaultRouter {
                     "source": "policy",
                     "scope": Self::scope_label(decision.scope),
                     "rule_id": decision.rule_id,
+                    "channel": requested_channel.unwrap_or_else(|| "default".to_string()),
                     "confidence": serde_json::Value::Null,
                     "fallback_reason": serde_json::Value::Null
                 }

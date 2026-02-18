@@ -4,7 +4,8 @@ use axum::{
 };
 use multi_agent_admin::AdminState;
 use multi_agent_governance::{
-    AesGcmSecretsManager, InMemoryAuditStore, NoOpRbacConnector, SecretsManager,
+    network::NetworkPolicy, AesGcmSecretsManager, InMemoryAuditStore, NoOpRbacConnector,
+    SecretsManager,
 };
 use multi_agent_skills::McpRegistry;
 use serde_json::{json, Value};
@@ -32,6 +33,7 @@ async fn test_admin_provider_crud_with_encryption() {
         artifact_store: None,
         session_store: None,
         app_config: multi_agent_core::config::AppConfig::default(),
+        network_policy: Arc::new(RwLock::new(NetworkPolicy::default())),
     });
 
     let app = multi_agent_admin::admin_router(state);

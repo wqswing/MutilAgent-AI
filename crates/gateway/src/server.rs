@@ -3,7 +3,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Json, Path, State, WebSocketUpgrade,
+        Json, Path, Query, State, WebSocketUpgrade,
     },
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -27,8 +27,12 @@ use multi_agent_core::{
     Result,
 };
 use multi_agent_governance::approval::ChannelApprovalGate;
+use multi_agent_governance::{AuditEntry, AuditFilter, AuditOutcome};
 use crate::idempotency::{IdempotencyLookup, IdempotencyStore};
-use crate::routing_policy::{RoutingContext, RoutingPolicyEngine, RoutingPolicyRelease, RoutingPolicyStore, RoutingRule};
+use crate::routing_policy::{
+    RoutingContext, RoutingPolicyChannel, RoutingPolicyEngine, RoutingPolicyRelease,
+    RoutingPolicyStore, RoutingRule,
+};
 use crate::scheduler::ControllerScheduler;
 
 /// Gateway configuration.
@@ -301,6 +305,9 @@ impl GatewayServer {
             let routing_admin_api = Router::new()
                 .route("/simulate", post(admin_routing_simulate_handler))
                 .route("/publish", post(admin_routing_publish_handler))
+                .route("/promote", post(admin_routing_promote_handler))
+                .route("/rollback", post(admin_routing_rollback_handler))
+                .route("/audits", get(admin_routing_audits_handler))
                 .route("/policies", get(admin_routing_policies_handler))
                 .route_layer(axum::middleware::from_fn_with_state(
                     self.state.clone(),
@@ -668,6 +675,7 @@ async fn put_policy_handler(
 pub struct RoutingPublishRequest {
     pub version: String,
     pub name: Option<String>,
+    pub channel: Option<RoutingPolicyChannel>,
     pub rules: Vec<RoutingRule>,
 }
 
@@ -675,6 +683,49 @@ pub struct RoutingPublishRequest {
 pub struct RoutingSimulateRequest {
     pub scenarios: Vec<RoutingContext>,
     pub rules: Option<Vec<RoutingRule>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoutingRollbackRequest {
+    pub version: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoutingPromoteRequest {
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoutingAuditQuery {
+    pub action: Option<String>,
+    pub version: Option<String>,
+    pub channel: Option<String>,
+    pub limit: Option<usize>,
+}
+
+async fn log_routing_admin_audit(
+    state: &Arc<AppState>,
+    action: &str,
+    metadata: serde_json::Value,
+    outcome: AuditOutcome,
+) {
+    let Some(admin_state) = &state.admin_state else {
+        return;
+    };
+    let _ = admin_state
+        .audit_store
+        .log(AuditEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            user_id: "admin".to_string(),
+            action: action.to_string(),
+            resource: "routing_policy".to_string(),
+            outcome,
+            metadata: Some(metadata),
+            previous_hash: None,
+            hash: None,
+        })
+        .await;
 }
 
 async fn admin_routing_publish_handler(
@@ -689,24 +740,61 @@ async fn admin_routing_publish_handler(
             .into_response();
     };
 
+    let publish_version = payload.version.clone();
+    let publish_channel = payload.channel.unwrap_or(RoutingPolicyChannel::Canary);
     let release = RoutingPolicyRelease {
-        version: payload.version,
+        version: publish_version.clone(),
         name: payload.name,
         published_at: chrono::Utc::now().timestamp(),
+        channel: publish_channel,
         rules: payload.rules,
     };
 
     match store.publish(release).await {
         Ok(()) => {
+            state.emit_event(
+                multi_agent_core::events::EventEnvelope::new(
+                    multi_agent_core::events::EventType::AuditAppended,
+                    serde_json::json!({
+                        "action": "ROUTING_POLICY_PUBLISH",
+                        "active": store.active_release().await
+                    }),
+                )
+                .with_actor("admin"),
+            );
+            log_routing_admin_audit(
+                &state,
+                "ROUTING_POLICY_PUBLISH",
+                serde_json::json!({
+                    "version": publish_version,
+                    "channel": publish_channel,
+                    "active": store.active_release().await
+                }),
+                AuditOutcome::Success,
+            )
+            .await;
             let active = store.active_release().await;
             (StatusCode::OK, Json(serde_json::json!({"published": true, "active": active})))
                 .into_response()
         }
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"published": false, "error": e.to_string()})),
-        )
-            .into_response(),
+        Err(e) => {
+            log_routing_admin_audit(
+                &state,
+                "ROUTING_POLICY_PUBLISH",
+                serde_json::json!({
+                    "error": e.to_string(),
+                    "version": publish_version,
+                    "channel": publish_channel
+                }),
+                AuditOutcome::Error(e.to_string()),
+            )
+            .await;
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"published": false, "error": e.to_string()})),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -749,6 +837,206 @@ async fn admin_routing_simulate_handler(
         .into_response()
 }
 
+async fn admin_routing_promote_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<RoutingPromoteRequest>,
+) -> impl IntoResponse {
+    let Some(store) = &state.routing_policy_store else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"Routing policy store not configured"})),
+        )
+            .into_response();
+    };
+
+    match store.promote_canary_to_stable(payload.version.as_deref()).await {
+        Ok(()) => {
+            let active_stable = store
+                .active_release_for_channel(RoutingPolicyChannel::Stable)
+                .await;
+            state.emit_event(
+                multi_agent_core::events::EventEnvelope::new(
+                    multi_agent_core::events::EventType::AuditAppended,
+                    serde_json::json!({
+                        "action": "ROUTING_POLICY_PROMOTE",
+                        "version": payload.version,
+                        "active_stable": active_stable
+                    }),
+                )
+                .with_actor("admin"),
+            );
+            log_routing_admin_audit(
+                &state,
+                "ROUTING_POLICY_PROMOTE",
+                serde_json::json!({
+                    "version": payload.version,
+                    "active_stable": store.active_release_for_channel(RoutingPolicyChannel::Stable).await
+                }),
+                AuditOutcome::Success,
+            )
+            .await;
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "promoted": true,
+                    "active_stable": store.active_release_for_channel(RoutingPolicyChannel::Stable).await
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            log_routing_admin_audit(
+                &state,
+                "ROUTING_POLICY_PROMOTE",
+                serde_json::json!({
+                    "version": payload.version,
+                    "error": e.to_string(),
+                }),
+                AuditOutcome::Error(e.to_string()),
+            )
+            .await;
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "promoted": false,
+                    "error": e.to_string()
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn admin_routing_rollback_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<RoutingRollbackRequest>,
+) -> impl IntoResponse {
+    let Some(store) = &state.routing_policy_store else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"Routing policy store not configured"})),
+        )
+            .into_response();
+    };
+
+    match store.rollback_to(&payload.version).await {
+        Ok(()) => {
+            state.emit_event(
+                multi_agent_core::events::EventEnvelope::new(
+                    multi_agent_core::events::EventType::AuditAppended,
+                    serde_json::json!({
+                        "action": "ROUTING_POLICY_ROLLBACK",
+                        "version": payload.version,
+                        "active": store.active_release().await
+                    }),
+                )
+                .with_actor("admin"),
+            );
+            log_routing_admin_audit(
+                &state,
+                "ROUTING_POLICY_ROLLBACK",
+                serde_json::json!({
+                    "version": payload.version,
+                    "active": store.active_release().await
+                }),
+                AuditOutcome::Success,
+            )
+            .await;
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "rolled_back": true,
+                    "active": store.active_release().await
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            log_routing_admin_audit(
+                &state,
+                "ROUTING_POLICY_ROLLBACK",
+                serde_json::json!({
+                    "version": payload.version,
+                    "error": e.to_string()
+                }),
+                AuditOutcome::Error(e.to_string()),
+            )
+            .await;
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "rolled_back": false,
+                    "error": e.to_string()
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn admin_routing_audits_handler(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<RoutingAuditQuery>,
+) -> impl IntoResponse {
+    let Some(admin_state) = &state.admin_state else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"Admin state not configured"})),
+        )
+            .into_response();
+    };
+
+    let filter = AuditFilter {
+        action: query.action.clone(),
+        limit: query.limit.or(Some(200)),
+        ..Default::default()
+    };
+
+    match admin_state.audit_store.query(filter).await {
+        Ok(entries) => {
+            let filtered: Vec<_> = entries
+                .into_iter()
+                .filter(|e| query.action.is_some() || e.action.starts_with("ROUTING_POLICY_"))
+                .filter(|e| {
+                    if let Some(ref version) = query.version {
+                        e.metadata
+                            .as_ref()
+                            .and_then(|m| m.get("version"))
+                            .and_then(|v| v.as_str())
+                            == Some(version.as_str())
+                    } else {
+                        true
+                    }
+                })
+                .filter(|e| {
+                    if let Some(ref channel) = query.channel {
+                        e.metadata
+                            .as_ref()
+                            .and_then(|m| m.get("channel"))
+                            .and_then(|v| v.as_str())
+                            == Some(channel.as_str())
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "count": filtered.len(),
+                    "entries": filtered
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
 async fn admin_routing_policies_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let Some(store) = &state.routing_policy_store else {
         return (
@@ -758,11 +1046,19 @@ async fn admin_routing_policies_handler(State(state): State<Arc<AppState>>) -> i
             .into_response();
     };
     let active = store.active_release().await;
+    let active_stable = store
+        .active_release_for_channel(RoutingPolicyChannel::Stable)
+        .await;
+    let active_canary = store
+        .active_release_for_channel(RoutingPolicyChannel::Canary)
+        .await;
     let history = store.list_versions().await;
     (
         StatusCode::OK,
         Json(serde_json::json!({
             "active": active,
+            "active_stable": active_stable,
+            "active_canary": active_canary,
             "history": history
         })),
     )

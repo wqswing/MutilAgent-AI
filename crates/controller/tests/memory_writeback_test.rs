@@ -2,6 +2,7 @@ use chrono::Utc;
 use multi_agent_controller::capability::AgentCapability;
 use multi_agent_controller::memory_writeback::MemoryWritebackCapability;
 use multi_agent_core::types::{AgentResult, Session, SessionStatus, TaskState, TokenUsage};
+use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -69,4 +70,43 @@ async fn test_memory_writeback_merge_deduplicates_entries() {
     let memory_text = fs::read_to_string(memory).unwrap();
     let count = memory_text.matches("session:sess-dedup").count();
     assert_eq!(count, 1, "duplicate session+goal entries should be merged");
+}
+
+#[tokio::test]
+async fn test_memory_writeback_sqlite_projection() {
+    let dir = std::env::temp_dir().join(format!("ma_mem_sqlite_{}", Uuid::new_v4()));
+    fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("memory.db");
+    unsafe {
+        std::env::set_var(
+            "MULTI_AGENT_MEMORY_SQLITE_PATH",
+            db_path.to_string_lossy().to_string(),
+        );
+    }
+
+    let capability = MemoryWritebackCapability::new(dir.clone());
+    let mut session = make_session("sess-sqlite", "Ship P1 memory service");
+    capability
+        .on_finish(&mut session, &AgentResult::Text("Done".to_string()))
+        .await
+        .unwrap();
+    capability
+        .on_finish(&mut session, &AgentResult::Text("Done".to_string()))
+        .await
+        .unwrap();
+
+    let conn = Connection::open(&db_path).unwrap();
+    let mut stmt = conn
+        .prepare("SELECT COUNT(*) FROM memory_records WHERE session_id = ?1")
+        .unwrap();
+    let count: i64 = stmt.query_row(["sess-sqlite"], |row| row.get(0)).unwrap();
+    assert_eq!(count, 1, "sqlite backend should deduplicate line entries");
+
+    let memory = dir.join("MEMORY.md");
+    let memory_text = fs::read_to_string(memory).unwrap();
+    assert!(memory_text.contains("session:sess-sqlite"));
+
+    unsafe {
+        std::env::remove_var("MULTI_AGENT_MEMORY_SQLITE_PATH");
+    }
 }

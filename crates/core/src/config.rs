@@ -19,6 +19,23 @@ pub struct SafetyConfig {
     pub allowed_content_types: Vec<String>,
 }
 
+impl Default for SafetyConfig {
+    fn default() -> Self {
+        Self {
+            max_download_size_bytes: 10 * 1024 * 1024, // 10MB
+            allowed_content_types: vec![
+                "text/html".into(),
+                "text/plain".into(),
+                "application/json".into(),
+                "application/pdf".into(),
+                "text/csv".into(),
+                "text/xml".into(),
+                "application/xhtml+xml".into(),
+            ],
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
     pub host: String,
@@ -164,18 +181,7 @@ impl Default for AppConfig {
                 openai_api_key: None,
                 anthropic_api_key: None,
             },
-            safety: SafetyConfig {
-                max_download_size_bytes: 10 * 1024 * 1024, // 10MB
-                allowed_content_types: vec![
-                    "text/html".into(),
-                    "text/plain".into(),
-                    "application/json".into(),
-                    "application/pdf".into(),
-                    "text/csv".into(),
-                    "text/xml".into(),
-                    "application/xhtml+xml".into(),
-                ],
-            },
+            safety: SafetyConfig::default(),
         }
     }
 }

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use secrecy::ExposeSecret;
 use std::io;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -6,9 +7,10 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use multi_agent_controller::ReActController;
 use multi_agent_core::traits::{ArtifactStore, SessionStore, ToolRegistry};
+use multi_agent_core::types::ToolRiskLevel;
 use multi_agent_gateway::{DefaultRouter, GatewayConfig, GatewayServer, InMemorySemanticCache};
 use multi_agent_gateway::research::ResearchOrchestrator;
-use multi_agent_governance::approval::{ChannelApprovalGate, ToolRiskLevel};
+use multi_agent_governance::approval::ChannelApprovalGate;
 use multi_agent_skills::{
     load_mcp_config, CalculatorTool, CompositeToolRegistry, DefaultToolRegistry, EchoTool,
     McpRegistry,
@@ -292,14 +294,14 @@ pub async fn start_server() -> Result<()> {
 
     // Onboarding Keys
     if let Some(key) = &app_config.model_gateway.openai_api_key {
-        std::env::set_var("OPENAI_API_KEY", key);
+        std::env::set_var("OPENAI_API_KEY", key.expose_secret());
     }
     if let Some(key) = &app_config.model_gateway.anthropic_api_key {
-        std::env::set_var("ANTHROPIC_API_KEY", key);
+        std::env::set_var("ANTHROPIC_API_KEY", key.expose_secret());
     }
 
     let admin_token = match &app_config.governance.admin_token {
-        Some(t) => t.clone(),
+        Some(t) => t.expose_secret().to_string(),
         None => {
             let token = uuid::Uuid::new_v4().to_string();
             tracing::info!("*************************************************");
@@ -409,6 +411,7 @@ thresholds:
         artifact_store: Some(store.clone()),
         session_store: Some(session_store.clone()),
         app_config: app_config.clone(),
+        network_policy: network_policy.clone(),
     });
 
     // Composite Registry

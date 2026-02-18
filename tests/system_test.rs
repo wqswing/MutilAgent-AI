@@ -118,8 +118,11 @@ async fn test_system_e2e_happy_path() -> anyhow::Result<()> {
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await?;
-    assert_eq!(body["result"]["type"], "Text");
-    assert!(body["result"]["payload"].as_str().unwrap().contains("8"));
+    assert_eq!(body["data"]["result"]["type"], "Text");
+    assert!(body["data"]["result"]["payload"]
+        .as_str()
+        .unwrap()
+        .contains("8"));
 
     Ok(())
 }
@@ -151,8 +154,8 @@ async fn test_system_security_block() -> anyhow::Result<()> {
     // Gateway returns OK but payload contains Error
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await?;
-    assert_eq!(body["result"]["type"], "Error");
-    assert!(body["result"]["payload"]["message"]
+    assert_eq!(body["data"]["result"]["type"], "Error");
+    assert!(body["data"]["result"]["payload"]["message"]
         .as_str()
         .unwrap()
         .contains("Security violation"));
@@ -197,8 +200,8 @@ async fn test_system_memory_retrieval() -> anyhow::Result<()> {
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await?;
-    assert_eq!(body["result"]["type"], "Text");
-    assert!(body["result"]["payload"]
+    assert_eq!(body["data"]["result"]["type"], "Text");
+    assert!(body["data"]["result"]["payload"]
         .as_str()
         .unwrap()
         .contains("GOLDEN-EYE"));
@@ -254,7 +257,7 @@ async fn test_system_semantic_cache() -> anyhow::Result<()> {
         .send()
         .await?;
     let body1: serde_json::Value = resp1.json().await?;
-    assert_eq!(body1["cached"], false);
+    assert_eq!(body1["data"]["cached"], false);
 
     // Second request (same message)
     let resp2 = client
@@ -263,8 +266,11 @@ async fn test_system_semantic_cache() -> anyhow::Result<()> {
         .send()
         .await?;
     let body2: serde_json::Value = resp2.json().await?;
-    assert_eq!(body2["cached"], true);
-    assert_eq!(body2["result"]["payload"], body1["result"]["payload"]);
+    assert_eq!(body2["data"]["cached"], true);
+    assert_eq!(
+        body2["data"]["result"]["payload"],
+        body1["data"]["result"]["payload"]
+    );
 
     Ok(())
 }

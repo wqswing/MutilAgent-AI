@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use std::collections::HashSet;
+use rusqlite::{params, Connection};
+use std::collections::{BTreeMap, HashSet};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -41,6 +42,114 @@ fn append_unique_line(path: &Path, header: &str, line: &str) -> Result<()> {
         writeln!(file, "{}", line)
             .map_err(|e| Error::controller(format!("append line failed: {}", e)))?;
     }
+    Ok(())
+}
+
+fn sqlite_memory_path() -> Option<PathBuf> {
+    std::env::var("MULTI_AGENT_MEMORY_SQLITE_PATH")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+}
+
+fn init_sqlite(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS memory_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            line TEXT NOT NULL UNIQUE,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_records_date ON memory_records(date);
+    "#,
+    )
+    .map_err(|e| Error::controller(format!("init memory sqlite failed: {}", e)))?;
+    Ok(())
+}
+
+fn append_sqlite_record(db_path: &Path, date: &str, session_id: &str, kind: &str, line: &str) -> Result<()> {
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| Error::controller(format!("create memory sqlite dir failed: {}", e)))?;
+    }
+    let conn = Connection::open(db_path)
+        .map_err(|e| Error::controller(format!("open memory sqlite failed: {}", e)))?;
+    init_sqlite(&conn)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO memory_records (date, session_id, kind, line, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![date, session_id, kind, line, Utc::now().timestamp()],
+    )
+    .map_err(|e| Error::controller(format!("insert memory sqlite failed: {}", e)))?;
+    Ok(())
+}
+
+fn project_markdown_from_sqlite(db_path: &Path, base_dir: &Path) -> Result<()> {
+    let conn = Connection::open(db_path)
+        .map_err(|e| Error::controller(format!("open memory sqlite failed: {}", e)))?;
+    init_sqlite(&conn)?;
+
+    let mut stmt = conn
+        .prepare("SELECT date, line FROM memory_records ORDER BY date ASC, line ASC")
+        .map_err(|e| Error::controller(format!("prepare memory sqlite query failed: {}", e)))?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|e| Error::controller(format!("query memory sqlite failed: {}", e)))?;
+
+    let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut merged = Vec::new();
+    for row in rows {
+        let (date, line) = row
+            .map_err(|e| Error::controller(format!("scan memory sqlite row failed: {}", e)))?;
+        grouped.entry(date).or_default().push(line.clone());
+        merged.push(line);
+    }
+
+    std::fs::create_dir_all(base_dir)
+        .map_err(|e| Error::controller(format!("create memory dir failed: {}", e)))?;
+    if let Ok(entries) = std::fs::read_dir(base_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("md")
+                && path.file_name().and_then(|f| f.to_str()) != Some("MEMORY.md")
+            {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    for (date, lines) in grouped {
+        let daily_path = base_dir.join(format!("{}.md", date));
+        let mut output = format!("# Memory {}\n", date);
+        for line in lines {
+            output.push_str(&line);
+            output.push('\n');
+        }
+        std::fs::write(&daily_path, output)
+            .map_err(|e| Error::controller(format!("write daily projection failed: {}", e)))?;
+    }
+
+    let mut memory_out = String::from("# MEMORY\n");
+    for line in merged {
+        memory_out.push_str(&line);
+        memory_out.push('\n');
+    }
+    std::fs::write(base_dir.join("MEMORY.md"), memory_out)
+        .map_err(|e| Error::controller(format!("write MEMORY.md failed: {}", e)))?;
+    Ok(())
+}
+
+fn append_memory_record(base_dir: &Path, date: &str, session_id: &str, kind: &str, line: &str) -> Result<()> {
+    if let Some(db_path) = sqlite_memory_path() {
+        append_sqlite_record(&db_path, date, session_id, kind, line)?;
+        project_markdown_from_sqlite(&db_path, base_dir)?;
+        return Ok(());
+    }
+    let daily_path = base_dir.join(format!("{}.md", date));
+    append_unique_line(&daily_path, &format!("# Memory {}", date), line)?;
+    merge_into_memory_md(base_dir)?;
     Ok(())
 }
 
@@ -98,7 +207,6 @@ pub fn flush_pre_compaction(session: &Session, estimated_tokens: usize) -> Resul
     std::fs::create_dir_all(&base)
         .map_err(|e| Error::controller(format!("create memory dir failed: {}", e)))?;
     let today = current_date();
-    let daily_path = base.join(format!("{}.md", today));
     let goal = session
         .task_state
         .as_ref()
@@ -112,8 +220,7 @@ pub fn flush_pre_compaction(session: &Session, estimated_tokens: usize) -> Resul
         session.history.len(),
         estimated_tokens
     );
-    append_unique_line(&daily_path, &format!("# Memory {}", today), &line)?;
-    merge_into_memory_md(&base)?;
+    append_memory_record(&base, &today, &session.id, "PRE-COMPACTION", &line)?;
     Ok(())
 }
 
@@ -163,7 +270,6 @@ impl AgentCapability for MemoryWritebackCapability {
             .map_err(|e| Error::controller(format!("create memory dir failed: {}", e)))?;
 
         let today = current_date();
-        let daily_path = self.base_dir.join(format!("{}.md", today));
         let line = format!(
             "- [{}][session:{}][kind:finish] goal={} result={}",
             today,
@@ -171,8 +277,7 @@ impl AgentCapability for MemoryWritebackCapability {
             sanitize_text(&goal),
             sanitize_text(&result_text)
         );
-        append_unique_line(&daily_path, &format!("# Memory {}", today), &line)?;
-        merge_into_memory_md(&self.base_dir)?;
+        append_memory_record(&self.base_dir, &today, &session.id, "finish", &line)?;
         Ok(())
     }
 }

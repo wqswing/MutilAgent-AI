@@ -329,7 +329,20 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let routing_policy_store = Arc::new(multi_agent_gateway::routing_policy::RoutingPolicyStore::new());
+    let routing_policy_store = Arc::new(
+        match multi_agent_gateway::routing_policy::RoutingPolicyStore::new_persistent(
+            ".sovereign_claw/routing/policies.json",
+        ) {
+            Ok(store) => store,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to load persistent routing policy store; using in-memory store"
+                );
+                multi_agent_gateway::routing_policy::RoutingPolicyStore::new()
+            }
+        },
+    );
     let router = Arc::new(DefaultRouter::new()
         .with_llm_classifier(
             llm_client.clone(),

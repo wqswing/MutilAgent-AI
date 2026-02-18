@@ -36,6 +36,7 @@ tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 anyhow.workspace = true
 async-trait.workspace = true
+secrecy.workspace = true
 
 multi_agent_core.workspace = true
 multi_agent_gateway.workspace = true
@@ -47,4 +48,3 @@ multi_agent_ecosystem.workspace = true
 multi_agent_model_gateway.workspace = true
 multi_agent_admin.workspace = true
 multi_agent_sandbox.workspace = true
-

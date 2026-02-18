@@ -14,11 +14,11 @@ use tower::ServiceExt; // for oneshot
 async fn test_v0_8_features_integration() {
     // 1. Setup Environment
     // Use a unique file for audit logic to avoid collision
-    let audit_file = "test_audit_v0_8.log";
-    let _ = std::fs::remove_file(audit_file); // Clean up previous run
+    let audit_file = format!("test_audit_v0_8_{}.log", uuid::Uuid::new_v4());
+    let _ = std::fs::remove_file(&audit_file); // Clean up previous run
 
     // Initialize Governance
-    let audit_store = Arc::new(SqliteAuditStore::new(audit_file).unwrap());
+    let audit_store = Arc::new(SqliteAuditStore::new(&audit_file).unwrap());
     let rbac = Arc::new(NoOpRbacConnector);
     // Metrics setup might fail if already initialized in another test, so handle error gracefully or assume it works once globally
     let metrics_handle = setup_metrics_recorder().ok();
@@ -197,6 +197,7 @@ async fn test_v0_8_features_integration() {
     let publish_payload = serde_json::json!({
         "version": "1.0.0",
         "name": "default-routing",
+        "channel": "canary",
         "rules": [
             {
                 "id": "channel-support",
@@ -262,6 +263,168 @@ async fn test_v0_8_features_integration() {
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["result"][0]["matched_rule_id"], "channel-support");
+
+    // Case I: Promote canary policy to stable
+    let promote_payload = serde_json::json!({
+        "version": "1.0.0"
+    });
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/admin/routing/promote")
+                .header("Authorization", "Bearer admin")
+                .header("Content-Type", "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(promote_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["promoted"], true);
+    assert_eq!(json["active_stable"]["version"], "1.0.0");
+
+    // Case J: Publish a newer canary and then rollback canary to previous version
+    let publish_payload_2 = serde_json::json!({
+        "version": "1.1.0",
+        "name": "default-routing-next",
+        "channel": "canary",
+        "rules": [
+            {
+                "id": "channel-support-v2",
+                "scope": "channel",
+                "scope_value": "support",
+                "target": {
+                    "type": "fast_action",
+                    "payload": { "tool_name": "calculator" }
+                },
+                "priority": 2
+            }
+        ]
+    });
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/admin/routing/publish")
+                .header("Authorization", "Bearer admin")
+                .header("Content-Type", "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(publish_payload_2.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let rollback_payload = serde_json::json!({
+        "version": "1.0.0"
+    });
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/admin/routing/rollback")
+                .header("Authorization", "Bearer admin")
+                .header("Content-Type", "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::from(rollback_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Case K: Query policy state for stable/canary channels
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/admin/routing/policies")
+                .header("Authorization", "Bearer admin")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["active_stable"]["version"], "1.0.0");
+    assert_eq!(json["active_canary"]["version"], "1.0.0");
+    assert!(json["history"].as_array().unwrap().len() >= 2);
+
+    // Case L: Query routing audit view by action
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/admin/routing/audits?action=ROUTING_POLICY_PUBLISH")
+                .header("Authorization", "Bearer admin")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json["count"].as_u64().unwrap() >= 2);
+
+    // Case M: Query routing audit view by version and channel (publish metadata)
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/admin/routing/audits?action=ROUTING_POLICY_PUBLISH&version=1.0.0&channel=canary")
+                .header("Authorization", "Bearer admin")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    12345,
+                ))))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json["count"].as_u64().unwrap() >= 1);
 
     // 3. Cleanup
     let _ = std::fs::remove_file(audit_file);
