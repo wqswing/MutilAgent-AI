@@ -8,6 +8,7 @@ pub mod audio;
 pub mod idempotency;
 pub mod research;
 pub mod router;
+pub mod routing_policy;
 pub mod scheduler;
 pub mod semantic_cache;
 pub mod server;

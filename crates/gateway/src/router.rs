@@ -10,6 +10,7 @@ use multi_agent_core::{
     types::{NormalizedRequest, UserIntent},
     Result,
 };
+use crate::routing_policy::{RouteScope, RouteTarget, RoutingContext, RoutingPolicyEngine};
 
 /// Keywords that suggest a fast action (direct tool call).
 const FAST_ACTION_KEYWORDS: &[&str] = &[
@@ -73,6 +74,8 @@ pub struct DefaultRouter {
     tool_registry: Option<Arc<dyn ToolRegistry>>,
     /// Minimum confidence required to trust LLM classification.
     llm_min_confidence: f32,
+    /// Optional explicit routing policy.
+    routing_policy: Option<Arc<RoutingPolicyEngine>>,
 }
 
 impl DefaultRouter {
@@ -84,6 +87,7 @@ impl DefaultRouter {
             llm_client: None,
             tool_registry: None,
             llm_min_confidence: 0.6,
+            routing_policy: None,
         }
     }
 
@@ -101,6 +105,12 @@ impl DefaultRouter {
     /// Override the confidence threshold for LLM routing.
     pub fn with_llm_min_confidence(mut self, threshold: f32) -> Self {
         self.llm_min_confidence = threshold;
+        self
+    }
+
+    /// Configure explicit routing policy engine.
+    pub fn with_routing_policy(mut self, policy: RoutingPolicyEngine) -> Self {
+        self.routing_policy = Some(Arc::new(policy));
         self
     }
 
@@ -333,6 +343,59 @@ impl DefaultRouter {
             user_id,
         }
     }
+
+    fn routing_context_from_request(request: &NormalizedRequest) -> RoutingContext {
+        RoutingContext {
+            channel: request.metadata.custom.get("channel").cloned(),
+            account: request.metadata.custom.get("account").cloned(),
+            peer: request.metadata.custom.get("peer").cloned(),
+        }
+    }
+
+    fn scope_label(scope: RouteScope) -> &'static str {
+        match scope {
+            RouteScope::Channel => "channel",
+            RouteScope::Account => "account",
+            RouteScope::Peer => "peer",
+        }
+    }
+
+    async fn classify_with_policy(
+        &self,
+        request: &NormalizedRequest,
+    ) -> Option<(UserIntent, serde_json::Value)> {
+        let policy = self.routing_policy.as_ref()?;
+        let context = Self::routing_context_from_request(request);
+        let decision = policy.resolve(&context)?;
+        let user_id = request.metadata.user_id.clone();
+
+        let intent = match decision.target {
+            RouteTarget::FastAction { tool_name } => UserIntent::FastAction {
+                tool_name,
+                args: json!({ "query": request.content }),
+                user_id,
+            },
+            RouteTarget::ComplexMission { goal_hint } => UserIntent::ComplexMission {
+                goal: format!("{}: {}", goal_hint, self.extract_goal(&request.content)),
+                context_summary: request.content.clone(),
+                visual_refs: request.refs.iter().map(|r| r.0.clone()).collect(),
+                user_id,
+            },
+        };
+
+        Some((
+            intent,
+            serde_json::json!({
+                "routing": {
+                    "source": "policy",
+                    "scope": Self::scope_label(decision.scope),
+                    "rule_id": decision.rule_id,
+                    "confidence": serde_json::Value::Null,
+                    "fallback_reason": serde_json::Value::Null
+                }
+            }),
+        ))
+    }
 }
 
 impl Default for DefaultRouter {
@@ -357,6 +420,11 @@ impl IntentRouter for DefaultRouter {
             user_id = ?request.metadata.user_id,
             "Classifying intent"
         );
+
+        if let Some((intent, diagnostics)) = self.classify_with_policy(request).await {
+            tracing::debug!("Intent classified via explicit routing policy");
+            return Ok((intent, diagnostics));
+        }
 
         match self.classify_with_llm(request).await {
             Ok((intent, diagnostics)) => {
@@ -385,6 +453,7 @@ mod tests {
     use super::*;
     use multi_agent_core::traits::{LlmResponse, LlmUsage, Tool, ToolRegistry};
     use multi_agent_core::types::{ToolDefinition, ToolOutput};
+    use crate::routing_policy::{RouteScope, RoutingPolicyEngine, RoutingRule};
     use serde_json::Value;
 
     struct MockLlm {
@@ -606,6 +675,76 @@ mod tests {
         let (_, diagnostics) = router.classify_detailed(&request).await.unwrap();
         assert_eq!(diagnostics["routing"]["source"], "fallback_rules");
         assert_eq!(diagnostics["routing"]["fallback_reason"], "llm_unknown_tool");
+    }
+
+    #[tokio::test]
+    async fn test_policy_forces_fast_action_before_llm() {
+        let llm = Arc::new(MockLlm {
+            response: r#"{"intent_type":"complex_mission","goal":"llm-route","confidence":0.99}"#
+                .to_string(),
+        });
+        let registry = Arc::new(MockRegistry {
+            tools: vec![ToolDefinition {
+                name: "search".to_string(),
+                description: "search web".to_string(),
+                parameters: serde_json::json!({"type":"object"}),
+                supports_streaming: false,
+            }],
+        });
+        let policy = RoutingPolicyEngine::new(vec![RoutingRule::force_fast(
+            "channel-fast",
+            RouteScope::Channel,
+            "support",
+            "search",
+            1,
+        )]);
+
+        let router = DefaultRouter::new()
+            .with_llm_classifier(llm, registry)
+            .with_routing_policy(policy);
+        let mut request = NormalizedRequest::text("please help");
+        request
+            .metadata
+            .custom
+            .insert("channel".to_string(), "support".to_string());
+
+        let (intent, diagnostics) = router.classify_detailed(&request).await.unwrap();
+        match intent {
+            UserIntent::FastAction { tool_name, .. } => assert_eq!(tool_name, "search"),
+            _ => panic!("Expected FastAction"),
+        }
+        assert_eq!(diagnostics["routing"]["source"], "policy");
+        assert_eq!(diagnostics["routing"]["scope"], "channel");
+        assert_eq!(diagnostics["routing"]["rule_id"], "channel-fast");
+    }
+
+    #[tokio::test]
+    async fn test_policy_forces_complex_mission() {
+        let policy = RoutingPolicyEngine::new(vec![RoutingRule::force_complex(
+            "peer-complex",
+            RouteScope::Peer,
+            "vip-user",
+            "Escalated workflow",
+            5,
+        )]);
+        let router = DefaultRouter::new().with_routing_policy(policy);
+
+        let mut request = NormalizedRequest::text("search docs");
+        request
+            .metadata
+            .custom
+            .insert("peer".to_string(), "vip-user".to_string());
+
+        let (intent, diagnostics) = router.classify_detailed(&request).await.unwrap();
+        match intent {
+            UserIntent::ComplexMission { goal, .. } => {
+                assert!(goal.contains("Escalated workflow"));
+            }
+            _ => panic!("Expected ComplexMission"),
+        }
+        assert_eq!(diagnostics["routing"]["source"], "policy");
+        assert_eq!(diagnostics["routing"]["scope"], "peer");
+        assert_eq!(diagnostics["routing"]["rule_id"], "peer-complex");
     }
 
 }
