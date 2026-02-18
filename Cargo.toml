@@ -19,7 +19,7 @@ version = "1.0.5"
 edition = "2021"
 authors = ["Multiagent Team"]
 license = "AGPL-3.0-only"
-repository = "https://github.com/wqswing/Multiagent-AI"
+repository = "https://github.com/wqswing/MultiAgent-AI"
 
 [workspace.dependencies]
 # Async runtime
@@ -119,6 +119,9 @@ multi_agent_ecosystem = { path = "crates/ecosystem" }
 name = "multi_agent"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "multiagent"
